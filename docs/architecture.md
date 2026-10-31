@@ -12,37 +12,38 @@ Next.js App Router client
   +---- HTTPS JSON ----> FastAPI
   |                       |-- Pydantic response models
   |                       |-- deterministic Python financial domain
-  |                       |-- fictional in-memory CRUD repository
+  |                       |-- per-request unit of work (load, run domain code, save changes)
   |                       |-- authenticated, bounded Penny AI coach
   |                       |     |-- five deterministic financial tools
   |                       |     |-- verified structured recommendations
   |                       |     +-- optional OpenAI explanation adapter
   |                       +-- owner-bound approval command
   |
-  +---- Supabase client -> Auth + Postgres
-                          |-- versioned migrations
-                          |-- explicit grants and RLS policies
-                          +-- fictional lesson seeds
+  +---- Supabase client -> Auth (sign-in only)
+
+FastAPI ----- PENNY_DATABASE_URL ----> Supabase Postgres
+                          |-- versioned migration (supabase/migrations)
+                          +-- RLS on, no Data API grants: only the backend reads/writes
 ```
 
-The Council session table reserves ownership and lifecycle metadata. The hackathon runtime keeps short-lived proposals in process; it stores no prompts or model output in Supabase.
+Penny AI chats (messages and the verified replies shown with them) and proposals are stored in Postgres. Prompts sent to the model provider are not stored.
 
 ## Boundaries
 
 - `frontend/` owns presentation, accessibility, Supabase sign-in, and mutation forms. It never calculates financial totals; editable CAD strings are converted to cents with `BigInt` before requests.
 - `backend/app/domain/finance.py` is the authoritative calculation layer. Pure functions accept and return Python integers representing cents.
-- `backend/app/dashboard_store.py` owns the fictional demo state and returns a complete authoritative snapshot after each create, update, or delete. Its state resets when the process restarts.
+- `backend/app/dashboard_store.py` owns each user's financial state and returns a complete authoritative snapshot after each create, update, or delete. It knows nothing about the database: `snapshot()` and `restore()` hand its state to `backend/app/db/`, which loads it per request in one query and saves only changed rows, guarded by a version number (409 on a conflicting edit). Without `PENNY_DATABASE_URL` the state is in memory.
 - `backend/app/main.py` exposes typed health, dashboard, calculation, CRUD, Penny AI, and approval responses. Every financial endpoint validates the bearer identity (Supabase JWT via JWKS, or the development-only demo token) and passes the user id to the store, which rejects non-owners with 403.
 - `backend/app/coach/` owns the financial snapshot, check-in signals, deterministic tools, prompt-injection filtering, number grounding, provider fallback, and single-use goal proposals. Provider output cannot mutate state.
 - `supabase/migrations/` owns schema evolution. The browser receives only the publishable key; service-role credentials must remain server-side.
 
 ## Database model and authorization
 
-Supabase Auth owns credentials. An `auth.users` insert trigger creates a matching `public.users` profile. User-owned tables are `financial_accounts`, `transactions`, `categories`, `budgets`, `savings_goals`, `quiz_progress`, and `council_sessions`. `lessons` is shared read-only educational content.
+Supabase Auth owns credentials; the browser receives only the publishable key. `public.profiles` is keyed by `auth.users.id`, and every other table carries that `user_id` and cascades on delete, so deleting a Supabase user deletes all their Penny data. Tables: `accounts`, `categories`, `transactions`, `budgets`, `savings_goals`, `goal_contributions`, `bills`, `pay_schedules`, `missions`, `learn_*`, `coach_*`, and `reminder_*`. Lessons are content in code, not data.
 
-Every exposed table has RLS enabled. Anonymous access is revoked. Authenticated users receive only the operations the app needs, and separate select/insert/update/delete policies compare indexed `user_id` columns with `(select auth.uid())`. The profile table is select/update only; published lessons are select only.
+Every table has RLS enabled with no policies, and `anon`/`authenticated` have no grants, so the public Data API can't read or change anything. FastAPI connects as the database owner over `PENNY_DATABASE_URL` (a server-side secret) and authorizes every request itself from the verified JWT, so all financial writes pass through the deterministic domain code.
 
-All stored money columns use Postgres `bigint` cents with non-negative constraints. Transaction direction is a separate enum-like field, avoiding ambiguous signed storage. Currency is constrained to CAD for the MVP.
+All stored money columns use Postgres `bigint` cents with range constraints. Transaction direction is a separate enum-like field, avoiding ambiguous signed storage. Currency is constrained to CAD for the MVP.
 
 ## Deterministic flow
 
@@ -55,7 +56,7 @@ The tested edge cases include no activity, overspending, invalid values, exact s
 
 ## Demo data
 
-Maya Singh is a clearly fictional 20-year-old Dalhousie University student in Halifax. Her accounts, transactions, budgets, goals, and missions originate in the backend fixture only. The frontend receives them through the dashboard contract and does not provide fallback balances or totals.
+Maya Singh is a clearly fictional 20-year-old Dalhousie University student in Halifax. Her accounts, transactions, budgets, goals, and missions originate in the backend fixture, and are saved to the database the first time the `PENNY_DEMO_OWNER_USER_ID` user signs in. The frontend receives them through the dashboard contract and does not provide fallback balances or totals.
 
 ## Health and failure behaviour
 

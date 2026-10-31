@@ -1,12 +1,13 @@
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.auth import CurrentUser, get_current_user
 from app.coach import assist
@@ -20,6 +21,7 @@ from app.coach.assist import (
     SearchFilters,
     SearchRequest,
 )
+from app.coach.chats import Conversation, ConversationWrite, chat_store
 from app.coach.coach import Coach
 from app.coach.models import (
     ApprovalRequest,
@@ -58,6 +60,9 @@ from app.dashboard_models import (
     TransactionWrite,
 )
 from app.dashboard_store import DashboardStore, stores
+from app.db import pool
+from app.db.repository import StaleDataError
+from app.db.unit import unit_scope
 from app.domain.categorize import categorize, necessity
 from app.domain.finance import (
     COMMON_UTILIZATION_GUIDELINE_BASIS_POINTS,
@@ -107,16 +112,38 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+    pool.close()
 
 
 app = FastAPI(title="Penny API", version="0.1.0", docs_url="/docs", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def save_changes(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """With a database: each person's data is loaded the first time this request needs it, and
+    whatever changed is saved once the request succeeds. If someone else saved first, an edit
+    is refused; a read that recorded the same automatic change (a bill due today) still answers.
+    Added before CORS so CORS headers wrap its responses too."""
+    if not pool.database_enabled():
+        return await call_next(request)
+    async with unit_scope(commit=False) as unit:
+        response = await call_next(request)
+        if response.status_code < 400:
+            try:
+                await asyncio.to_thread(unit.commit)
+            except StaleDataError:
+                if request.method != "GET":
+                    detail = "Your data changed in another tab or device. Refresh and try again."
+                    return JSONResponse({"detail": detail}, status_code=status.HTTP_409_CONFLICT)
+                logger.info("Skipped saving a read that raced another save")
+        return response
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        origin
-        for origin in (str(settings.frontend_origin).rstrip("/"), settings.native_app_origin)
-        if origin
-    ],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
@@ -691,3 +718,33 @@ def approve_coach_proposal(
 ) -> ApprovalResponse:
     """Apply a change Penny proposed, only after the user explicitly approves it."""
     return _coach(current_user).approve(current_user.id, proposal_id, request.version)
+
+
+@app.get("/api/v1/coach/conversations", response_model=list[Conversation], tags=["coach"])
+def list_conversations(current_user: AuthenticatedUser) -> list[Conversation]:
+    """Saved Penny AI chats, most recent first."""
+    _store(current_user).require_owner(current_user.id)
+    return chat_store.list(stores.data_owner(current_user.id))
+
+
+@app.put(
+    "/api/v1/coach/conversations/{conversation_id}", response_model=Conversation, tags=["coach"]
+)
+def save_conversation(
+    conversation_id: Annotated[str, Path(min_length=1, max_length=64)],
+    request: ConversationWrite,
+    current_user: AuthenticatedUser,
+) -> Conversation:
+    """Create or replace one chat (its title, messages, and proposal states)."""
+    _store(current_user).require_owner(current_user.id)
+    return chat_store.save(stores.data_owner(current_user.id), conversation_id, request)
+
+
+@app.delete(
+    "/api/v1/coach/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["coach"],
+)
+def delete_conversation(conversation_id: str, current_user: AuthenticatedUser) -> None:
+    _store(current_user).require_owner(current_user.id)
+    chat_store.delete(stores.data_owner(current_user.id), conversation_id)

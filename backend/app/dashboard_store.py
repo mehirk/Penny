@@ -1,10 +1,11 @@
 import calendar
+import copy
 import re
 from collections.abc import Iterable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from threading import RLock
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -224,6 +225,24 @@ def _starter_missions() -> list[Mission]:
     ]
 
 
+@dataclass
+class StoreSnapshot:
+    """Everything one person's store holds, in creation order, for saving and loading (app/db).
+    Budgets and goals are the store's own dicts; see `budgets` and `savings_goals` tables."""
+
+    profile: DemoUser
+    accounts: list[Account]
+    categories: list[Category]
+    transactions: list[Transaction]
+    budgets: list[dict[str, Any]]
+    goals: list[dict[str, Any]]
+    contributions: list[GoalContribution]
+    missions: list[Mission]
+    bills: list[Bill]
+    pay_schedule: PaySchedule | None
+    learner: Learner
+
+
 class DashboardStore:
     """Thread-safe fictional store for the hackathon MVP."""
 
@@ -405,6 +424,47 @@ class DashboardStore:
         self._contributions = []
         self._learner = Learner()
         self._lock = RLock()
+
+    def snapshot(self) -> StoreSnapshot:
+        """A copy of everything this store holds; later changes to the store don't affect it."""
+        with self._lock:
+            return StoreSnapshot(
+                profile=self._profile,
+                accounts=list(self._accounts.values()),
+                categories=list(self._categories.values()),
+                transactions=list(self._transactions.values()),
+                budgets=[dict(item) for item in self._budgets.values()],
+                goals=[dict(item) for item in self._goals.values()],
+                contributions=list(self._contributions),
+                missions=list(self._missions),
+                bills=list(self._bills.values()),
+                pay_schedule=self._pay_schedule,
+                learner=copy.deepcopy(self._learner),
+            )
+
+    @classmethod
+    def restore(
+        cls, snapshot: StoreSnapshot, owner_user_ids: Iterable[str] = ()
+    ) -> "DashboardStore":
+        """Rebuilds a store saved with `snapshot()`. Fictional data keeps the demo's month;
+        a real account follows the calendar."""
+        store = cls.__new__(cls)
+        if not snapshot.profile.is_fictional:
+            store.active_month = month_start(date.today())
+        store._profile = snapshot.profile
+        store._owner_user_ids = frozenset({snapshot.profile.id, *owner_user_ids})
+        store._accounts = {item.id: item for item in snapshot.accounts}
+        store._categories = {item.id: item for item in snapshot.categories}
+        store._transactions = {item.id: item for item in snapshot.transactions}
+        store._budgets = {str(item["id"]): dict(item) for item in snapshot.budgets}
+        store._goals = {str(item["id"]): dict(item) for item in snapshot.goals}
+        store._contributions = list(snapshot.contributions)
+        store._missions = list(snapshot.missions)
+        store._bills = {item.id: item for item in snapshot.bills}
+        store._pay_schedule = snapshot.pay_schedule
+        store._learner = copy.deepcopy(snapshot.learner)
+        store._lock = RLock()
+        return store
 
     def _financial_health(
         self,
@@ -2056,10 +2116,20 @@ def _name_from_email(email: str | None) -> str:
     return word[:30].capitalize() or "there"
 
 
+def _fresh_store(user_id: str, email: str | None) -> DashboardStore:
+    owner = DemoUser(
+        id=user_id, display_name=_name_from_email(email), currency="CAD", is_fictional=False
+    )
+    return DashboardStore(fresh_owner=owner)
+
+
 class StoreRegistry:
     """Who sees which data: the demo identity (and the configured owner) get the fictional
     Maya data set; every other signed-in user gets their own empty account, made on first use.
-    Everything is in memory, so fresh accounts reset when the server restarts."""
+
+    With PENNY_DATABASE_URL set, stores are loaded from and saved to Postgres for each request
+    (app/db). The demo set is saved under PENNY_DEMO_OWNER_USER_ID; without one it stays in
+    memory. Without a database everything is in memory and resets when the server restarts."""
 
     def __init__(self, demo: DashboardStore) -> None:
         self.demo = demo
@@ -2067,6 +2137,19 @@ class StoreRegistry:
         self._lock = RLock()
 
     def for_user(self, user_id: str, email: str | None = None) -> DashboardStore:
+        from app.db.pool import database_enabled
+        from app.db.unit import current_unit
+
+        if database_enabled():
+            owners = _configured_owner_ids()
+            if self.demo.is_owner(user_id) and owners:
+                return current_unit().store_for(
+                    owners[0],
+                    lambda: DashboardStore(owner_user_ids=owners),
+                    self.demo._owner_user_ids,
+                )
+            if not self.demo.is_owner(user_id):
+                return current_unit().store_for(user_id, lambda: _fresh_store(user_id, email))
         if self.demo.is_owner(user_id):
             return self.demo
         with self._lock:
@@ -2076,17 +2159,16 @@ class StoreRegistry:
                     raise HTTPException(
                         status.HTTP_503_SERVICE_UNAVAILABLE, "Penny can’t open new accounts now"
                     )
-                owner = DemoUser(
-                    id=user_id,
-                    display_name=_name_from_email(email),
-                    currency="CAD",
-                    is_fictional=False,
-                )
-                store = self._fresh[user_id] = DashboardStore(fresh_owner=owner)
+                store = self._fresh[user_id] = _fresh_store(user_id, email)
             return store
 
     def is_demo(self, user_id: str) -> bool:
         return self.demo.is_owner(user_id)
+
+    def data_owner(self, user_id: str) -> str:
+        """Whose saved data this is. The offline demo identity shares the configured owner's."""
+        owners = _configured_owner_ids()
+        return owners[0] if owners and self.demo.is_owner(user_id) else user_id
 
 
 dashboard_store = DashboardStore(owner_user_ids=_configured_owner_ids())

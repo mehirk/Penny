@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { coachApi, type CoachBrief, type CoachProposal, type CoachReply, type CoachRole, type Dashboard } from "@/lib/api";
+import { coachApi, type CoachBrief, type CoachProposal, type CoachReply, type CoachRole, type Dashboard, type SavedConversation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { cad, describeError } from "./shared";
 
@@ -20,7 +20,11 @@ type ChatError = { title: string; detail: string };
 export type Conversation = { id: string; title: string; updated_at: string; messages: CoachMessage[]; proposals: Record<string, ProposalState> };
 
 const STORAGE_KEY = "penny-coach-chats";
+/** Set once this device's older, device-only chats have been uploaded to the account. */
+const UPLOADED_KEY = "penny-coach-chats-uploaded";
 const MAX_SAVED_CHATS = 30;
+/** The server keeps at most this many messages per chat. */
+const MAX_SAVED_MESSAGES = 200;
 
 /** Saved chats from this device. Storage can be blocked or hold old data, so failures are ignored. */
 function loadConversations(): Conversation[] {
@@ -37,9 +41,26 @@ function saveConversations(conversations: Conversation[]) {
   try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations.slice(0, MAX_SAVED_CHATS))); } catch { /* Keep chats in memory. */ }
 }
 
+function uploadedBefore(): boolean {
+  try { return window.localStorage.getItem(UPLOADED_KEY) === "1"; } catch { return true; }
+}
+
+function fromSaved(saved: SavedConversation): Conversation {
+  return { ...saved, messages: saved.messages.map(({ reply, ...message }) => (reply ? { ...message, reply } : message)) };
+}
+
+/** Saves a chat to the account. "Approving" is momentary, so it isn't kept. */
+function upload(conversation: Conversation): Promise<unknown> {
+  const proposals = Object.fromEntries(Object.entries(conversation.proposals).filter(([, state]) => state !== "approving"));
+  return coachApi.saveConversation({ ...conversation, messages: conversation.messages.slice(-MAX_SAVED_MESSAGES), proposals });
+}
+
+const newest = (a: Conversation, b: Conversation) => b.updated_at.localeCompare(a.updated_at);
+
 /**
  * Conversation state, owned by the app shell so chats survive switching tabs. Every chat is
- * kept in a history list (saved on this device); "New chat" starts a fresh one.
+ * kept in a history list saved to the account (and cached on this device for offline use);
+ * "New chat" starts a fresh one.
  */
 export function useCoachChat() {
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
@@ -47,14 +68,45 @@ export function useCoachChat() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
   const latest = useRef({ conversations, activeId });
+  // Chats changed here since the last save, and every chat touched this session.
+  const unsaved = useRef(new Set<string>());
+  const touched = useRef(new Set<string>());
   useEffect(() => { latest.current = { conversations, activeId }; }, [conversations, activeId]);
   useEffect(() => { saveConversations(conversations); }, [conversations]);
+
+  // The account's chats replace this device's cache. The first time, chats that were only ever
+  // on this device are uploaded so they aren't lost. Offline, the cached copy stays.
+  useEffect(() => {
+    let active = true;
+    coachApi.conversations().then(async (saved) => {
+      const account = saved.map(fromSaved);
+      if (!uploadedBefore()) {
+        const deviceOnly = loadConversations().filter((item) => !account.some((other) => other.id === item.id));
+        await Promise.all(deviceOnly.map((item) => upload(item).catch(() => undefined)));
+        account.push(...deviceOnly);
+        try { window.localStorage.setItem(UPLOADED_KEY, "1"); } catch { /* Uploads again next time; ids keep it harmless. */ }
+      }
+      if (!active) return;
+      setConversations((current) => [...current.filter((item) => touched.current.has(item.id) && !account.some((other) => other.id === item.id)), ...account].sort(newest));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    for (const id of unsaved.current) {
+      const conversation = conversations.find((item) => item.id === id);
+      if (conversation) void upload(conversation).catch(() => undefined);
+    }
+    unsaved.current.clear();
+  }, [conversations]);
 
   const active = conversations.find((item) => item.id === activeId) ?? null;
   const messages = active?.messages ?? [];
 
   /** Applies a change to one conversation and moves it to the top of the list. */
   const update = useCallback((id: string, change: (conversation: Conversation) => Conversation) => {
+    unsaved.current.add(id);
+    touched.current.add(id);
     setConversations((current) => {
       const target = current.find((item) => item.id === id);
       if (!target) return current;
@@ -72,6 +124,8 @@ export function useCoachChat() {
     if (!existing) {
       id = crypto.randomUUID();
       const created: Conversation = { id, title: question.length > 60 ? `${question.slice(0, 57)}…` : question, updated_at: new Date().toISOString(), messages: thread, proposals: {} };
+      unsaved.current.add(id);
+      touched.current.add(id);
       setConversations((current) => [created, ...current]);
       setActiveId(id);
     } else {
@@ -107,6 +161,7 @@ export function useCoachChat() {
   const newChat = useCallback(() => { setActiveId(null); setError(null); }, []);
   const open = useCallback((id: string) => { setActiveId(id); setError(null); }, []);
   const remove = useCallback((id: string) => {
+    void coachApi.deleteConversation(id).catch(() => undefined);
     setConversations((current) => current.filter((item) => item.id !== id));
     setActiveId((current) => (current === id ? null : current));
   }, []);

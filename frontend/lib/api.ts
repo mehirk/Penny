@@ -161,6 +161,7 @@ async function authorizedRequest<T>(path: string, init?: RequestInit): Promise<T
     const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
     throw new ApiError(payload?.detail ?? `Request failed with status ${response.status}`, response.status);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -263,7 +264,14 @@ export const calculationsApi = {
   creditUtilization: (balance_cents: number, credit_limit_cents: number) => authorizedRequest<CreditUtilization>("/api/v1/calculations/credit-utilization", { method: "POST", body: JSON.stringify({ balance_cents, credit_limit_cents }) }),
 };
 
+/** A Penny AI chat as saved on the server. `reply` is set on Penny's messages. */
+export type SavedChatMessage = { id: string; role: CoachRole; content: string; reply?: CoachReply | null };
+export type SavedConversation = { id: string; title: string; updated_at: string; messages: SavedChatMessage[]; proposals: Record<string, "approving" | "approved" | "dismissed"> };
+
 export const coachApi = {
+  conversations: () => authorizedRequest<SavedConversation[]>("/api/v1/coach/conversations"),
+  saveConversation: ({ id, title, messages, proposals }: SavedConversation) => authorizedRequest<SavedConversation>(`/api/v1/coach/conversations/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ title, messages: messages.map(({ id: messageId, role, content, reply }) => ({ id: messageId, role, content, reply: reply ?? null })), proposals }) }),
+  deleteConversation: (id: string) => authorizedRequest<void>(`/api/v1/coach/conversations/${encodeURIComponent(id)}`, { method: "DELETE" }),
   brief: () => authorizedRequest<CoachBrief>("/api/v1/coach/brief"),
   chat: (messages: { role: CoachRole; content: string }[]) => authorizedRequest<CoachReply>("/api/v1/coach/chat", { method: "POST", body: JSON.stringify({ messages }) }),
   approve: (proposal: CoachProposal) => authorizedRequest<{ message: string; dashboard: Dashboard }>(`/api/v1/coach/proposals/${proposal.id}/approve`, { method: "POST", body: JSON.stringify({ approved: true, version: proposal.version }) }),
