@@ -234,7 +234,7 @@ function QuestionCard({ question, feedback, busy, error, onSubmit, onNext, lastS
                     className="size-5 shrink-0 accent-[var(--color-accent)]"
                   />
                   <span className="flex-1 text-ink">{option.text}</span>
-                  {stateOf === "right" && <CircleCheck className="size-5 shrink-0 text-[#0d7a4d] dark:text-zone-green" aria-label="Correct answer" />}
+                  {stateOf === "right" && <CircleCheck className="size-5 shrink-0 text-money-in" aria-label="Correct answer" />}
                   {stateOf === "wrong" && <CircleX className="size-5 shrink-0 text-danger" aria-label="Your answer, incorrect" />}
                 </label>
               );
@@ -276,7 +276,7 @@ function QuestionCard({ question, feedback, busy, error, onSubmit, onNext, lastS
 
       {feedback && (
         <div role="status" className={cn("mt-4 rounded-2xl p-4", feedback.correct ? "bg-zone-green-soft" : "bg-danger-soft")}>
-          <p className={cn("flex items-center gap-2 font-semibold", feedback.correct ? "text-[#0d7a4d] dark:text-zone-green" : "text-danger")}>
+          <p className={cn("flex items-center gap-2 font-semibold", feedback.correct ? "text-money-in" : "text-danger")}>
             {feedback.correct ? <><CircleCheck className="size-5" aria-hidden="true" />Correct!</> : <><HeartCrack className="size-5" aria-hidden="true" />Not quite. You lost a heart.</>}
           </p>
           <p className="mt-1 text-sm leading-relaxed text-ink">{feedback.explanation}</p>

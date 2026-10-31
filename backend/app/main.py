@@ -10,7 +10,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import CurrentUser, get_current_user
 from app.coach import assist
-from app.coach.assist import AssistText, BudgetSuggestions, ParsedTransaction, QuickAddRequest
+from app.coach.assist import (
+    AssistText,
+    BudgetSuggestions,
+    ParsedTransaction,
+    ParsedTransactions,
+    QuickAddManyRequest,
+    QuickAddRequest,
+    SearchFilters,
+    SearchRequest,
+)
 from app.coach.coach import Coach
 from app.coach.models import (
     ApprovalRequest,
@@ -380,17 +389,39 @@ def delete_account(account_id: str, current_user: AuthenticatedUser) -> Dashboar
     return _store(current_user).delete_account(current_user.id, account_id)
 
 
+AI_CATEGORIZE_LIMIT = 25
+
+
 @app.post("/api/v1/transactions/import", response_model=ImportResult, tags=["transactions"])
-def import_transactions(request: ImportRequest, current_user: AuthenticatedUser) -> ImportResult:
-    """Add history from a CSV export. Imported rows don't change current account balances."""
-    imported, errors = _store(current_user).import_csv(
-        current_user.id, request.csv, request.account_id
-    )
+async def import_transactions(
+    request: ImportRequest, current_user: AuthenticatedUser
+) -> ImportResult:
+    """Add history from a CSV export. Imported rows don't change current account balances.
+    Rows the keyword rules can't place are categorized by Penny AI (from existing categories)."""
+    store = _store(current_user)
+    imported, errors = store.import_csv(current_user.id, request.csv, request.account_id)
+    ai_categorized = 0
+    if imported:
+        categories = store.dashboard_for_user(current_user.id).categories
+        pending = store.uncategorized(current_user.id)[:AI_CATEGORIZE_LIMIT]
+        picks = await asyncio.gather(
+            *(
+                assist.pick_category(get_settings(), description, kind, categories)
+                for description, kind in pending
+            )
+        )
+        chosen = {
+            (description.casefold(), kind): pick
+            for (description, kind), pick in zip(pending, picks, strict=True)
+            if pick
+        }
+        ai_categorized = store.apply_categories(current_user.id, chosen) if chosen else 0
     return ImportResult(
         imported=imported,
         skipped=len(errors),
         errors=errors[:20],
-        dashboard=_store(current_user).dashboard_for_user(current_user.id),
+        ai_categorized=ai_categorized,
+        dashboard=store.dashboard_for_user(current_user.id),
     )
 
 
@@ -456,6 +487,52 @@ async def parse_transaction(
     return await assist.parse_transaction(
         get_settings(), request.text.strip(), _store(current_user).today(), categories
     )
+
+
+@app.post("/api/v1/assist/parse-transactions", response_model=ParsedTransactions, tags=["assist"])
+async def parse_transactions(
+    request: QuickAddManyRequest, current_user: AuthenticatedUser
+) -> ParsedTransactions:
+    """Turn a note with several entries (one per line, or separated by ; or commas) into
+    transaction drafts. Nothing is saved; the user reviews and adds them."""
+    store = _store(current_user)
+    store.require_owner(current_user.id)
+    categories = store.dashboard_for_user(current_user.id).categories
+    return await assist.parse_transactions(
+        get_settings(), request.text.strip(), store.today(), categories
+    )
+
+
+@app.post("/api/v1/assist/search", response_model=SearchFilters, tags=["assist"])
+async def search_transactions(
+    request: SearchRequest, current_user: AuthenticatedUser
+) -> SearchFilters:
+    """Read a plain-language search ("coffee over $5 last month") into list filters."""
+    store = _store(current_user)
+    store.require_owner(current_user.id)
+    categories = store.dashboard_for_user(current_user.id).categories
+    return await assist.search_transactions(
+        get_settings(), request.text.strip(), store.today(), categories
+    )
+
+
+@app.get("/api/v1/assist/goal-plan/{goal_id}", response_model=AssistText, tags=["assist"])
+async def goal_plan(goal_id: str, current_user: AuthenticatedUser) -> AssistText:
+    """A short plan for one goal, grounded in its numbers and the typical monthly surplus."""
+    store = _store(current_user)
+    store.require_owner(current_user.id)
+    result = await assist.goal_plan(get_settings(), store, current_user.id, goal_id)
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Savings goal not found")
+    return result
+
+
+@app.get("/api/v1/assist/accounts-read", response_model=AssistText, tags=["assist"])
+async def accounts_read(current_user: AuthenticatedUser) -> AssistText:
+    """Penny's read on balances: the picture, what to watch before payday, one step."""
+    store = _store(current_user)
+    store.require_owner(current_user.id)
+    return await assist.accounts_read(get_settings(), store, current_user.id)
 
 
 @app.get("/api/v1/assist/spending-take", response_model=AssistText, tags=["assist"])

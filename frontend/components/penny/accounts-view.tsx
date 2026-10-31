@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownLeft, ArrowUpRight, Banknote, CreditCard, Landmark, LineChart, PiggyBank, Settings, Sparkles, TriangleAlert, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Banknote, CreditCard, Landmark, LineChart, PiggyBank, Settings, TriangleAlert, Wallet, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,12 +10,13 @@ import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
 import { cad, EmptyState, type View } from "./shared";
+import { AccountsRead } from "./smart-cards";
 
 type Props = { dashboard: Dashboard; onNavigate: (view: View) => void; onAsk: (question: string) => void };
 
 const TYPE_STYLE: Record<AccountType, { icon: LucideIcon; tone: string }> = {
-  chequing: { icon: Wallet, tone: "bg-zone-green-soft text-[#0d7a4d] dark:text-zone-green" },
-  cash: { icon: Banknote, tone: "bg-zone-green-soft text-[#0d7a4d] dark:text-zone-green" },
+  chequing: { icon: Wallet, tone: "bg-zone-green-soft text-money-in" },
+  cash: { icon: Banknote, tone: "bg-zone-green-soft text-money-in" },
   savings: { icon: PiggyBank, tone: "bg-gold-soft text-gold-strong" },
   investment: { icon: LineChart, tone: "bg-info-soft text-info" },
   credit: { icon: CreditCard, tone: "bg-danger-soft text-danger" },
@@ -41,7 +42,7 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <section aria-labelledby="total-title" className="grid gap-5 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6 lg:grid-cols-[1fr_1.15fr]">
+      <section id="total-balance" aria-labelledby="total-title" className="scroll-mt-28 grid gap-5 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6 lg:grid-cols-[1fr_1.15fr]">
         <div>
           <h2 id="total-title" className="text-sm text-ink-subtle">Your total balance (net worth)</h2>
           <p className={cn("tabular mt-1 text-4xl font-semibold tracking-tight", negative ? "text-danger" : "text-ink")}>{cad(overview.net_worth_cents)}</p>
@@ -49,9 +50,8 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
           <div className="mt-5 grid grid-cols-3 gap-2 text-center">
             <Sum label="You have" value={cad(overview.assets_cents)} tone="text-ink" />
             <Sum label="You owe" value={`−${cad(overview.owed_cents)}`} tone={overview.owed_cents ? "text-danger" : "text-ink"} />
-            <Sum label="Total" value={cad(overview.net_worth_cents)} tone={negative ? "text-danger" : "text-[#0d7a4d] dark:text-zone-green"} strong />
+            <Sum label="Total" value={cad(overview.net_worth_cents)} tone={negative ? "text-danger" : "text-money-in"} strong />
           </div>
-          <Button size="sm" variant="ghost" className="mt-4 -ml-2" onClick={() => onAsk("Looking at all my accounts, how am I doing overall?")}><Sparkles className="size-4" aria-hidden="true" />Ask Penny about your balances</Button>
         </div>
 
         <div className="rounded-2xl bg-sage-soft/70 p-4">
@@ -69,6 +69,8 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
           </p>
         </div>
       </section>
+
+      <AccountsRead version={dashboard.accounts_overview.net_worth_cents} onAsk={onAsk} />
 
       <section aria-label="Where your money is" className="grid gap-3 sm:grid-cols-3">
         <Tile icon={Wallet} tone={TYPE_STYLE.chequing.tone} title="Spending money" value={cad(overview.spending_cents)} detail="Chequing and cash. This is what Home calls available." />
@@ -130,7 +132,7 @@ function AccountCard({ account }: { account: AccountBalance }) {
   const credit = account.account_type === "credit";
   const used = account.utilization_basis_points;
   return (
-    <li>
+    <li id={`account-${account.account_type === "credit" ? "credit" : account.id}`} className="scroll-mt-28 rounded-[var(--radius-card)]">
       <Card className="flex h-full flex-col p-5">
         <div className="flex items-start gap-3">
           <span className={cn("grid size-11 shrink-0 place-items-center rounded-xl", style.tone)} aria-hidden="true"><Icon className="size-5" /></span>
@@ -163,8 +165,8 @@ function AccountCard({ account }: { account: AccountBalance }) {
         ) : null}
 
         <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 pt-4 text-xs text-ink-subtle">
-          <span className="inline-flex items-center gap-1"><ArrowDownLeft className="size-3.5 text-[#0d7a4d] dark:text-zone-green" aria-hidden="true" />In this month <span className="tabular font-semibold text-ink">{cad(account.money_in_cents)}</span></span>
-          <span className="inline-flex items-center gap-1"><ArrowUpRight className="size-3.5 text-danger" aria-hidden="true" />Out <span className="tabular font-semibold text-ink">{cad(account.money_out_cents)}</span></span>
+          <span className="inline-flex items-center gap-1"><ArrowDownLeft className="size-3.5 text-money-in" aria-hidden="true" />In this month <span className="tabular font-semibold text-ink">{cad(account.money_in_cents)}</span></span>
+          <span className="inline-flex items-center gap-1"><ArrowUpRight className="size-3.5 text-money-out" aria-hidden="true" />Out <span className="tabular font-semibold text-ink">{cad(account.money_out_cents)}</span></span>
           <span className="ml-auto">{account.last_activity_on ? `Last activity ${formatShortDate(account.last_activity_on)}` : "No transactions yet"}</span>
         </div>
       </Card>

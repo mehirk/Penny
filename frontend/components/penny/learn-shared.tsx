@@ -3,7 +3,7 @@ import type { LearnBadge, LessonTier } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const TIER_STYLE: Record<LessonTier, { label: string; chip: string }> = {
-  easy: { label: "Easy", chip: "bg-zone-green-soft text-[#0d7a4d] dark:text-zone-green" },
+  easy: { label: "Easy", chip: "bg-zone-green-soft text-money-in" },
   medium: { label: "Medium", chip: "bg-gold-soft text-gold-strong" },
   hard: { label: "Hard", chip: "bg-danger-soft text-danger" },
 };

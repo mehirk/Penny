@@ -32,9 +32,12 @@ export type BillFrequency = "weekly" | "biweekly" | "monthly" | "yearly";
 export type Bill = { id: string; name: string; amount_cents: number; category_id: string | null; account_id: string; frequency: BillFrequency; next_due: string; auto_record: boolean; last_paid_on: string | null };
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly" | "custom";
 export type PaySchedule = { name: string; amount_cents: number; account_id: string; frequency: PayFrequency; next_payday: string; interval_days: number | null };
-export type RecurringExpense = { id: string; name: string; category_name: string | null; amount_cents: number; monthly_cents: number; frequency: BillFrequency; next_due: string; days_until_due: number; kind: "bill" | "subscription"; auto_record: boolean; last_paid_on: string | null; payment_count: number };
+export type RecurringExpense = { id: string; name: string; category_name: string | null; amount_cents: number; monthly_cents: number; frequency: BillFrequency; next_due: string; days_until_due: number; kind: "bill" | "subscription"; auto_record: boolean; last_paid_on: string | null; payment_count: number; last_paid_cents: number | null; total_paid_cents: number; paid_this_month: boolean; status: "overdue" | "due_soon" | "later" };
+export type RecurringPayment = { bill_id: string; name: string; occurred_on: string; amount_cents: number; paid_automatically: boolean | null };
+export type UpcomingPayment = { bill_id: string; name: string; due_on: string; days_until_due: number; amount_cents: number; auto_record: boolean; kind: "bill" | "subscription" };
+export type RecurringMonth = { paid_count: number; paid_cents: number; left_count: number; left_cents: number; overdue_count: number; overdue_cents: number };
 export type RecurringSuggestion = { name: string; category_id: string | null; amount_cents: number; next_due: string };
-export type RecurringSummary = { items: RecurringExpense[]; suggestions: RecurringSuggestion[]; fixed_monthly_cents: number; subscriptions_monthly_cents: number; due_next_7_days_cents: number; due_before_payday_cents: number; share_of_income_basis_points: number | null; methodology: string };
+export type RecurringSummary = { items: RecurringExpense[]; bill_count: number; subscription_count: number; this_month: RecurringMonth | null; upcoming: UpcomingPayment[]; recent_payments: RecurringPayment[]; suggestions: RecurringSuggestion[]; fixed_monthly_cents: number; subscriptions_monthly_cents: number; due_next_7_days_cents: number; due_before_payday_cents: number; share_of_income_basis_points: number | null; methodology: string };
 export type BillHistory = { bill: Bill; payments: Transaction[]; payment_count: number; total_paid_cents: number; paid_this_year_cents: number; average_cents: number; auto_paid_count: number };
 export type LessonTrack = "budgeting" | "saving" | "tax" | "credit" | "rules" | "investing";
 export type LessonTier = "easy" | "medium" | "hard";
@@ -193,12 +196,13 @@ export const dashboardApi = {
   createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
   renameAccount: (id: string, name: string) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
   deleteAccount: (id: string) => request(`/api/v1/accounts/${id}`, { method: "DELETE" }),
-  importCsv: (csv: string, account_id: string) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; dashboard: Dashboard }>("/api/v1/transactions/import", { method: "POST", body: JSON.stringify({ csv, account_id }) }),
+  importCsv: (csv: string, account_id: string) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; ai_categorized: number; dashboard: Dashboard }>("/api/v1/transactions/import", { method: "POST", body: JSON.stringify({ csv, account_id }) }),
   suggestCategory: (description: string, kind: Transaction["kind"]) => authorizedRequest<CategorySuggestion>(`/api/v1/categorize?description=${encodeURIComponent(description)}&kind=${kind}`),
 };
 
 export type AssistSource = "ai" | "built_in";
-export type ParsedTransaction = { description: string; amount_cents: number | null; kind: Transaction["kind"]; occurred_on: string; category_id: string | null; source: AssistSource };
+export type ParsedTransaction = { description: string; amount_cents: number | null; kind: Transaction["kind"]; occurred_on: string; category_id: string | null; source: AssistSource; repeat: { frequency: BillFrequency; next_due: string } | null };
+export type SearchFilters = { query: string; kind: "all" | "income" | "spending"; category_id: string | null; min_cents: number | null; max_cents: number | null; start: string | null; end: string | null; summary: string; source: AssistSource };
 export type AssistText = { items: string[]; source: AssistSource; model: string | null };
 export type BudgetSuggestion = { category_id: string; budget_id: string | null; category_name: string; current_limit_cents: number | null; suggested_cents: number; average_cents: number; reason: string };
 export type BudgetSuggestions = { month: string; suggestions: BudgetSuggestion[]; summary: AssistText };
@@ -206,8 +210,12 @@ export type BudgetSuggestions = { month: string; suggestions: BudgetSuggestion[]
 /** Smart helpers. They only read data or fill forms; every change still goes through a user action. */
 export const assistApi = {
   parseTransaction: (text: string) => authorizedRequest<ParsedTransaction>("/api/v1/assist/parse-transaction", { method: "POST", body: JSON.stringify({ text }) }),
+  search: (text: string) => authorizedRequest<SearchFilters>("/api/v1/assist/search", { method: "POST", body: JSON.stringify({ text }) }),
+  parseTransactions: (text: string) => authorizedRequest<{ items: ParsedTransaction[] }>("/api/v1/assist/parse-transactions", { method: "POST", body: JSON.stringify({ text }) }),
   spendingTake: (start: string, end: string) => authorizedRequest<AssistText>(`/api/v1/assist/spending-take?start=${start}&end=${end}`),
   budgetSuggestions: () => authorizedRequest<BudgetSuggestions>("/api/v1/assist/budget-suggestions"),
+  goalPlan: (id: string) => authorizedRequest<AssistText>(`/api/v1/assist/goal-plan/${encodeURIComponent(id)}`),
+  accountsRead: () => authorizedRequest<AssistText>("/api/v1/assist/accounts-read"),
   lessonExample: (id: string) => authorizedRequest<AssistText>(`/api/v1/assist/lesson-example/${encodeURIComponent(id)}`),
 };
 

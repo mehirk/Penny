@@ -1,13 +1,14 @@
 "use client";
 
-import { FormEvent, useMemo, useRef, useState } from "react";
-import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, LoaderCircle, PiggyBank, Repeat, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { FormEvent, useMemo, useState } from "react";
+import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, ChevronDown, ListPlus, LoaderCircle, PiggyBank, Repeat, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { type AccountType, type BillFrequency, type Budget, type Category, type CategorySuggestion, type Dashboard, assistApi, dashboardApi, type ParsedTransaction, type SavingsGoal, type SplitTransactionWrite, type Transaction, type TransactionWrite } from "@/lib/api";
-import { DatePicker, isoToday } from "@/components/ui/date-picker";
+import { DatePicker, isoToday, shortDateLabel } from "@/components/ui/date-picker";
 import { FREQUENCIES, nextAfter, PaymentMode } from "./bill-options";
+import { BatchReview, type Draft, draftFrom } from "./transaction-batch";
 import { defaultTransactionDate, formatMonth } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cad, Field } from "./shared";
@@ -43,11 +44,12 @@ function SubmitButton({ busy, label, className }: { busy: boolean; label: string
 /** Runs a create call (category, account), applies the new dashboard, and returns it or an error. */
 export type InlineCreate = (action: () => Promise<Dashboard>) => Promise<Dashboard | string>;
 
-export function TransactionDialog({ target, dashboard, onClose, onSubmit, onRequestDelete, onCreate }: {
+export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubmitMany, onRequestDelete, onCreate }: {
   target: Transaction | "new" | null;
   dashboard: Dashboard;
   onClose: () => void;
   onSubmit: (id: string | null, body: TransactionWrite | SplitTransactionWrite) => Promise<string | null>;
+  onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>;
   onRequestDelete: (item: Transaction) => void;
   onCreate: InlineCreate;
 }) {
@@ -56,18 +58,63 @@ export function TransactionDialog({ target, dashboard, onClose, onSubmit, onRequ
     <Dialog open={target !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{item ? "Edit transaction" : "Add a transaction"}</DialogTitle>
-          <DialogDescription>{item ? "Totals recalculate as soon as you save." : "Penny picks a category from the description. You can change it."}</DialogDescription>
+          <DialogTitle>{item ? "Edit transaction" : "Add transactions"}</DialogTitle>
+          <DialogDescription>{item ? "Totals recalculate as soon as you save." : "Type it like a note and Penny fills it in, or add it by hand."}</DialogDescription>
         </DialogHeader>
-        <TransactionForm key={item?.id ?? "new"} item={item} dashboard={dashboard} onCreate={onCreate} onSubmit={(body) => onSubmit(item?.id ?? null, body)} onRequestDelete={item ? () => onRequestDelete(item) : undefined} />
+        {item
+          ? <TransactionForm key={item.id} item={item} dashboard={dashboard} onCreate={onCreate} onSubmit={(body) => onSubmit(item.id, body)} onRequestDelete={() => onRequestDelete(item)} />
+          : target === "new" && <NewTransactions dashboard={dashboard} onCreate={onCreate} onSubmit={(body) => onSubmit(null, body)} onSubmitMany={onSubmitMany} />}
       </DialogContent>
     </Dialog>
   );
 }
 
+/**
+ * New transactions start with Quick add on its own. One entry opens the form already filled in
+ * for review; several open a review list. "Add manually" opens an empty form, and the form can
+ * switch to adding several by hand.
+ */
+function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dashboard: Dashboard; onSubmit: Submit<TransactionWrite | SplitTransactionWrite>; onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>; onCreate: InlineCreate }) {
+  const [mode, setMode] = useState<"quick" | "form" | "batch">("quick");
+  const [prefill, setPrefill] = useState<ParsedTransaction | null>(null);
+  const [formKey, setFormKey] = useState(0);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const today = defaultTransactionDate(dashboard.active_month);
+
+  function onParsed(items: ParsedTransaction[]) {
+    if (items.length === 1) {
+      setPrefill(items[0]);
+      setFormKey((key) => key + 1);
+      setMode("form");
+    } else {
+      setDrafts(items.map((parsed) => draftFrom(parsed, dashboard, today)));
+      setMode("batch");
+    }
+  }
+
+  if (mode === "batch") {
+    return <BatchReview dashboard={dashboard} drafts={drafts} onChange={setDrafts} onSubmitMany={onSubmitMany} onBack={() => { setDrafts([]); setMode("quick"); }} fallbackDate={today} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <QuickAdd onParsed={onParsed} filled={mode === "form" ? prefill : null} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button type="button" aria-expanded={mode === "form"} onClick={() => { if (mode === "form") { setMode("quick"); setPrefill(null); } else { setPrefill(null); setFormKey((key) => key + 1); setMode("form"); } }} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-ink-muted hover:bg-sage-soft hover:text-ink">
+          <ChevronDown className={cn("size-4 transition-transform", mode === "form" && "rotate-180")} aria-hidden="true" />{mode === "form" ? (prefill ? "Hide the details" : "Hide manual entry") : "Add manually"}
+        </button>
+        <button type="button" onClick={() => { setDrafts([draftFrom(null, dashboard, today), draftFrom(null, dashboard, today)]); setMode("batch"); }} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-ink-muted hover:bg-sage-soft hover:text-ink">
+          <ListPlus className="size-4" aria-hidden="true" />Add several by hand
+        </button>
+      </div>
+      {mode === "form" && <TransactionForm key={formKey} item={null} prefill={prefill} dashboard={dashboard} onCreate={onCreate} onSubmit={onSubmit} />}
+    </div>
+  );
+}
+
 const KIND_STYLE = {
-  spending: { label: "Money out", icon: ArrowUpRight, sign: "−", text: "text-danger", on: "border-danger bg-danger-soft text-danger", button: "bg-danger text-on-danger hover:bg-danger-hover" },
-  income: { label: "Money in", icon: ArrowDownLeft, sign: "+", text: "text-[#0d7a4d] dark:text-zone-green", on: "border-zone-green bg-zone-green-soft text-[#0d7a4d] dark:text-zone-green", button: "bg-zone-green text-white hover:brightness-95" },
+  spending: { label: "Money out", icon: ArrowUpRight, sign: "−", text: "text-money-out", on: "border-money-out bg-money-out-soft text-money-out", button: "bg-money-out text-on-money hover:brightness-95" },
+  income: { label: "Money in", icon: ArrowDownLeft, sign: "+", text: "text-money-in", on: "border-money-in bg-money-in-soft text-money-in", button: "bg-money-in text-on-money hover:brightness-95" },
 } as const;
 
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = { chequing: "Chequing", savings: "Savings", credit: "Credit card", cash: "Cash", investment: "Investment", other: "Other" };
@@ -83,23 +130,25 @@ export function categoryOptions(categories: Category[], kind: Category["kind"]):
 
 const NEW = "__new__";
 
-function TransactionForm({ item, dashboard, onSubmit, onRequestDelete, onCreate }: { item: Transaction | null; dashboard: Dashboard; onSubmit: Submit<TransactionWrite | SplitTransactionWrite>; onRequestDelete?: () => void; onCreate: InlineCreate }) {
-  const [kind, setKind] = useState<Transaction["kind"]>(item?.kind ?? "spending");
+function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestDelete, onCreate }: { item: Transaction | null; prefill?: ParsedTransaction | null; dashboard: Dashboard; onSubmit: Submit<TransactionWrite | SplitTransactionWrite>; onRequestDelete?: () => void; onCreate: InlineCreate }) {
+  const prefillCategory = prefill && dashboard.categories.find((c) => c.id === prefill.category_id && c.kind === prefill.kind)?.id;
+  const prefillRepeat = prefill?.repeat && prefill.kind === "spending" ? prefill.repeat : null;
+  const [kind, setKind] = useState<Transaction["kind"]>(item?.kind ?? prefill?.kind ?? "spending");
   const [amountError, setAmountError] = useState("");
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [category, setCategory] = useState(item?.category_id ?? "");
-  const [categoryTouched, setCategoryTouched] = useState(Boolean(item));
+  const [category, setCategory] = useState(item?.category_id ?? prefillCategory ?? "");
+  const [categoryTouched, setCategoryTouched] = useState(Boolean(item || prefillCategory));
   const [suggestion, setSuggestion] = useState<CategorySuggestion | null>(null);
   const [account, setAccount] = useState(item?.account_id ?? dashboard.accounts.find((a) => a.account_type === "chequing")?.id ?? dashboard.accounts[0]?.id ?? "");
-  const [date, setDate] = useState(item?.occurred_on ?? defaultTransactionDate(dashboard.active_month));
+  const [date, setDate] = useState(item?.occurred_on ?? prefill?.occurred_on ?? defaultTransactionDate(dashboard.active_month));
   const [adding, setAdding] = useState<"category" | "account" | null>(null);
   const [splits, setSplits] = useState<SplitDraft>({});
   const [splitErrors, setSplitErrors] = useState<Record<string, string>>({});
-  const [repeat, setRepeat] = useState<{ on: boolean; frequency: BillFrequency; nextDue: string; auto: boolean }>({ on: false, frequency: "monthly", nextDue: "", auto: true });
-  const [filled, setFilled] = useState<"ai" | "built_in" | null>(null);
-  const amountInput = useRef<HTMLInputElement>(null);
-  const descriptionInput = useRef<HTMLInputElement>(null);
+  // "every 2nd of the month" and the like arrive with Recurring ticked and the schedule set.
+  const [repeat, setRepeat] = useState<{ on: boolean; frequency: BillFrequency; nextDue: string; auto: boolean }>(
+    prefillRepeat ? { on: true, frequency: prefillRepeat.frequency, nextDue: prefillRepeat.next_due, auto: true } : { on: false, frequency: "monthly", nextDue: "", auto: true },
+  );
   const splitMode = account === MULTIPLE;
   // Only a new money-out entry paid from one account can become a recurring bill.
   const canRepeat = !item && kind === "spending" && !splitMode;
@@ -120,21 +169,6 @@ function TransactionForm({ item, dashboard, onSubmit, onRequestDelete, onCreate 
       setSuggestion(result);
       if (result.category_id) setCategory(result.category_id);
     } catch { /* Suggestions are optional; the user can still pick a category. */ }
-  }
-
-  /** Copies a quick-add reading into the form. Nothing is saved until the user presses Add. */
-  function fillFrom(parsed: ParsedTransaction) {
-    setKind(parsed.kind);
-    if (descriptionInput.current) descriptionInput.current.value = parsed.description;
-    if (amountInput.current && parsed.amount_cents !== null) amountInput.current.value = centsToInput(String(parsed.amount_cents));
-    setDate(parsed.occurred_on);
-    const known = dashboard.categories.find((c) => c.id === parsed.category_id && c.kind === parsed.kind);
-    setCategory(known?.id ?? "");
-    setCategoryTouched(Boolean(known));
-    setSuggestion(null);
-    setAmountError("");
-    setFilled(parsed.source);
-    if (account === MULTIPLE) setAccount(dashboard.accounts[0]?.id ?? "");
   }
 
   function chooseAccount(value: string) {
@@ -183,7 +217,6 @@ function TransactionForm({ item, dashboard, onSubmit, onRequestDelete, onCreate 
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      {!item && <QuickAdd onParsed={fillFrom} filled={filled} />}
       <div role="radiogroup" aria-label="Type" className="grid grid-cols-2 gap-2">
         {(["spending", "income"] as const).map((value) => {
           const option = KIND_STYLE[value];
@@ -203,13 +236,13 @@ function TransactionForm({ item, dashboard, onSubmit, onRequestDelete, onCreate 
             <span className="tabular shrink-0 whitespace-nowrap text-3xl font-semibold" aria-hidden="true">{style.sign}$</span>
             {splitMode
               ? <output {...props} className="tabular flex min-h-16 w-full min-w-0 items-center px-1 text-3xl font-semibold text-ink">{centsToInput(String(splitTotal))}</output>
-              : <input {...props} ref={amountInput} name="amount" inputMode="decimal" autoComplete="off" placeholder="0.00" defaultValue={item ? centsToInput(String(item.amount_cents)) : ""} required className="tabular min-h-16 w-full min-w-0 bg-transparent px-1 text-3xl font-semibold text-ink placeholder:text-ink-subtle/60 focus:outline-none" />}
+              : <input {...props} name="amount" inputMode="decimal" autoComplete="off" placeholder="0.00" defaultValue={item ? centsToInput(String(item.amount_cents)) : prefill?.amount_cents ? centsToInput(String(prefill.amount_cents)) : ""} required className="tabular min-h-16 w-full min-w-0 bg-transparent px-1 text-3xl font-semibold text-ink placeholder:text-ink-subtle/60 focus:outline-none" />}
           </div>
         )}
       </Field>
 
       <Field label="Description">
-        {(props) => <Input {...props} ref={descriptionInput} name="description" placeholder={kind === "income" ? "e.g. Harbour Books pay" : "e.g. Starbucks"} defaultValue={item?.description} required maxLength={160} onBlur={(event) => void suggestCategory(event.target.value)} />}
+        {(props) => <Input {...props} name="description" placeholder={kind === "income" ? "e.g. Harbour Books pay" : "e.g. Starbucks"} defaultValue={item?.description ?? prefill?.description} required maxLength={160} onBlur={(event) => void suggestCategory(event.target.value)} />}
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -275,39 +308,54 @@ function TransactionForm({ item, dashboard, onSubmit, onRequestDelete, onCreate 
   );
 }
 
-const QUICK_ADD_EXAMPLES = ["coffee 4.50 at Starbucks yesterday", "got paid 1264 from Harbour Books", "groceries 62.10 oct 22"];
+const FREQUENCY_WORDS: Record<BillFrequency, string> = { weekly: "weekly", biweekly: "every 2 weeks", monthly: "monthly", yearly: "yearly" };
 
-/** One line of plain language ("lunch 14 friday") read into the form fields below. */
-function QuickAdd({ onParsed, filled }: { onParsed: (parsed: ParsedTransaction) => void; filled: "ai" | "built_in" | null }) {
+/** Plain-language notes ("lunch 14 friday", one or several) read into transactions to review. */
+function QuickAdd({ onParsed, filled }: { onParsed: (items: ParsedTransaction[]) => void; filled: ParsedTransaction | null }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const hintId = "quick-add-hint";
 
-  async function read(value = text) {
-    if (!value.trim() || busy) return;
+  async function read() {
+    if (!text.trim() || busy) return;
     setBusy(true);
     setError("");
     try {
-      onParsed(await assistApi.parseTransaction(value.trim().slice(0, 200)));
+      const { items } = await assistApi.parseTransactions(text.trim().slice(0, 1000));
+      if (items.length === 0) setError("Penny couldn’t find a transaction in that. Try “coffee 4.50 yesterday”.");
+      else onParsed(items);
     } catch {
-      setError("Penny couldn’t read that. Fill in the fields below instead.");
+      setError("Penny couldn’t read that. Add it manually below instead.");
     } finally {
       setBusy(false);
     }
   }
 
+  const repeat = filled?.repeat && filled.kind === "spending" ? filled.repeat : null;
   return (
     <div className="rounded-2xl border border-accent/30 bg-accent-soft/50 p-3">
       <label htmlFor="quick-add" className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Wand2 className="size-4 text-accent-strong" aria-hidden="true" />Quick add</label>
-      <div className="mt-2 flex gap-2">
-        <Input id="quick-add" value={text} maxLength={200} aria-describedby={hintId} placeholder={QUICK_ADD_EXAMPLES[0]} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void read(); } }} className="min-w-0 flex-1 bg-surface" />
-        <Button type="button" variant="outline" onClick={() => void read()} disabled={busy || !text.trim()} className="shrink-0 bg-surface">
+      <div className="mt-2 flex items-start gap-2">
+        <textarea
+          id="quick-add"
+          value={text}
+          rows={text.includes("\n") ? Math.min(6, text.split("\n").length + 1) : 2}
+          maxLength={1000}
+          aria-describedby={hintId}
+          placeholder="coffee 4.50 yesterday; phone bill 65 every 2nd of the month"
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void read(); } }}
+          className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-ink-subtle focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15"
+        />
+        <Button type="button" onClick={() => void read()} disabled={busy || !text.trim()} className="shrink-0">
           {busy ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}Fill in
         </Button>
       </div>
       <p id={hintId} role="status" className={cn("mt-1.5 text-xs", error ? "text-danger" : "text-ink-subtle")}>
-        {error || (filled ? `Filled in ${filled === "ai" ? "by Penny AI" : "from your note"}. Check the details, then add it.` : "Type it like a note. Penny fills in the form, and nothing saves until you add it.")}
+        {error || (filled
+          ? `Filled in ${filled.source === "ai" ? "by Penny AI" : "from your note"}${repeat ? `, set to repeat ${FREQUENCY_WORDS[repeat.frequency]} (next ${shortDateLabel(repeat.next_due)})` : ""}. Review it below, then add it.`
+          : "Add one, or several separated by ; or a new line (Shift+Enter). Nothing saves until you review it.")}
       </p>
     </div>
   );

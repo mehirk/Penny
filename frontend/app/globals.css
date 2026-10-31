@@ -54,6 +54,13 @@
   --color-info: #356fc4;
   --color-info-soft: #e8f0fc;
 
+  /* Money in and money out. Vivid, tuned per palette, and 4.5:1 on cards and their tints. */
+  --color-money-in: #03703f;
+  --color-money-out: #b8232f;
+  --color-money-in-soft: color-mix(in srgb, var(--color-money-in) 14%, var(--color-surface));
+  --color-money-out-soft: color-mix(in srgb, var(--color-money-out) 14%, var(--color-surface));
+  --color-on-money: #ffffff;
+
   --radius-card: 1.25rem;
   --shadow-card: 0 1px 2px rgb(23 63 95 / 0.04), 0 5px 18px rgb(23 63 95 / 0.045);
   --shadow-raised: 0 14px 40px rgb(23 63 95 / 0.16), 0 2px 6px rgb(23 63 95 / 0.06);
@@ -115,6 +122,11 @@
   --color-danger-soft-hover: #4d2723;
   --color-info: #84b7ef;
   --color-info-soft: #20364f;
+  --color-money-in: #3ee08f;
+  --color-money-out: #ff8288;
+  --color-money-in-soft: color-mix(in srgb, var(--color-money-in) 22%, var(--color-surface));
+  --color-money-out-soft: color-mix(in srgb, var(--color-money-out) 22%, var(--color-surface));
+  --color-on-money: #08110c;
   --color-zone-green: #3ccf8e;
   --color-zone-green-soft: #173d2e;
   --color-zone-yellow: #f2c14e;
@@ -563,6 +575,18 @@
 /* A hairline of the accent on raised surfaces gives the luxury palettes a finished edge. */
 :root[data-palette] .dialog-content { box-shadow: var(--shadow-raised), inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent); }
 
+/* Money colours per palette (light, then dark). */
+:root[data-palette="noir"]:not([data-theme="dark"]) { --color-money-in: #0f7446; --color-money-out: #b1202d; }
+:root[data-palette="noir"][data-theme="dark"] { --color-money-in: #5fdba2; --color-money-out: #ff7b80; }
+:root[data-palette="emerald"]:not([data-theme="dark"]) { --color-money-in: #0a7240; --color-money-out: #b52a24; }
+:root[data-palette="emerald"][data-theme="dark"] { --color-money-in: #5ce49d; --color-money-out: #ff8673; }
+:root[data-palette="sapphire"]:not([data-theme="dark"]) { --color-money-in: #06775a; --color-money-out: #c01f3d; }
+:root[data-palette="sapphire"][data-theme="dark"] { --color-money-in: #41dcab; --color-money-out: #ff7189; }
+:root[data-palette="bordeaux"]:not([data-theme="dark"]) { --color-money-in: #16754a; --color-money-out: #c11d29; }
+:root[data-palette="bordeaux"][data-theme="dark"] { --color-money-in: #73dcaa; --color-money-out: #ff7c74; }
+:root[data-palette="pearl"]:not([data-theme="dark"]) { --color-money-in: #1f7349; --color-money-out: #b5321f; }
+:root[data-palette="pearl"][data-theme="dark"] { --color-money-in: #82daa9; --color-money-out: #f48a74; }
+
 /* ------------------------------------------------------------------ surface styles
    How cards and panels are built (glass, soft, clay, flat, bold), independent of the colour
    palette. Tokens are set on <body> so they win over the palette's :root values by inheritance,
@@ -646,16 +670,35 @@
 :root[data-surface="flat"] .bg-surface.border { border-color: var(--color-line-strong); }
 :root[data-surface="flat"] .shadow-sm { box-shadow: none; }
 
-/* Bold (neo-brutalism): thick ink outlines and hard offset shadows. */
-:root[data-surface="bold"] body {
-  --shadow-card: 4px 4px 0 var(--color-ink);
-  --shadow-raised: 8px 8px 0 var(--color-ink);
-  --radius-card: 0.625rem;
+/* Halo: a fine gradient edge (accent into gold) with a soft glow in the palette's accent. */
+:root[data-surface="halo"] body {
+  --shadow-card: 0 12px 32px -14px color-mix(in srgb, var(--color-accent) 40%, transparent), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-raised: 0 28px 64px -18px color-mix(in srgb, var(--color-accent) 50%, transparent), 0 2px 8px rgb(0 0 0 / 0.08);
+  --radius-card: 1.25rem;
 }
-:root[data-surface="bold"] .bg-surface.border { border-width: 2px; border-color: var(--color-ink); }
-:root[data-surface="bold"] .dialog-content { border: 2px solid var(--color-ink); }
-:root[data-surface="bold"] button.bg-primary, :root[data-surface="bold"] button.bg-danger { border: 2px solid var(--color-ink); box-shadow: 3px 3px 0 var(--color-ink); }
-:root[data-surface="bold"] button.bg-primary:active, :root[data-surface="bold"] button.bg-danger:active { transform: translate(3px, 3px); box-shadow: none; }
+:root[data-surface="halo"][data-theme="dark"] body {
+  --shadow-card: 0 0 0 1px color-mix(in srgb, var(--color-accent) 10%, transparent), 0 16px 40px -14px color-mix(in srgb, var(--color-accent) 48%, transparent), 0 1px 2px rgb(0 0 0 / 0.4);
+}
+:root[data-surface="halo"] .bg-surface.border {
+  border-color: transparent;
+  border-width: 1.5px;
+  background:
+    linear-gradient(var(--color-surface), var(--color-surface)) padding-box,
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--color-accent) 75%, transparent),
+      color-mix(in srgb, var(--color-gold) 60%, transparent) 40%,
+      color-mix(in srgb, var(--color-line) 70%, transparent) 70%,
+      color-mix(in srgb, var(--color-accent) 45%, transparent)) border-box;
+}
+:root[data-surface="halo"] .dialog-content { box-shadow: var(--shadow-raised), inset 0 0 0 1px color-mix(in srgb, var(--color-gold) 45%, transparent); }
+
+/* A brief ring on the section you just jumped to from Home. */
+@keyframes spotlight {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent); }
+  25% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 55%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent); }
+}
+.penny-spotlight { animation: spotlight 1.6s ease-out; border-radius: var(--radius-card); }
 
 /* Smooth colour change when the theme is switched (never on first paint). */
 :root.theme-transition, :root.theme-transition * {

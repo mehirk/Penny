@@ -21,7 +21,7 @@ export const PALETTE_OPTIONS: { value: PaletteSetting; label: string; descriptio
 const PALETTE_VALUES = PALETTE_OPTIONS.map((option) => option.value);
 
 const SURFACE_KEY = "penny-surface";
-export type SurfaceSetting = "classic" | "glass" | "soft" | "clay" | "flat" | "bold";
+export type SurfaceSetting = "classic" | "glass" | "soft" | "clay" | "flat" | "halo";
 
 /** How cards and panels are built. Rules live in globals.css under [data-surface]. */
 export const SURFACE_OPTIONS: { value: SurfaceSetting; label: string; description: string }[] = [
@@ -30,7 +30,7 @@ export const SURFACE_OPTIONS: { value: SurfaceSetting; label: string; descriptio
   { value: "soft", label: "Soft", description: "Neumorphic: pressed out of the page." },
   { value: "clay", label: "Clay", description: "Puffy, rounded, and playful." },
   { value: "flat", label: "Flat", description: "No shadows, crisp hairlines." },
-  { value: "bold", label: "Bold", description: "Neo-brutalist outlines and hard shadows." },
+  { value: "halo", label: "Halo", description: "A fine gilded edge with a soft glow." },
 ];
 const SURFACE_VALUES = SURFACE_OPTIONS.map((option) => option.value);
 

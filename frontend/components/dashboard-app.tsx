@@ -39,6 +39,21 @@ const isTyping = (target: EventTarget | null) =>
   !target.closest("[role=dialog][data-state=closed]") &&
   (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
+/** Scrolls to a section once it has rendered, and rings it briefly so the eye lands on it. */
+function spotlight(id: string, attempt = 0) {
+  const element = document.getElementById(id);
+  if (!element) {
+    if (attempt < 20) window.setTimeout(() => spotlight(id, attempt + 1), 100);
+    return;
+  }
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  element.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  element.classList.remove("penny-spotlight");
+  void element.offsetWidth;
+  element.classList.add("penny-spotlight");
+  window.setTimeout(() => element.classList.remove("penny-spotlight"), 1800);
+}
+
 /** Runs a UI update inside a view transition where supported (and motion is allowed). */
 function withViewTransition(update: () => void) {
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -146,13 +161,16 @@ function PennyApp() {
     return () => { active = false; window.removeEventListener("hashchange", fromHash); };
   }, [prefetch, remember]);
 
-  const navigate = useCallback((target: View) => {
+  /** Opens a view; with `anchor`, scrolls to that section and briefly highlights it. */
+  const navigate = useCallback((target: View, anchor?: string) => {
     const next = target === "recurring" ? "spending" : target;
     if (target === "recurring") setSpendingTab("recurring");
+    else if (target === "spending" && anchor) setSpendingTab("transactions");
     withViewTransition(() => setView(next));
     if (window.location.hash !== `#${next}`) window.history.pushState(null, "", `#${next}`);
     window.scrollTo({ top: 0 });
     window.requestAnimationFrame(() => document.getElementById("page-title")?.focus({ preventScroll: true }));
+    if (anchor) spotlight(anchor);
   }, []);
 
   /** Shows a period immediately from cache (if seen before), then refreshes it from the API. */
@@ -338,7 +356,7 @@ function PennyApp() {
         <main id="main" tabIndex={-1} className="mx-auto max-w-7xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-5 focus:outline-none sm:px-6 lg:px-10 lg:pb-12 lg:pt-8">
           <div key={view} className={monthLoading ? "animate-fade opacity-70 transition-opacity duration-200" : "animate-fade transition-opacity duration-200"} aria-busy={monthLoading}>
             {view === "today" && <TodayView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
-            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: markBillPaid, onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} />}
+            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: markBillPaid, onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} />}
             {view === "accounts" && <AccountsView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
             {view === "goals" && <GoalsView dashboard={dashboard} onAsk={askPenny} onAdd={() => setGoalTarget("new")} onEdit={setGoalTarget} onAddMoney={setAddMoneyTarget} onComplete={(goal) => void mutate(() => dashboardApi.updateGoal(goal.id, { status: "completed" }, month), `${goal.name} reached`)} />}
             {view === "invest" && <InvestView dashboard={dashboard} onNavigate={navigate} />}
@@ -415,6 +433,20 @@ function EditDialogs({ dashboard, mutate, onCreate, onOpenMonth, transaction, bu
         onCreate={onCreate}
         onClose={() => setTransactionTarget(null)}
         onRequestDelete={deleteTransaction}
+        onSubmitMany={async (bodies) => {
+          // One normal create call per transaction. If one fails, the ones before it are kept,
+          // and the review list drops them so nothing is added twice.
+          let saved = 0;
+          const error = await mutate(async () => {
+            let data: Dashboard | null = null;
+            for (const body of bodies) { data = await dashboardApi.createTransaction(body, month); saved += 1; }
+            if (!data) throw new Error("Nothing to add");
+            return data;
+          }, `${bodies.length} transaction${bodies.length === 1 ? "" : "s"} added`);
+          if (error && saved > 0) await onCreate(() => dashboardApi.load(month));
+          if (!error) setTransactionTarget(null);
+          return { error, saved };
+        }}
         onSubmit={(id, body) => saveAndClose(mutate(() => ("splits" in body ? dashboardApi.createSplitTransaction(body, month) : id ? dashboardApi.updateTransaction(id, body, month) : dashboardApi.createTransaction(body, month)), () => transactionSaved(id, body.occurred_on)), () => setTransactionTarget(null))}
       />
       <BudgetDialog

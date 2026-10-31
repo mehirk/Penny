@@ -205,6 +205,44 @@ class RecurringExpense(DashboardModel):
     auto_record: bool
     last_paid_on: date | None
     payment_count: int = Field(ge=0)
+    last_paid_cents: int | None = None
+    total_paid_cents: int = Field(default=0, ge=0)
+    paid_this_month: bool = False
+    # overdue: the due date passed and it isn't paid; due_soon: within 7 days; later: after that.
+    status: Literal["overdue", "due_soon", "later"] = "later"
+
+
+class RecurringPayment(DashboardModel):
+    """A payment already made toward a recurring bill."""
+
+    bill_id: str
+    name: str
+    occurred_on: date
+    amount_cents: int = Field(gt=0)
+    paid_automatically: bool | None
+
+
+class UpcomingPayment(DashboardModel):
+    """One scheduled due date (weekly bills appear once per week)."""
+
+    bill_id: str
+    name: str
+    due_on: date
+    days_until_due: int
+    amount_cents: int = Field(gt=0)
+    auto_record: bool
+    kind: Literal["bill", "subscription"]
+
+
+class RecurringMonth(DashboardModel):
+    """This calendar month at a glance: what's been paid and what's still to come."""
+
+    paid_count: int = Field(ge=0)
+    paid_cents: int = Field(ge=0)
+    left_count: int = Field(ge=0)
+    left_cents: int = Field(ge=0)
+    overdue_count: int = Field(ge=0)
+    overdue_cents: int = Field(ge=0)
 
 
 class RecurringSuggestion(DashboardModel):
@@ -218,6 +256,12 @@ class RecurringSuggestion(DashboardModel):
 
 class RecurringSummary(DashboardModel):
     items: list[RecurringExpense]
+    bill_count: int = Field(default=0, ge=0)
+    subscription_count: int = Field(default=0, ge=0)
+    this_month: RecurringMonth | None = None
+    # Every due date in the next 30 days, soonest first, and the latest payments made.
+    upcoming: list[UpcomingPayment] = Field(default_factory=list)
+    recent_payments: list[RecurringPayment] = Field(default_factory=list)
     suggestions: list[RecurringSuggestion]
     fixed_monthly_cents: int = Field(ge=0)
     subscriptions_monthly_cents: int = Field(ge=0)
@@ -609,6 +653,8 @@ class ImportResult(DashboardModel):
     imported: int
     skipped: int
     errors: list[str]
+    # Rows the keyword rules couldn't place that Penny AI categorized instead.
+    ai_categorized: int = 0
     dashboard: DashboardResponse
 
 

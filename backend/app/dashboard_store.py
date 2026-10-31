@@ -1559,6 +1559,36 @@ class DashboardStore:
                 imported += 1
             return imported, errors
 
+    def uncategorized(self, user_id: str) -> list[tuple[str, str]]:
+        """Distinct (description, kind) pairs that still have no category."""
+        with self._lock:
+            self.require_owner(user_id)
+            seen: dict[tuple[str, str], tuple[str, str]] = {}
+            for t in self._transactions.values():
+                if t.category_id is None:
+                    seen.setdefault((t.description.casefold(), t.kind), (t.description, t.kind))
+            return list(seen.values())
+
+    def apply_categories(self, user_id: str, picks: dict[tuple[str, str], str]) -> int:
+        """Sets categories on uncategorized transactions by (description, kind). Returns how many
+        changed. Only categories of the matching kind are applied."""
+        with self._lock:
+            self.require_owner(user_id)
+            changed = 0
+            for item_id, t in list(self._transactions.items()):
+                category_id = picks.get((t.description.casefold(), t.kind))
+                category = self._categories.get(category_id) if category_id else None
+                if t.category_id is None and category and category.kind == t.kind:
+                    self._transactions[item_id] = t.model_copy(
+                        update={
+                            "category_id": category.id,
+                            "category": category.name,
+                            "auto_categorized": True,
+                        }
+                    )
+                    changed += 1
+            return changed
+
     def is_owner(self, user_id: str) -> bool:
         return user_id in self._owner_user_ids
 

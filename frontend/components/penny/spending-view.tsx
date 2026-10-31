@@ -25,6 +25,7 @@ type Props = {
   recurring: RecurringActions;
   onAsk: (question: string) => void;
   onSelectMonth: (month: string) => void;
+  onChangePeriod?: (range: { start: string; end: string }) => void;
   onAddTransaction: () => void;
   onEditTransaction: (item: Transaction) => void;
   onDeleteTransaction: (item: Transaction) => void;
@@ -59,7 +60,7 @@ export function SpendingView(props: Props) {
       </div>
       {tab === "transactions" ? (
         <div id="spending-panel-transactions" role="tabpanel" aria-labelledby="spending-tab-transactions" className="space-y-8">
-          <TransactionsPanel dashboard={dashboard} onAdd={props.onAddTransaction} onEdit={props.onEditTransaction} onDelete={props.onDeleteTransaction} />
+          <TransactionsPanel dashboard={dashboard} onChangePeriod={props.onChangePeriod} onAdd={props.onAddTransaction} onEdit={props.onEditTransaction} onDelete={props.onDeleteTransaction} />
           <SpendingTake dashboard={dashboard} version={props.historyVersion} onAsk={props.onAsk} />
           <Budgets {...props} />
           <Trends dashboard={dashboard} historyVersion={props.historyVersion} onSelectMonth={props.onSelectMonth} />
@@ -84,7 +85,7 @@ function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyB
   const carried = dashboard.budgets.some((budget) => budget.carried_over);
   const over = totals.budget_remaining_cents < 0;
   return (
-    <Card className="p-5 sm:p-6">
+    <Card id="budgets" className="scroll-mt-28 p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-ink">Budgets</h2>
@@ -140,7 +141,7 @@ function Trends({ dashboard, historyVersion, onSelectMonth }: { dashboard: Dashb
   const history = useHistory(addMonths(dashboard.active_month, -(range - 1)), dashboard.active_month, historyVersion);
   const colourFor = categoryColours(dashboard.categories);
   return (
-    <section aria-labelledby="trends-title">
+    <section id="trends" aria-labelledby="trends-title" className="scroll-mt-28 rounded-[var(--radius-card)]">
       <SectionHeading id="trends-title" title="Trends" description="Select a month to open it." action={
         <div className="flex rounded-xl bg-sage-soft p-1" role="radiogroup" aria-label="Range">
           {([6, 12] as const).map((value) => <button key={value} type="button" role="radio" aria-checked={range === value} onClick={() => setRange(value)} className={cn("min-h-10 rounded-lg px-3 text-sm font-semibold", range === value ? "bg-surface text-ink shadow-sm" : "text-ink-subtle")}>{value} months</button>)}

@@ -1,7 +1,7 @@
 "use client";
 
 import { type ChangeEvent, useState } from "react";
-import { Banknote, Check, FileUp, Lock, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
+import { Banknote, Check, FileUp, Lock, ShieldCheck, Sparkles, Tags, Trash2, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -104,7 +104,7 @@ function PayScheduleSection({ dashboard, save }: { dashboard: Dashboard; save: S
 
   return (
     <section className={SECTION} aria-labelledby="pay-title">
-      <h2 id="pay-title" className="flex items-center gap-2 text-lg font-semibold text-ink"><Banknote className="size-5 text-[#0d7a4d] dark:text-zone-green" aria-hidden="true" />When you get paid</h2>
+      <h2 id="pay-title" className="flex items-center gap-2 text-lg font-semibold text-ink"><Banknote className="size-5 text-money-in" aria-hidden="true" />When you get paid</h2>
       <p className="mt-1 text-sm text-ink-subtle">Your payday forecast and pay cycles are built from this.</p>
       <form onSubmit={submit} onChange={() => setSaved(false)} className="mt-4 space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -234,7 +234,7 @@ function CategoryRow({ name, custom, onDelete }: { name: string; custom: boolean
 
 function ImportSection({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
   const [account, setAccount] = useState(dashboard.accounts.find((item) => item.account_type === "chequing")?.id ?? dashboard.accounts[0]?.id ?? "");
-  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[]; ai_categorized: number } | null>(null);
   const [error, setError] = useState("");
 
   async function onFile(event: ChangeEvent<HTMLInputElement>) {
@@ -243,7 +243,7 @@ function ImportSection({ dashboard, save }: { dashboard: Dashboard; save: SaveCh
     if (!file) return;
     if (file.size > 400_000) { setError("That file is too big. Split it into smaller files."); return; }
     const text = await file.text();
-    let summary: { imported: number; skipped: number; errors: string[] } | null = null;
+    let summary: { imported: number; skipped: number; errors: string[]; ai_categorized: number } | null = null;
     const failure = await save(async () => { const response = await dashboardApi.importCsv(text, account); summary = response; return response.dashboard; }, "Import finished");
     setError(failure ?? "");
     setResult(summary);
@@ -264,6 +264,7 @@ function ImportSection({ dashboard, save }: { dashboard: Dashboard; save: SaveCh
       {result && (
         <div className="mt-3 rounded-xl bg-sage-soft p-3 text-sm" role="status">
           <p className="font-semibold text-ink">Imported {result.imported} transaction{result.imported === 1 ? "" : "s"}{result.skipped ? `, skipped ${result.skipped}` : ""}.</p>
+          {result.ai_categorized > 0 && <p className="mt-1 flex items-center gap-1.5 text-ink-muted"><Sparkles className="size-3.5 text-accent-strong" aria-hidden="true" />Penny AI sorted {result.ai_categorized} that the usual rules couldn’t place. They’re tagged “Auto” so you can check them.</p>}
           {result.errors.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-ink-muted">{result.errors.map((item, index) => <li key={index}>{item}</li>)}</ul>}
         </div>
       )}

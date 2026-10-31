@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowDownLeft, ArrowUpDown, ArrowUpRight, CalendarDays, ChevronRight, Download, Pencil, Plus, ReceiptText, Repeat, Search, Trash2, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpDown, ArrowUpRight, CalendarDays, ChevronRight, Download, LoaderCircle, Pencil, Plus, ReceiptText, Repeat, Search, Sparkles, Trash2, X } from "lucide-react";
 import { Calendar, shortDateLabel } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
-import type { Dashboard, Transaction } from "@/lib/api";
+import { assistApi, type Dashboard, type SearchFilters, type Transaction } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { EMPTY_FILTERS, filterTransactions, hasActiveFilters, type KindFilter, sortTransactions, type TransactionFilters, type TransactionSort, transactionsToCsv } from "@/lib/transactions";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,8 @@ import { cad, EmptyState } from "./shared";
 
 type Props = {
   dashboard: Dashboard;
+  /** Switches the period on screen, for searches about another month. */
+  onChangePeriod?: (range: { start: string; end: string }) => void;
   onAdd: () => void;
   onEdit: (item: Transaction) => void;
   onDelete: (item: Transaction) => void;
@@ -34,8 +36,46 @@ const SORT_OPTIONS: { value: TransactionSort; label: string }[] = [
 /** Filter controls share one compact size so the bar reads as a single row of tools. */
 const CONTROL = "min-h-10 rounded-lg text-sm";
 
-export function TransactionsPanel({ dashboard, onAdd, onEdit, onDelete }: Props) {
+export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, onDelete }: Props) {
   const [filters, setFilters] = useState<TransactionFilters>(EMPTY_FILTERS);
+  const [understood, setUnderstood] = useState<{ summary: string; source: SearchFilters["source"] } | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+
+  /** Enter in the search box: Penny reads the words into filters (the list itself is exact). */
+  async function smartSearch() {
+    const text = filters.query.trim();
+    if (!text || searching) return;
+    setSearching(true);
+    setSearchError("");
+    try {
+      const result = await assistApi.search(text);
+      const { period: shown } = dashboard;
+      if (result.start && result.end && onChangePeriod && (result.start < shown.start || result.end > shown.end)) {
+        onChangePeriod({ start: result.start.slice(0, 8) + "01", end: result.end });
+      }
+      setFilters({
+        query: result.query,
+        kind: result.kind,
+        category: result.category_id ?? "all",
+        from: result.start ?? "",
+        to: result.end ?? "",
+        minCents: result.min_cents,
+        maxCents: result.max_cents,
+      });
+      setUnderstood({ summary: result.summary, source: result.source });
+    } catch {
+      setSearchError("Smart search isn’t available right now; filtering by text instead.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function clearAll() {
+    setFilters(EMPTY_FILTERS);
+    setUnderstood(null);
+    setSearchError("");
+  }
   const [sort, setSort] = useState<TransactionSort>("newest");
   const [expanded, setExpanded] = useState<string | null>(null);
   const headingId = useId();
@@ -60,7 +100,7 @@ export function TransactionsPanel({ dashboard, onAdd, onEdit, onDelete }: Props)
   }
 
   return (
-    <Card className="flex flex-col">
+    <Card id="transactions" className="scroll-mt-28 flex flex-col">
       <div className="flex items-center justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
         <div className="min-w-0">
           <h2 id={headingId} className="text-lg font-semibold tracking-tight text-ink">Transactions</h2>
@@ -78,7 +118,10 @@ export function TransactionsPanel({ dashboard, onAdd, onEdit, onDelete }: Props)
             <div className="relative min-w-full flex-1 sm:min-w-56">
               <label htmlFor={searchId} className="sr-only">Search transactions</label>
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-subtle" aria-hidden="true" />
-              <Input id={searchId} type="search" placeholder="Search by merchant or description" value={filters.query} onChange={(event) => setFilters({ ...filters, query: event.target.value })} className={cn(CONTROL, "pl-9")} />
+              <Input id={searchId} type="search" placeholder="Search, or ask: “eating out over $20 last month”" value={filters.query} aria-describedby={`${searchId}-hint`} onChange={(event) => { setFilters({ ...filters, query: event.target.value }); setUnderstood(null); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void smartSearch(); } }} className={cn(CONTROL, "pl-9 pr-10")} />
+              <button type="button" onClick={() => void smartSearch()} disabled={searching || !filters.query.trim()} aria-label="Smart search with Penny" title="Smart search (Enter)" className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-accent-strong hover:bg-accent-soft disabled:opacity-40">
+                {searching ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
+              </button>
             </div>
             {/* On phones the controls share one row that scrolls sideways. */}
             <div className="scroll-area -mx-4 flex min-w-0 items-center gap-2 overflow-x-auto px-4 pb-0.5 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&>*]:shrink-0">
@@ -104,9 +147,14 @@ export function TransactionsPanel({ dashboard, onAdd, onEdit, onDelete }: Props)
                 {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </Select>
             </span>
-            {filtering && <Button variant="ghost" size="sm" onClick={() => setFilters(EMPTY_FILTERS)}><X className="size-4" aria-hidden="true" />Clear</Button>}
+            {filtering && <Button variant="ghost" size="sm" onClick={clearAll}><X className="size-4" aria-hidden="true" />Clear</Button>}
             </div>
           </div>
+          <p id={`${searchId}-hint`} aria-live="polite" className={cn("mt-2 flex flex-wrap items-center gap-1.5 text-xs", searchError ? "text-danger" : "text-ink-subtle")}>
+            {searchError || (understood
+              ? <><Sparkles className="size-3.5 text-accent-strong" aria-hidden="true" />Showing <span className="font-semibold text-ink">{understood.summary}</span>{understood.source === "ai" ? " · read by Penny AI" : ""}</>
+              : "Type to filter by name, or press Enter to search in plain words.")}
+          </p>
         </div>
       )}
 
@@ -116,7 +164,7 @@ export function TransactionsPanel({ dashboard, onAdd, onEdit, onDelete }: Props)
         </div>
       ) : rows.length === 0 ? (
         <div className="p-5">
-          <EmptyState icon={Search} title="No matching transactions" description="Try a different search, or clear the filters to see everything." action={<Button size="sm" variant="outline" onClick={() => setFilters(EMPTY_FILTERS)}><X className="size-4" aria-hidden="true" />Clear filters</Button>} />
+          <EmptyState icon={Search} title="No matching transactions" description="Try a different search, or clear the filters to see everything." action={<Button size="sm" variant="outline" onClick={clearAll}><X className="size-4" aria-hidden="true" />Clear filters</Button>} />
         </div>
       ) : (
         <div tabIndex={0} role="region" aria-labelledby={headingId} className="scroll-area relative max-h-[min(34rem,65dvh)] overflow-y-auto rounded-b-[var(--radius-card)] focus-visible:outline-offset-[-3px]">
@@ -138,14 +186,14 @@ export function TransactionsPanel({ dashboard, onAdd, onEdit, onDelete }: Props)
                     <td className="border-b border-line/70 p-0 group-last:border-b-0 md:py-3 md:pl-5 md:pr-3">
                       <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left md:hidden" aria-expanded={expanded === item.id} aria-label={`${item.description}, ${income ? "money in" : "money out"} ${cad(item.amount_cents)}, ${item.category}, ${formatShortDate(item.occurred_on)}. Show details`}>
                         <TransactionIdentity item={item} />
-                        <span className={cn("tabular whitespace-nowrap shrink-0 font-semibold", income ? "text-accent-strong" : "text-ink")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</span>
+                        <span className={cn("tabular whitespace-nowrap shrink-0 font-semibold", income ? "text-money-in" : "text-money-out")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</span>
                         <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
                       </button>
                       <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id} className="hidden min-w-0 items-center gap-3 text-left md:flex"><TransactionIdentity item={item} /></button>
                       {expanded === item.id && <div className="mx-4 mb-3 rounded-xl bg-sage-soft p-3 text-xs text-ink-muted md:mx-0 md:mb-0 md:mt-2"><p>{income ? "Income" : "Expense"} · {accounts.get(item.account_id) ?? "Unknown account"}{item.bill_id ? ` · ${item.paid_automatically === true ? "paid automatically" : item.paid_automatically === false ? "you marked it paid" : "recurring payment"}` : ""}</p><div className="mt-2 flex gap-2 md:hidden"><Button size="sm" variant="outline" onClick={() => onEdit(item)}>Edit</Button><Button size="sm" variant="destructive-soft" onClick={() => onDelete(item)}>Delete</Button></div></div>}
                     </td>
                     <td className="hidden truncate border-b border-line/70 px-3 py-3 text-ink-muted group-last:border-b-0 lg:table-cell">{accounts.get(item.account_id) ?? "—"}</td>
-                    <td className={cn("tabular hidden whitespace-nowrap border-b border-line/70 px-3 py-3 text-right font-semibold group-last:border-b-0 md:table-cell", income ? "text-accent-strong" : "text-ink")}>
+                    <td className={cn("tabular hidden whitespace-nowrap border-b border-line/70 px-3 py-3 text-right font-semibold group-last:border-b-0 md:table-cell", income ? "text-money-in" : "text-money-out")}>
                       {income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}
                     </td>
                     <td className="hidden border-b border-line/70 py-2 pl-3 pr-4 text-right group-last:border-b-0 md:table-cell">
@@ -169,7 +217,7 @@ function TransactionIdentity({ item }: { item: Transaction }) {
   const income = item.kind === "income";
   return (
     <>
-      <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", income ? "bg-accent-soft text-accent-strong" : "bg-danger-soft text-danger")} aria-hidden="true">
+      <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", income ? "bg-money-in-soft text-money-in" : "bg-money-out-soft text-money-out")} aria-hidden="true">
         {income ? <ArrowDownLeft className="size-[1.1rem]" /> : <ArrowUpRight className="size-[1.1rem]" />}
       </span>
       <span className="min-w-0 flex-1">

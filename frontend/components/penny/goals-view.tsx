@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRightLeft, CalendarDays, Check, CircleCheck, Landmark, Pencil, PiggyBank, Plus, Sparkles, Target } from "lucide-react";
+import { useState } from "react";
+import { ArrowRightLeft, CalendarDays, Check, CircleCheck, Landmark, MessageCircle, Pencil, PiggyBank, Plus, Sparkles, Target } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import type { Dashboard, SavingsGoal } from "@/lib/api";
 import { formatLongDate, formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { cad, EmptyState } from "./shared";
+import { GoalPlan } from "./smart-cards";
 
 type Props = {
   dashboard: Dashboard;
@@ -67,6 +69,7 @@ function GoalCard({ goal, accounts, onEdit, onAddMoney, onComplete, onAsk }: { g
   const done = goal.status === "completed";
   const needed = goal.monthly_needed_cents;
   const leftThisMonth = needed === null ? null : Math.max(0, needed - goal.contributed_this_month_cents);
+  const [planning, setPlanning] = useState(false);
   return (
     <li>
       <Card className={cn("flex h-full flex-col p-5 sm:p-6", done && "border-accent/40")}>
@@ -90,10 +93,13 @@ function GoalCard({ goal, accounts, onEdit, onAddMoney, onComplete, onAsk }: { g
         {!done && needed !== null && leftThisMonth !== null && (
           <p className={cn("mt-4 flex items-start gap-2 rounded-xl p-3 text-sm", leftThisMonth === 0 ? "bg-zone-green-soft text-ink" : "bg-accent-soft text-ink-muted")}>
             {leftThisMonth === 0
-              ? <><CircleCheck className="mt-0.5 size-4 shrink-0 text-[#0d7a4d] dark:text-zone-green" aria-hidden="true" /><span>On track this month: you’ve added <span className="tabular font-semibold text-ink">{cad(goal.contributed_this_month_cents)}</span>.</span></>
+              ? <><CircleCheck className="mt-0.5 size-4 shrink-0 text-money-in" aria-hidden="true" /><span>On track this month: you’ve added <span className="tabular font-semibold text-ink">{cad(goal.contributed_this_month_cents)}</span>.</span></>
               : <span>Add <span className="tabular font-semibold text-ink">{cad(leftThisMonth)}</span> more this month to stay on schedule ({cad(needed)} a month).</span>}
           </p>
         )}
+
+        {planning && !done && <GoalPlan goalId={goal.id} version={goal.current_cents} />}
+        {planning && !done && <Button size="sm" variant="ghost" className="mt-1 -ml-2 self-start" onClick={() => onAsk(`How can I reach my ${goal.name} goal sooner?`)}><MessageCircle className="size-4" aria-hidden="true" />Talk it through with Penny AI</Button>}
 
         {goal.recent_contributions.length > 0 && (
           <div className="mt-4">
@@ -102,7 +108,7 @@ function GoalCard({ goal, accounts, onEdit, onAddMoney, onComplete, onAsk }: { g
               {goal.recent_contributions.slice(0, 3).map((item) => (
                 <li key={item.id} className="flex items-center justify-between gap-3 py-1.5">
                   <span className="min-w-0 truncate text-ink-muted">{formatShortDate(item.occurred_on)} · from {accounts.get(item.from_account_id) ?? "an account"}{item.source === "penny" ? " · via Penny" : ""}</span>
-                  <span className="tabular shrink-0 font-semibold text-[#0d7a4d] dark:text-zone-green">+{cad(item.amount_cents)}</span>
+                  <span className="tabular shrink-0 font-semibold text-money-in">+{cad(item.amount_cents)}</span>
                 </li>
               ))}
             </ul>
@@ -112,7 +118,7 @@ function GoalCard({ goal, accounts, onEdit, onAddMoney, onComplete, onAsk }: { g
         <div className="mt-auto flex flex-wrap gap-2 pt-4">
           <Button size="sm" onClick={() => onAddMoney(goal)} disabled={done}><PiggyBank className="size-4" aria-hidden="true" />Add money</Button>
           <Button size="sm" variant="outline" onClick={() => onEdit(goal)}><Pencil className="size-4" aria-hidden="true" />Edit</Button>
-          {!done && <Button size="sm" variant="ghost" onClick={() => onAsk(`How can I reach my ${goal.name} goal sooner?`)}><Sparkles className="size-4" aria-hidden="true" />Ask Penny</Button>}
+          {!done && <Button size="sm" variant="ghost" aria-expanded={planning} onClick={() => setPlanning((value) => !value)}><Sparkles className="size-4" aria-hidden="true" />{planning ? "Hide plan" : "Plan with Penny"}</Button>}
           {!done && goal.current_cents >= goal.target_cents && <Button size="sm" variant="ghost" onClick={() => onComplete(goal)}><Check className="size-4" aria-hidden="true" />Mark reached</Button>}
         </div>
       </Card>

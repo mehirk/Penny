@@ -14,9 +14,26 @@ import { cad, type View } from "./shared";
 
 type Props = {
   dashboard: Dashboard;
-  onNavigate: (view: View) => void;
+  onNavigate: (view: View, anchor?: string) => void;
   onAsk: (question: string) => void;
 };
+
+/** Questions built from the user's own numbers, most pressing first; generic ones fill the rest. */
+function personalPrompts(dashboard: Dashboard): { icon: LucideIcon; text: string }[] {
+  const prompts: { icon: LucideIcon; text: string }[] = [];
+  const over = [...dashboard.budgets].filter((b) => !b.carried_over && b.remaining_cents < 0).sort((a, b) => a.remaining_cents - b.remaining_cents)[0];
+  if (over) prompts.push({ icon: BarChart3, text: `How do I get ${over.category_name} back under budget?` });
+  const due = dashboard.recurring.upcoming.find((item) => item.days_until_due <= 3);
+  if (due) prompts.push({ icon: Home, text: `Can I comfortably cover ${due.name} (${cad(due.amount_cents)})?` });
+  const behind = dashboard.savings_goals.find((g) => g.status === "active" && g.monthly_needed_cents && g.contributed_this_month_cents < g.monthly_needed_cents);
+  if (behind) prompts.push({ icon: PiggyBank, text: `How can I catch up on my ${behind.name}?` });
+  if (dashboard.credit && dashboard.credit.utilization_basis_points > 3000) prompts.push({ icon: CreditCard, text: "How do I bring my card under 30%?" });
+  for (const fallback of AI_PROMPTS) {
+    if (prompts.length >= 4) break;
+    if (!prompts.some((item) => item.icon === fallback.icon)) prompts.push(fallback);
+  }
+  return prompts.slice(0, 4);
+}
 
 const AI_PROMPTS = [
   { icon: ShoppingCart, text: "Can I afford this purchase?" },
@@ -35,11 +52,11 @@ export function TodayView({ dashboard, onNavigate, onAsk }: Props) {
           <SpendingOverview dashboard={dashboard} onNavigate={onNavigate} />
           <div className="grid gap-5 md:grid-cols-[1fr_1.35fr] [&>*]:min-w-0">
             <HealthCard dashboard={dashboard} onExplain={() => setScoreInfo(true)} />
-            <PennyCard onAsk={onAsk} onOpen={() => onNavigate("ai")} />
+            <PennyCard dashboard={dashboard} onAsk={onAsk} onOpen={() => onNavigate("ai")} />
           </div>
         </div>
         <div className="space-y-5">
-          <RecentTransactions dashboard={dashboard} onOpen={() => onNavigate("spending")} />
+          <RecentTransactions dashboard={dashboard} onOpen={() => onNavigate("spending", "transactions")} />
           <UpcomingBills dashboard={dashboard} onOpen={() => onNavigate("recurring")} />
           <LearningStreak dashboard={dashboard} onOpen={() => onNavigate("learn")} />
         </div>
@@ -53,21 +70,21 @@ export function TodayView({ dashboard, onNavigate, onAsk }: Props) {
 
 const percent = (basisPoints: number) => `${Math.abs(basisPoints / 100).toFixed(1).replace(/\.0$/, "")}%`;
 
-function MetricCards({ dashboard, onNavigate }: { dashboard: Dashboard; onNavigate: (view: View) => void }) {
+function MetricCards({ dashboard, onNavigate }: { dashboard: Dashboard; onNavigate: (view: View, anchor?: string) => void }) {
   const { home, credit } = dashboard;
   const savedShare = home.monthly_goal_cents > 0 ? Math.min(100, Math.max(0, Math.round((home.monthly_saved_cents * 100) / home.monthly_goal_cents))) : null;
   const used = dashboard.totals.total_budget_cents ? Math.min(100, (dashboard.totals.spending_cents * 100) / dashboard.totals.total_budget_cents) : 0;
   return (
     <section aria-label="Key numbers" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-      <Metric icon={Wallet} tone="bg-zone-green-soft text-[#0d7a4d] dark:text-zone-green" title="Total cash" value={cad(home.cash_cents)} onOpen={() => onNavigate("spending")}
+      <Metric icon={Wallet} tone="bg-zone-green-soft text-money-in" title="Total cash" value={cad(home.cash_cents)} onOpen={() => onNavigate("accounts", "total-balance")}
         note={home.cash_change_basis_points !== null && <Change basisPoints={home.cash_change_basis_points} suffix="from last month" />}>
         <Sparkline points={home.cash_history} colour="var(--color-zone-green)" label="Cash over the last six months" />
       </Metric>
-      <Metric icon={ShieldCheck} tone="bg-info-soft text-info" title="Safe to spend" value={cad(dashboard.spending_power_cents)} onOpen={() => onNavigate("spending")}
+      <Metric icon={ShieldCheck} tone="bg-info-soft text-info" title="Safe to spend" value={cad(dashboard.spending_power_cents)} onOpen={() => onNavigate("spending", "budgets")}
         note={<span className="text-ink-subtle">after bills due before payday</span>}>
         <Bar value={used} className="bg-info" label={`${Math.round(used)}% of the budget used ${dashboard.period.phrase}`} caption={`${Math.round(used)}% of budget used`} />
       </Metric>
-      <Metric icon={CreditCard} tone="bg-[#f2ecff] text-[#7047b7] dark:bg-[#302847] dark:text-[#c1a5ee]" title="Credit used" value={credit ? percent(credit.utilization_basis_points) : "No card"} onOpen={() => onNavigate("learn")}
+      <Metric icon={CreditCard} tone="bg-[#f2ecff] text-[#7047b7] dark:bg-[#302847] dark:text-[#c1a5ee]" title="Credit used" value={credit ? percent(credit.utilization_basis_points) : "No card"} onOpen={() => (credit ? onNavigate("accounts", "account-credit") : onNavigate("settings"))}
         note={<span className="text-ink-subtle">{credit ? `${cad(credit.balance_cents)} of ${cad(credit.credit_limit_cents)}` : "Add a card in Settings"}</span>}>
         {credit && <Bar value={credit.utilization_basis_points / 100} className={credit.utilization_basis_points > 3000 ? "bg-gold" : "bg-[#9c6ade]"} label="Credit utilization" caption={credit.utilization_basis_points > 3000 ? "Above the 30% guideline" : "Under the 30% guideline"} />}
       </Metric>
@@ -97,7 +114,7 @@ function Metric({ icon: Icon, tone, title, value, note, children, onOpen }: { ic
 function Change({ basisPoints, suffix }: { basisPoints: number; suffix: string }) {
   const up = basisPoints >= 0;
   const Icon = up ? ArrowUpRight : ArrowDownRight;
-  return <span className="inline-flex items-center gap-1"><Icon className={cn("size-3.5", up ? "text-[#0d7a4d] dark:text-zone-green" : "text-danger")} aria-hidden="true" /><span className={cn("font-semibold", up ? "text-[#0d7a4d] dark:text-zone-green" : "text-danger")}>{percent(basisPoints)}</span><span className="text-ink-subtle">{suffix}</span></span>;
+  return <span className="inline-flex items-center gap-1"><Icon className={cn("size-3.5", up ? "text-money-in" : "text-danger")} aria-hidden="true" /><span className={cn("font-semibold", up ? "text-money-in" : "text-danger")}>{percent(basisPoints)}</span><span className="text-ink-subtle">{suffix}</span></span>;
 }
 
 function Bar({ value, className, label, caption }: { value: number; className: string; label: string; caption: string }) {
@@ -139,7 +156,7 @@ export function categoryIcon(category: Category | undefined, kind: Transaction["
   return (category && (CATEGORY_ICONS[category.id] ?? (category.parent_id ? CATEGORY_ICONS[category.parent_id] : undefined))) ?? Dumbbell;
 }
 
-function SpendingOverview({ dashboard, onNavigate }: { dashboard: Dashboard; onNavigate: (view: View) => void }) {
+function SpendingOverview({ dashboard, onNavigate }: { dashboard: Dashboard; onNavigate: (view: View, anchor?: string) => void }) {
   const { period } = dashboard;
   const items = dashboard.category_spending;
   const total = items.reduce((sum, item) => sum + item.spent_cents, 0);
@@ -178,8 +195,8 @@ function SpendingOverview({ dashboard, onNavigate }: { dashboard: Dashboard; onN
       )}
 
       {change !== null && (
-        <button type="button" onClick={() => onNavigate("spending")} className={cn("mt-4 flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-colors sm:p-4", change <= 0 ? "bg-zone-green-soft hover:brightness-95" : "bg-gold-soft hover:brightness-95")}>
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface/70" aria-hidden="true">{change <= 0 ? <TrendingDown className="size-5 text-[#0d7a4d] dark:text-zone-green" /> : <TrendingUp className="size-5 text-gold-strong" />}</span>
+        <button type="button" onClick={() => onNavigate("spending", "trends")} className={cn("mt-4 flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-colors sm:p-4", change <= 0 ? "bg-zone-green-soft hover:brightness-95" : "bg-gold-soft hover:brightness-95")}>
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface/70" aria-hidden="true">{change <= 0 ? <TrendingDown className="size-5 text-money-in" /> : <TrendingUp className="size-5 text-gold-strong" />}</span>
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold text-ink">{period.phrase === "this month" ? `You’re spending ${percent(change)} ${change <= 0 ? "less" : "more"} than last month so far.` : `You spent ${percent(change)} ${change <= 0 ? "less" : "more"} than the period before.`}</span>
             <span className="block text-xs text-ink-muted">Keep flexible spending under <span className="tabular font-semibold">{cad(dashboard.home.weekly_flexible_cents)}</span> this week to stay on track.</span>
@@ -223,10 +240,10 @@ function RecentTransactions({ dashboard, onOpen }: { dashboard: Dashboard; onOpe
                 <tr key={item.id} className="border-t border-line">
                   <td className="whitespace-nowrap py-2.5 pr-2 text-ink-subtle">{formatShortDate(item.occurred_on)}</td>
                   <td className="max-w-0 py-2.5 pr-2">
-                    <span className="flex items-center gap-2"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full", income ? "bg-zone-green-soft text-[#0d7a4d] dark:text-zone-green" : "bg-sage text-ink-muted")} aria-hidden="true"><Icon className="size-4" /></span><span className="truncate font-medium text-ink">{item.description}</span></span>
+                    <span className="flex items-center gap-2"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full", income ? "bg-money-in-soft text-money-in" : "bg-sage text-ink-muted")} aria-hidden="true"><Icon className="size-4" /></span><span className="truncate font-medium text-ink">{item.description}</span></span>
                   </td>
                   <td className="hidden truncate py-2.5 pr-2 text-ink-muted sm:table-cell xl:hidden">{item.category}</td>
-                  <td className={cn("tabular whitespace-nowrap py-2.5 text-right font-semibold", income ? "text-[#0d7a4d] dark:text-zone-green" : "text-danger")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</td>
+                  <td className={cn("tabular whitespace-nowrap py-2.5 text-right font-semibold", income ? "text-money-in" : "text-money-out")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</td>
                 </tr>
               );
             })}
@@ -292,7 +309,7 @@ function LearningStreak({ dashboard, onOpen }: { dashboard: Dashboard; onOpen: (
         </div>
         {learning.next_lesson && (
           <button type="button" onClick={onOpen} className="flex items-center gap-3 rounded-2xl bg-sage-soft p-3 text-left hover:bg-sage">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-zone-green-soft text-[#0d7a4d] dark:text-zone-green" aria-hidden="true"><Sprout className="size-5" /></span>
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-zone-green-soft text-money-in" aria-hidden="true"><Sprout className="size-5" /></span>
             <span className="min-w-0 flex-1"><span className="block text-[11px] text-ink-subtle">Next lesson</span><span className="block text-sm font-semibold text-ink">{learning.next_lesson.title}</span><span className="text-[11px] text-ink-subtle">2 min · +{learning.next_lesson.xp_reward} XP</span></span>
             <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
           </button>
@@ -319,7 +336,7 @@ function HealthCard({ dashboard, onExplain }: { dashboard: Dashboard; onExplain:
       <div className="mt-3 flex items-end justify-between gap-3">
         <div>
           <p className="tabular text-4xl font-semibold tracking-tight text-ink">{health.score}<span className="text-xl font-normal text-ink-subtle"> / 100</span></p>
-          {change !== null && <p className={cn("mt-1 text-sm font-semibold", change >= 0 ? "text-[#0d7a4d] dark:text-zone-green" : "text-danger")}>{change >= 0 ? "↑" : "↓"} {Math.abs(change)} pt{Math.abs(change) === 1 ? "" : "s"} <span className="whitespace-nowrap font-normal text-ink-subtle">vs last month</span></p>}
+          {change !== null && <p className={cn("mt-1 text-sm font-semibold", change >= 0 ? "text-money-in" : "text-danger")}>{change >= 0 ? "↑" : "↓"} {Math.abs(change)} pt{Math.abs(change) === 1 ? "" : "s"} <span className="whitespace-nowrap font-normal text-ink-subtle">vs last month</span></p>}
         </div>
         <div className="flex h-16 shrink-0 items-end gap-1" role="img" aria-label={`Health score by month: ${bars.join(", ")}`}>
           {bars.map((value, index) => <span key={index} className={cn("w-2.5 rounded-sm", index === bars.length - 1 ? "bg-zone-green" : "bg-sage")} style={{ height: `${Math.max(10, value)}%` }} />)}
@@ -335,7 +352,7 @@ function HealthCard({ dashboard, onExplain }: { dashboard: Dashboard; onExplain:
   );
 }
 
-function PennyCard({ onAsk, onOpen }: { onAsk: (question: string) => void; onOpen: () => void }) {
+function PennyCard({ dashboard, onAsk, onOpen }: { dashboard: Dashboard; onAsk: (question: string) => void; onOpen: () => void }) {
   return (
     <Card className="p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
@@ -346,7 +363,7 @@ function PennyCard({ onAsk, onOpen }: { onAsk: (question: string) => void; onOpe
         <button type="button" onClick={onOpen} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-ink px-4 text-sm font-semibold text-canvas hover:opacity-90">Ask Penny<ArrowRight className="size-4" aria-hidden="true" /></button>
       </div>
       <ul className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2" aria-label="Suggested questions">
-        {AI_PROMPTS.map(({ icon: Icon, text }) => (
+        {personalPrompts(dashboard).map(({ icon: Icon, text }) => (
           <li key={text}><button type="button" onClick={() => onAsk(text)} className="flex min-h-11 w-full items-center gap-2.5 rounded-xl border border-line bg-sage-soft px-3 text-left text-sm text-ink-muted hover:border-accent hover:text-ink"><Icon className="size-4 shrink-0" aria-hidden="true" />{text}</button></li>
         ))}
       </ul>

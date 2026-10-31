@@ -176,3 +176,41 @@ export function LessonExample({ lessonId }: { lessonId: string }) {
     </section>
   );
 }
+
+/** "Penny's read" on balances, at the top of Accounts. */
+export function AccountsRead({ version, onAsk }: { version: number; onAsk: (question: string) => void }) {
+  const read = useAssist<AssistText>(`accounts:${version}`, () => assistApi.accountsRead());
+  return (
+    <Card className="p-5 sm:p-6" aria-labelledby="accounts-read-title" aria-busy={read.loading}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="accounts-read-title" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-ink"><WandSparkles className="size-5 text-accent-strong" aria-hidden="true" />Penny’s read</h2>
+        {read.data && <SourceBadge source={read.data.source} />}
+      </div>
+      {read.loading
+        ? <div className="mt-4 space-y-2">{[88, 72, 80].map((width) => <div key={width} className="h-4 animate-pulse rounded bg-sage-soft" style={{ width: `${width}%` }} />)}</div>
+        : read.error
+          ? <p role="alert" className="mt-3 text-sm text-danger">Couldn’t load Penny’s read. <button type="button" className="font-semibold underline" onClick={read.retry}>Try again</button></p>
+          : <ul className="mt-3 space-y-2">{read.data?.items.map((item, index) => <li key={index} className="flex gap-2.5 text-sm leading-relaxed text-ink-muted"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />{item}</li>)}</ul>}
+      <Button size="sm" variant="ghost" className="mt-3 -ml-2" onClick={() => onAsk("Looking at all my accounts, how am I doing overall?")}><MessageCircle className="size-4" aria-hidden="true" />Talk it through with Penny AI</Button>
+    </Card>
+  );
+}
+
+/** A plan for one goal, fetched only when the user asks for it. */
+export function GoalPlan({ goalId, version }: { goalId: string; version: number }) {
+  const plan = useAssist<AssistText>(`${goalId}:${version}`, () => assistApi.goalPlan(goalId));
+  return (
+    <div className="mt-4 rounded-xl border border-accent/30 bg-accent-soft/40 p-3" aria-busy={plan.loading}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Sparkles className="size-4 text-accent-strong" aria-hidden="true" />Penny’s plan</p>
+        {plan.data && <SourceBadge source={plan.data.source} />}
+      </div>
+      {plan.loading
+        ? <div className="mt-2 space-y-1.5">{[90, 70].map((width) => <div key={width} className="h-3.5 animate-pulse rounded bg-surface/70" style={{ width: `${width}%` }} />)}</div>
+        : plan.error
+          ? <p role="alert" className="mt-1.5 text-sm text-danger">Couldn’t make a plan. <button type="button" className="font-semibold underline" onClick={plan.retry}>Try again</button></p>
+          : <ul className="mt-1.5 space-y-1.5">{plan.data?.items.map((item, index) => <li key={index} className="flex gap-2 text-sm leading-relaxed text-ink-muted"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />{item}</li>)}</ul>}
+      <p className="mt-2 text-[11px] text-ink-subtle">Educational, not financial advice.</p>
+    </div>
+  );
+}

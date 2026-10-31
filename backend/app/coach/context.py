@@ -184,8 +184,37 @@ def build_snapshot(ctx: CoachContext) -> dict[str, object]:
             }
         )
     previous = d.previous_month_cash_flow_cents
+    overview = d.accounts_overview
+    month_bills = d.recurring.this_month
+    country = ctx.store.learn_state(ctx.user_id).profile.country
     return {
-        "data_notice": "Fictional demo data. Amounts are CAD.",
+        "data_notice": (
+            "Fictional demo data. Amounts are CAD."
+            if d.profile.is_fictional
+            else "The person's own entries in Penny. Amounts are CAD."
+        ),
+        # Set in Learn. Tax, credit, and account rules differ between Canada and the US.
+        "lives_in": {"CA": "Canada", "US": "United States"}.get(country or "", "Canada (assumed)"),
+        "balances": {
+            "net_worth": f.money("Net worth", overview.net_worth_cents, "accounts"),
+            "spending_money": f.money("Spending money", overview.spending_cents, "accounts"),
+            "set_aside_for_goals": f.money("Goal money", overview.goal_cents, "goals"),
+            "owed_on_cards": f.money("Owed on cards", overview.owed_cents, "accounts"),
+        },
+        "recurring_this_month": (
+            {
+                "paid": f.money("Recurring paid this month", month_bills.paid_cents, "bills"),
+                "paid_count": month_bills.paid_count,
+                "still_to_pay": f.money(
+                    "Recurring still to pay this month",
+                    month_bills.left_cents + month_bills.overdue_cents,
+                    "bills",
+                ),
+                "overdue_count": month_bills.overdue_count,
+            }
+            if month_bills
+            else None
+        ),
         "month": month_label(ctx.month),
         "person": {
             "first_name": d.profile.display_name.split()[0],

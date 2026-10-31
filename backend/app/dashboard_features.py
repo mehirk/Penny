@@ -17,8 +17,11 @@ from app.dashboard_models import (
     MoneyDay,
     MoneyStreaks,
     RecurringExpense,
+    RecurringMonth,
+    RecurringPayment,
     RecurringSuggestion,
     RecurringSummary,
+    UpcomingPayment,
 )
 from app.domain.categorize import necessity
 from app.domain.finance import format_cad
@@ -60,6 +63,10 @@ def bill_due_dates(bill: Bill, start: date, end: date) -> list[date]:
     return dates
 
 
+UPCOMING_DAYS = 30
+RECENT_PAYMENTS = 10
+
+
 def build_recurring(
     bills: Sequence[Bill],
     transactions: Sequence[Transaction],
@@ -70,11 +77,18 @@ def build_recurring(
     typical_income_cents: int,
 ) -> RecurringSummary:
     items = []
-    payments: dict[str, int] = {}
+    paid: dict[str, list[Transaction]] = {}
     for transaction in transactions:
-        if transaction.bill_id:
-            payments[transaction.bill_id] = payments.get(transaction.bill_id, 0) + 1
+        if transaction.bill_id and transaction.occurred_on <= today:
+            paid.setdefault(transaction.bill_id, []).append(transaction)
+    in_month = lambda day: (day.year, day.month) == (active_month.year, active_month.month)  # noqa: E731
+    month_end = active_month.replace(
+        day=calendar.monthrange(active_month.year, active_month.month)[1]
+    )
     for bill in bills:
+        history = sorted(paid.get(bill.id, []), key=lambda t: t.occurred_on)
+        last = history[-1] if history else None
+        days = (bill.next_due - today).days
         # Non-essential repeating charges (streaming, memberships) read as subscriptions.
         is_subscription = necessity(bill.name, bill.category_id) == "want" or any(
             word in bill.name.casefold() for word in _SUBSCRIPTION_WORDS
@@ -88,11 +102,15 @@ def build_recurring(
                 monthly_cents=monthly_equivalent_cents(bill.amount_cents, bill.frequency),
                 frequency=bill.frequency,
                 next_due=bill.next_due,
-                days_until_due=(bill.next_due - today).days,
+                days_until_due=days,
                 kind="subscription" if is_subscription else "bill",
                 auto_record=bill.auto_record,
-                last_paid_on=bill.last_paid_on,
-                payment_count=payments.get(bill.id, 0),
+                last_paid_on=last.occurred_on if last else bill.last_paid_on,
+                payment_count=len(history),
+                last_paid_cents=last.amount_cents if last else None,
+                total_paid_cents=sum(t.amount_cents for t in history),
+                paid_this_month=any(in_month(t.occurred_on) for t in history),
+                status="overdue" if days < 0 else "due_soon" if days <= 7 else "later",
             )
         )
     items.sort(key=lambda item: item.next_due)
@@ -108,12 +126,58 @@ def build_recurring(
         for series in detect_fixed_series(transactions, active_month)
         if series.key not in known and series.amount_cents not in known_amounts
     ]
+    kinds = {item.id: item.kind for item in items}
+    horizon = today + timedelta(days=UPCOMING_DAYS)
+    upcoming = sorted(
+        (
+            UpcomingPayment(
+                bill_id=bill.id,
+                name=bill.name,
+                due_on=due,
+                days_until_due=(due - today).days,
+                amount_cents=bill.amount_cents,
+                auto_record=bill.auto_record,
+                kind=kinds[bill.id],
+            )
+            for bill in bills
+            for due in bill_due_dates(bill, today, horizon)
+        ),
+        key=lambda item: (item.due_on, item.name),
+    )
+    month_payments = [t for rows in paid.values() for t in rows if in_month(t.occurred_on)]
+    left = [(bill, due) for bill in bills for due in bill_due_dates(bill, today, month_end)]
+    overdue = [bill for bill in bills if bill.next_due < today]
+    recent = sorted(
+        (t for rows in paid.values() for t in rows), key=lambda t: t.occurred_on, reverse=True
+    )[:RECENT_PAYMENTS]
+    names = {bill.id: bill.name for bill in bills}
     fixed = sum(item.monthly_cents for item in items)
     subscriptions = sum(item.monthly_cents for item in items if item.kind == "subscription")
     week_end = today + timedelta(days=7)
     payday_end = (next_payday - timedelta(days=1)) if next_payday else week_end
     return RecurringSummary(
         items=items,
+        bill_count=sum(1 for item in items if item.kind == "bill"),
+        subscription_count=sum(1 for item in items if item.kind == "subscription"),
+        this_month=RecurringMonth(
+            paid_count=len(month_payments),
+            paid_cents=sum(t.amount_cents for t in month_payments),
+            left_count=len(left),
+            left_cents=sum(bill.amount_cents for bill, _ in left),
+            overdue_count=len(overdue),
+            overdue_cents=sum(bill.amount_cents for bill in overdue),
+        ),
+        upcoming=upcoming,
+        recent_payments=[
+            RecurringPayment(
+                bill_id=t.bill_id or "",
+                name=names.get(t.bill_id or "", t.description),
+                occurred_on=t.occurred_on,
+                amount_cents=t.amount_cents,
+                paid_automatically=t.paid_automatically,
+            )
+            for t in recent
+        ],
         suggestions=suggestions,
         fixed_monthly_cents=fixed,
         subscriptions_monthly_cents=subscriptions,

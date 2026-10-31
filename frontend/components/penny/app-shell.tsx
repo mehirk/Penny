@@ -198,7 +198,7 @@ const SURFACE_PREVIEW: Record<SurfaceSetting, React.CSSProperties> = {
   soft: { background: "var(--color-canvas)", borderRadius: 12, boxShadow: "4px 4px 9px color-mix(in srgb, var(--color-ink) 14%, transparent), -4px -4px 9px rgb(255 255 255 / 0.7)" },
   clay: { background: "var(--color-surface)", borderRadius: 14, boxShadow: "0 8px 14px -6px color-mix(in srgb, var(--color-primary) 40%, transparent), inset 0 -3px 6px rgb(0 0 0 / 0.06), inset 0 3px 6px rgb(255 255 255 / 0.8)" },
   flat: { background: "var(--color-surface)", border: "1px solid var(--color-line-strong)", borderRadius: 6 },
-  bold: { background: "var(--color-surface)", border: "2px solid var(--color-ink)", borderRadius: 5, boxShadow: "3px 3px 0 var(--color-ink)" },
+  halo: { background: "linear-gradient(var(--color-surface), var(--color-surface)) padding-box, linear-gradient(135deg, var(--color-accent), var(--color-gold) 45%, var(--color-line) 75%) border-box", border: "1.5px solid transparent", borderRadius: 10, boxShadow: "0 6px 14px -6px color-mix(in srgb, var(--color-accent) 60%, transparent)" },
 };
 
 /** Surface styles (how cards are built), with a live mini preview of each. */
