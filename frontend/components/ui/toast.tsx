@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
+import { haptic } from "@/lib/native";
 import { cn } from "@/lib/utils";
 
 type ToastTone = "success" | "error";
@@ -21,6 +22,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const id = nextId.current++;
     const tone = toast.tone ?? "success";
     setToasts((items) => [...items.slice(-2), { ...toast, id, tone }]);
+    haptic(tone);
     if (tone === "success") window.setTimeout(() => dismiss(id), SUCCESS_MS);
   }, [dismiss]);
 

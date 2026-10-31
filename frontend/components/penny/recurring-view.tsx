@@ -447,7 +447,7 @@ function BillForm({ dashboard, draft, onSubmit, onDelete }: { dashboard: Dashboa
       </div>
       <PaymentMode value={autoRecord} onChange={setAutoRecord} />
       {error && <p role="alert" className="rounded-xl bg-danger-soft p-3 text-sm text-danger">{error}</p>}
-      <div className="flex flex-col-reverse gap-2 sm:flex-row">
+      <div className="sheet-footer flex flex-col-reverse gap-2 sm:flex-row">
         {onDelete && <Button variant="destructive-soft" onClick={onDelete} disabled={busy}>Delete bill</Button>}
         <Button type="submit" className="flex-1" disabled={busy}>{draft && "id" in draft ? "Save bill" : "Add bill"}</Button>
       </div>

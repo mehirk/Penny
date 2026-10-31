@@ -112,7 +112,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Penny API", version="0.1.0", docs_url="/docs", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[str(settings.frontend_origin).rstrip("/")],
+    allow_origins=[
+        origin
+        for origin in (str(settings.frontend_origin).rstrip("/"), settings.native_app_origin)
+        if origin
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],

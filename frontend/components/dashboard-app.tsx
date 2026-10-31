@@ -17,6 +17,7 @@ import { type SpendingTab, SpendingView } from "@/components/penny/spending-view
 import { TodayView } from "@/components/penny/today-view";
 import { monthEnd, type PeriodRange } from "@/components/penny/period-picker";
 import { usePreferences } from "@/components/penny/preferences";
+import { PullToRefresh } from "@/components/penny/pull-to-refresh";
 import { cad, describeError, NAVIGATION, type View } from "@/components/penny/shared";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ToastProvider, useToast } from "@/components/ui/toast";
@@ -225,6 +226,20 @@ function PennyApp() {
     setDashboard(remember(data));
   }, [remember]);
 
+  /** Reloads the period on screen (pull to refresh in the iOS app). */
+  const refresh = useCallback(async () => {
+    const shown = currentPeriod.current;
+    try {
+      const data = shown && !isMonthPeriod(shown) ? await dashboardApi.loadPeriod(shown.start, shown.end) : await dashboardApi.load(shown?.start);
+      cache.current.clear();
+      setHistoryVersion((value) => value + 1);
+      setDashboard(remember(data));
+    } catch (reason) {
+      const error = describeError(reason, "Penny couldn’t refresh");
+      toast({ title: error.title, description: error.detail, tone: "error" });
+    }
+  }, [remember, toast]);
+
   /** Creates something from inside a form (a category, an account) and returns the new snapshot. */
   const createInline = useCallback<InlineCreate>(async (action) => {
     try {
@@ -368,7 +383,9 @@ function PennyApp() {
         </main>
       </div>
       <MobileNavigation active={view} onNavigate={navigate} />
-      {view !== "ai" && <button type="button" onClick={() => navigate("ai")} className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] right-4 z-20 inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-on-primary shadow-[var(--shadow-raised)] transition-transform hover:-translate-y-0.5 motion-reduce:transform-none lg:bottom-6 lg:right-6"><Bot className="size-4" />Ask Penny</button>}
+      <PullToRefresh onRefresh={refresh} />
+      {/* Desktop only: on phones Penny AI is in the tab bar, and a floating button covered content. */}
+      {view !== "ai" && <button type="button" onClick={() => navigate("ai")} className="fixed bottom-6 right-6 z-20 hidden min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-on-primary shadow-[var(--shadow-raised)] transition-transform hover:-translate-y-0.5 motion-reduce:transform-none lg:inline-flex"><Bot className="size-4" />Ask Penny</button>}
 
       <EditDialogs
         dashboard={dashboard}

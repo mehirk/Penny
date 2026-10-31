@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "test", "production"] = "development"
     frontend_origin: AnyHttpUrl = AnyHttpUrl("http://localhost:3000")
+    # Origin of the bundled iOS app (Capacitor); empty to refuse it.
+    native_app_origin: str = "capacitor://localhost"
     supabase_url: AnyHttpUrl | None = None
     supabase_jwt_audience: str = "authenticated"
     # Legacy HS256 shared secret; hosted projects with asymmetric keys should leave it unset.

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import type { Dashboard } from "@/lib/api";
 import { formatMonth, greeting } from "@/lib/format";
 import { getSupabaseUserEmail, signOutOfSupabase } from "@/lib/supabase";
+import { haptic } from "@/lib/native";
 import { cn } from "@/lib/utils";
 import { PALETTE_OPTIONS, type PaletteSetting, SURFACE_OPTIONS, type SurfaceSetting, THEME_OPTIONS, type ThemeSetting, usePreferences } from "./preferences";
 import { type PeriodRange, PeriodPicker } from "./period-picker";
@@ -106,17 +107,17 @@ export function MobileNavigation({ active, onNavigate }: { active: View; onNavig
   const tab = (selected: boolean) => cn("flex min-h-16 w-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors", selected ? "text-primary" : "text-ink-subtle hover:text-ink");
   const pill = (selected: boolean) => cn("grid h-7 w-11 place-items-center rounded-full transition-colors duration-150", selected && "bg-sage");
   return (
-    <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
+    <nav aria-label="Primary" className="mobile-tab-bar fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
       <ul className="mx-auto flex max-w-3xl">
         {primary.map(({ id, label, icon: Icon }) => (
           <li key={id} className="flex-1">
-            <button type="button" onClick={() => onNavigate(id)} aria-current={active === id ? "page" : undefined} className={tab(active === id)}>
+            <button type="button" onClick={() => { if (active !== id) haptic("selection"); onNavigate(id); }} aria-current={active === id ? "page" : undefined} className={tab(active === id)}>
               <span className={pill(active === id)}><Icon className="size-5" aria-hidden="true" /></span>{label}
             </button>
           </li>
         ))}
         <li className="flex-1">
-          <button type="button" onClick={() => setMoreOpen(true)} aria-haspopup="dialog" className={tab(moreActive)}>
+          <button type="button" onClick={() => { haptic("selection"); setMoreOpen(true); }} aria-haspopup="dialog" className={tab(moreActive)}>
             <span className={pill(moreActive)}><Menu className="size-5" aria-hidden="true" /></span>More
           </button>
         </li>
