@@ -58,8 +58,8 @@ export function SpendingTake({ dashboard, version, onAsk }: { dashboard: Dashboa
         </div>
       ) : (
         <ul className="mt-3 space-y-2">
-          {take.data?.items.map((item) => (
-            <li key={item} className="flex gap-2.5 text-sm leading-relaxed text-ink-muted"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />{item}</li>
+          {take.data?.items.map((item, index) => (
+            <li key={index} className="flex gap-2.5 text-sm leading-relaxed text-ink-muted"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />{item}</li>
           ))}
         </ul>
       )}

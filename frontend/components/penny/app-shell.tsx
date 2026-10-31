@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Settings, SlidersHorizontal, Sun } from "lucide-react";
+import { Check, LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Settings, SlidersHorizontal, Sun } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,7 +11,7 @@ import type { Dashboard } from "@/lib/api";
 import { formatMonth, greeting } from "@/lib/format";
 import { getSupabaseUserEmail, signOutOfSupabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { THEME_OPTIONS, type ThemeSetting, usePreferences } from "./preferences";
+import { PALETTE_OPTIONS, type PaletteSetting, SURFACE_OPTIONS, type SurfaceSetting, THEME_OPTIONS, type ThemeSetting, usePreferences } from "./preferences";
 import { type PeriodRange, PeriodPicker } from "./period-picker";
 import { cad, NAVIGATION, type View } from "./shared";
 
@@ -144,6 +144,94 @@ export function MobileNavigation({ active, onNavigate }: { active: View; onNavig
 
 // ------------------------------------------------------------------ display controls
 
+// Heading faces per palette, mirrored from globals.css so the picker can preview them.
+const PALETTE_FONTS: Record<PaletteSetting, string> = {
+  original: "var(--font-sans)",
+  noir: '"Didot", "Bodoni 72", "Bodoni MT", Georgia, serif',
+  emerald: '"Baskerville", "Libre Baskerville", Georgia, serif',
+  sapphire: '"Avenir Next", "Avenir", "Segoe UI", sans-serif',
+  bordeaux: '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif',
+  pearl: '"Optima", "Candara", "Segoe UI", sans-serif',
+};
+
+/** The colour styles, as swatches. "compact" for the gear menu, full cards for Display settings. */
+export function PalettePicker({ compact = false }: { compact?: boolean }) {
+  const { palette, setPalette, resolvedTheme } = usePreferences();
+  return (
+    <div role="radiogroup" aria-label="Style" className={cn("grid gap-1.5", compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3")}>
+      {PALETTE_OPTIONS.map((option) => {
+        const [canvas, primary, accent, gold] = option.swatches[resolvedTheme];
+        const selected = palette === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={`${option.label}: ${option.description}`}
+            title={option.description}
+            onClick={() => setPalette(option.value)}
+            className={cn("group relative overflow-hidden rounded-xl border text-left transition-[border-color,box-shadow]", selected ? "border-accent ring-2 ring-accent/40" : "border-line hover:border-line-strong")}
+          >
+            <span className={cn("flex items-end justify-between", compact ? "h-10 px-2 pb-1.5" : "h-20 px-3 pb-2")} style={{ background: `linear-gradient(135deg, ${canvas} 0%, ${canvas} 55%, ${primary} 55%, ${primary} 100%)` }} aria-hidden="true">
+              <span className={cn("leading-none", compact ? "text-base" : "text-2xl")} style={{ fontFamily: PALETTE_FONTS[option.value], color: primary }}>Aa</span>
+              <span className="flex gap-1">
+                {[["accent", accent], ["gold", gold]].map(([role, color]) => <span key={role} className={cn("rounded-full ring-1 ring-black/10", compact ? "size-2.5" : "size-3.5")} style={{ background: color }} />)}
+              </span>
+            </span>
+            <span className={cn("flex items-center gap-1 bg-surface", compact ? "px-2 py-1 text-[11px]" : "px-3 py-2 text-sm")}>
+              <span className="min-w-0 flex-1 truncate font-semibold text-ink">{option.label}</span>
+              {selected && <Check className={cn("shrink-0 text-accent-strong", compact ? "size-3" : "size-4")} aria-hidden="true" />}
+            </span>
+            {!compact && <span className="block bg-surface px-3 pb-2.5 text-xs text-ink-subtle">{option.description} <span className="text-ink-muted">· {option.font}</span></span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// A tiny card drawn in each surface style, using the current palette's colours.
+const SURFACE_PREVIEW: Record<SurfaceSetting, React.CSSProperties> = {
+  classic: { background: "var(--color-surface)", border: "1px solid var(--color-line)", borderRadius: 8, boxShadow: "0 4px 10px rgb(0 0 0 / 0.08)" },
+  glass: { background: "color-mix(in srgb, var(--color-surface) 45%, transparent)", border: "1px solid rgb(255 255 255 / 0.5)", borderRadius: 10, backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", boxShadow: "0 6px 14px rgb(0 0 0 / 0.12)" },
+  soft: { background: "var(--color-canvas)", borderRadius: 12, boxShadow: "4px 4px 9px color-mix(in srgb, var(--color-ink) 14%, transparent), -4px -4px 9px rgb(255 255 255 / 0.7)" },
+  clay: { background: "var(--color-surface)", borderRadius: 14, boxShadow: "0 8px 14px -6px color-mix(in srgb, var(--color-primary) 40%, transparent), inset 0 -3px 6px rgb(0 0 0 / 0.06), inset 0 3px 6px rgb(255 255 255 / 0.8)" },
+  flat: { background: "var(--color-surface)", border: "1px solid var(--color-line-strong)", borderRadius: 6 },
+  bold: { background: "var(--color-surface)", border: "2px solid var(--color-ink)", borderRadius: 5, boxShadow: "3px 3px 0 var(--color-ink)" },
+};
+
+/** Surface styles (how cards are built), with a live mini preview of each. */
+export function SurfacePicker({ compact = false }: { compact?: boolean }) {
+  const { surface, setSurface } = usePreferences();
+  return (
+    <div role="radiogroup" aria-label="Surface" className={cn("grid gap-1.5", compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3")}>
+      {SURFACE_OPTIONS.map((option) => {
+        const selected = surface === option.value;
+        const backdrop = option.value === "glass"
+          ? "radial-gradient(circle at 20% 20%, var(--color-accent), transparent 60%), radial-gradient(circle at 85% 80%, var(--color-gold), transparent 55%), var(--color-canvas)"
+          : "var(--color-canvas)";
+        return (
+          <button key={option.value} type="button" role="radio" aria-checked={selected} aria-label={`${option.label}: ${option.description}`} title={option.description} onClick={() => setSurface(option.value)}
+            className={cn("overflow-hidden rounded-xl border text-left transition-[border-color,box-shadow]", selected ? "border-accent ring-2 ring-accent/40" : "border-line hover:border-line-strong")}>
+            <span className={cn("grid place-items-center", compact ? "h-12" : "h-20")} style={{ background: backdrop }} aria-hidden="true">
+              <span className={cn("flex flex-col justify-center gap-1 px-2", compact ? "h-7 w-14" : "h-11 w-24")} style={SURFACE_PREVIEW[option.value]}>
+                <span className="h-1 w-3/4 rounded-full" style={{ background: "var(--color-ink)", opacity: 0.7 }} />
+                <span className="h-1 w-1/2 rounded-full" style={{ background: "var(--color-accent)" }} />
+              </span>
+            </span>
+            <span className={cn("flex items-center gap-1 bg-surface", compact ? "px-2 py-1 text-[11px]" : "px-3 py-2 text-sm")}>
+              <span className="min-w-0 flex-1 truncate font-semibold text-ink">{option.label}</span>
+              {selected && <Check className={cn("shrink-0 text-accent-strong", compact ? "size-3" : "size-4")} aria-hidden="true" />}
+            </span>
+            {!compact && <span className="block bg-surface px-3 pb-2.5 text-xs text-ink-subtle">{option.description}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The header's gear: theme, display settings, and a shortcut to all settings. */
 export function SettingsMenu({ onOpenDisplay, onNavigate }: { onOpenDisplay: () => void; onNavigate: (view: View) => void }) {
   const { theme, setTheme } = usePreferences();
@@ -163,7 +251,7 @@ export function SettingsMenu({ onOpenDisplay, onNavigate }: { onOpenDisplay: () 
         <Settings className={cn("size-[1.1rem] transition-transform duration-300 motion-reduce:transition-none", open && "rotate-45")} aria-hidden="true" />
       </button>
       {open && (
-        <div id={menuId} role="group" aria-label="Settings" className="absolute right-0 top-full z-40 mt-2 w-64 animate-enter rounded-2xl border border-line bg-surface p-2 shadow-[var(--shadow-raised)]">
+        <div id={menuId} role="group" aria-label="Settings" className="absolute right-0 top-full z-40 mt-2 max-h-[calc(100dvh-6rem)] w-72 animate-enter overflow-y-auto rounded-2xl border border-line bg-surface p-2 shadow-[var(--shadow-raised)]">
           <p className="px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Appearance</p>
           <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-1 rounded-xl bg-sage-soft p-1">
             {THEME_OPTIONS.map((option) => {
@@ -176,6 +264,10 @@ export function SettingsMenu({ onOpenDisplay, onNavigate }: { onOpenDisplay: () 
               );
             })}
           </div>
+          <p className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Style</p>
+          <PalettePicker compact />
+          <p className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Surface</p>
+          <SurfacePicker compact />
           <div className="mt-2 border-t border-line pt-2">
             <button type="button" className={item} onClick={() => { setOpen(false); onOpenDisplay(); }}><SlidersHorizontal className="size-4 text-ink-subtle" aria-hidden="true" />Display settings</button>
             <button type="button" className={item} onClick={() => { setOpen(false); onNavigate("settings"); }}><Settings className="size-4 text-ink-subtle" aria-hidden="true" />All settings</button>
@@ -190,7 +282,7 @@ export function DisplaySettingsDialog({ open, onOpenChange }: { open: boolean; o
   const { theme, setTheme } = usePreferences();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Display settings</DialogTitle>
           <DialogDescription>Choose how Penny looks. Your choice is saved on this device.</DialogDescription>
@@ -208,6 +300,16 @@ export function DisplaySettingsDialog({ open, onOpenChange }: { open: boolean; o
               );
             })}
           </div>
+        </fieldset>
+        <fieldset className="mt-5">
+          <legend className="text-sm font-semibold text-ink">Style</legend>
+          <p className="mt-0.5 text-xs text-ink-subtle">Colours and heading type. Each style has a light and a dark version.</p>
+          <div className="mt-2"><PalettePicker /></div>
+        </fieldset>
+        <fieldset className="mt-5">
+          <legend className="text-sm font-semibold text-ink">Surface</legend>
+          <p className="mt-0.5 text-xs text-ink-subtle">How cards and panels are built. Works with any style above.</p>
+          <div className="mt-2"><SurfacePicker /></div>
         </fieldset>
         <div className="mt-5 hidden sm:block">
           <h3 className="text-sm font-semibold text-ink">Keyboard shortcuts</h3>
@@ -246,15 +348,17 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
   return (
     <header className="sticky top-0 z-20 border-b border-line/70 bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur-md">
       <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-10 lg:py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
+        {/* Actions sit beside the title on phones, and centred against the whole header (title,
+            description, and period picker) from the sm breakpoint. */}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3">
+          <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
             <BrandMark className="size-9 lg:hidden" />
             <div className="min-w-0">
               <h1 id="page-title" tabIndex={-1} className="truncate text-lg font-semibold tracking-tight text-ink focus:outline-none sm:text-2xl">{title}</h1>
               <p className="hidden text-sm text-ink-subtle sm:line-clamp-2">{description}</p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-2 self-center sm:row-span-3">
             {showAdd && (
               <Button onClick={onAddTransaction} className="shrink-0">
                 <Plus className="size-4" aria-hidden="true" /><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add transaction</span>
@@ -262,16 +366,16 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
             )}
             <SettingsMenu onOpenDisplay={onOpenDisplay} onNavigate={onNavigate} />
           </div>
+          {showMonth ? (
+            <div className="col-span-2 mt-3 flex flex-wrap items-center gap-2 sm:col-span-1">
+              <PeriodPicker dashboard={dashboard} loading={monthLoading} onChange={onChangePeriod} />
+              {dashboard.profile.is_fictional && <Badge tone="gold">Fictional data</Badge>}
+            </div>
+          ) : (
+            <p className="col-span-2 mt-1 text-xs text-ink-subtle sm:hidden">{formatMonth(dashboard.current_month)}{dashboard.profile.is_fictional ? " · Fictional data" : ""}</p>
+          )}
+          {pastHome && <p className="col-span-2 mt-2 text-xs text-ink-subtle sm:hidden">Looking back at a past month. Balances and goals show today’s values.</p>}
         </div>
-        {showMonth ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <PeriodPicker dashboard={dashboard} loading={monthLoading} onChange={onChangePeriod} />
-            {dashboard.profile.is_fictional && <Badge tone="gold">Fictional data</Badge>}
-          </div>
-        ) : (
-          <p className="mt-1 text-xs text-ink-subtle sm:hidden">{formatMonth(dashboard.current_month)}{dashboard.profile.is_fictional ? " · Fictional data" : ""}</p>
-        )}
-        {pastHome && <p className="mt-2 text-xs text-ink-subtle sm:hidden">Looking back at a past month. Balances and goals show today’s values.</p>}
       </div>
     </header>
   );

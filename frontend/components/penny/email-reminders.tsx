@@ -149,8 +149,8 @@ export function EmailReminders() {
           <p className="mt-1 text-sm text-ink-subtle">Nothing needs a reminder right now{KIND_OPTIONS.some(({ key }) => state.kinds[key]) ? "." : ". Turn on a reminder type above."}</p>
         ) : (
           <ul className="mt-2 space-y-2">
-            {state.due.map((item) => (
-              <li key={`${item.kind}-${item.title}`} className="rounded-xl bg-sage-soft/70 px-3 py-2 text-sm">
+            {state.due.map((item, index) => (
+              <li key={`${item.kind}-${index}`} className="rounded-xl bg-sage-soft/70 px-3 py-2 text-sm">
                 <span className="flex items-start justify-between gap-2"><span className="font-semibold text-ink">{item.title}</span>{item.already_sent && <Badge tone="neutral" className="shrink-0">Emailed</Badge>}</span>
                 <span className="block text-ink-subtle">{item.detail}</span>
               </li>

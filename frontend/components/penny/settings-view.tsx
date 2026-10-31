@@ -264,7 +264,7 @@ function ImportSection({ dashboard, save }: { dashboard: Dashboard; save: SaveCh
       {result && (
         <div className="mt-3 rounded-xl bg-sage-soft p-3 text-sm" role="status">
           <p className="font-semibold text-ink">Imported {result.imported} transaction{result.imported === 1 ? "" : "s"}{result.skipped ? `, skipped ${result.skipped}` : ""}.</p>
-          {result.errors.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-ink-muted">{result.errors.map((item) => <li key={item}>{item}</li>)}</ul>}
+          {result.errors.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-ink-muted">{result.errors.map((item, index) => <li key={index}>{item}</li>)}</ul>}
         </div>
       )}
     </section>

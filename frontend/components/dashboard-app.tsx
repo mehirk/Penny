@@ -43,7 +43,13 @@ const isTyping = (target: EventTarget | null) =>
 function withViewTransition(update: () => void) {
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (reduce || !("startViewTransition" in document)) { update(); return; }
-  document.startViewTransition(() => flushSync(update));
+  const transition = document.startViewTransition(() => flushSync(update));
+  // The browser cancels the animation if the viewport changes mid-switch (a resize, the phone
+  // keyboard opening). The view still updates; only the cross-fade is skipped, so swallow it.
+  const ignore = () => undefined;
+  transition.ready.catch(ignore);
+  transition.finished.catch(ignore);
+  transition.updateCallbackDone.catch(ignore);
 }
 
 /** Single-key shortcuts, ignored while typing in a field or while a dialog is open. */

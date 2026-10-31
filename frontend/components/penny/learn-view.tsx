@@ -250,7 +250,7 @@ function ProgressHeader({ state, country, onEdit }: { state: LearnState; country
     <section aria-label="Your progress" className="grid gap-3 sm:grid-cols-3">
       <Card className="p-5 sm:col-span-2">
         <div className="flex items-center gap-4">
-          <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[linear-gradient(135deg,#173f5f,#15977f)] text-white" aria-hidden="true"><Star className="size-7" /></span>
+          <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[linear-gradient(135deg,var(--color-hero),var(--color-accent))] text-white" aria-hidden="true"><Star className="size-7" /></span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-ink-subtle">Level {state.level}</p>

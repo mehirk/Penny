@@ -140,6 +140,523 @@
   --chart-reference: #718791;
 }
 
+/* ------------------------------------------------------------------ luxury palettes
+   Generated from one table; every text pair checked for 4.5:1 contrast (WCAG AA).
+   data-palette is set on <html> before first paint, like data-theme. */
+:root[data-palette="noir"] {
+  --font-display: "Didot", "Bodoni 72", "Bodoni MT", "Playfair Display", Georgia, serif;
+  --radius-card: 0.875rem;
+}
+:root[data-palette="noir"]:not([data-theme="dark"]) {
+  --color-canvas: #f7f4ee;
+  --color-surface: #fffdf8;
+  --color-sage: #efe8da;
+  --color-sage-soft: #f6f1e7;
+  --color-line: #e6dccb;
+  --color-line-strong: #d4c6ad;
+  --color-ink: #16130e;
+  --color-ink-muted: #4e463a;
+  --color-ink-subtle: #6b6152;
+  --color-primary: #16130e;
+  --color-primary-hover: #000000;
+  --color-primary-soft: #ece6da;
+  --color-on-primary: #f7e7c1;
+  --color-hero: #16130e;
+  --color-accent: #a8842c;
+  --color-accent-strong: #6f5410;
+  --color-accent-soft: #f4ead2;
+  --color-gold: #c9a24a;
+  --color-gold-strong: #6f5410;
+  --color-gold-soft: #f6ecd3;
+  --color-info: #34496a;
+  --color-info-soft: #e8ecf2;
+  --color-overlay: rgb(22 19 14 / 0.5);
+  --shadow-card: 0 1px 2px rgb(22 19 14 / 0.04), 0 10px 30px rgb(22 19 14 / 0.06);
+  --shadow-raised: 0 18px 48px rgb(22 19 14 / 0.16), 0 2px 6px rgb(22 19 14 / 0.06);
+  --chart-in: #a8842c;
+  --chart-out: #b5543c;
+  --chart-net: #16130e;
+  --chart-cat-1: #16130e;
+  --chart-cat-2: #a8842c;
+  --chart-cat-3: #7d6b55;
+  --chart-cat-4: #b5543c;
+  --chart-cat-5: #34496a;
+  --chart-cat-6: #c9b48a;
+  --chart-cat-7: #5b6b4e;
+  --chart-other: #6b6152;
+  --chart-grid: #e6dccb;
+  --chart-axis: #d4c6ad;
+  --chart-reference: #6b6152;
+}
+:root[data-palette="noir"][data-theme="dark"] {
+  --color-canvas: #0b0a08;
+  --color-surface: #15130f;
+  --color-sage: #221e17;
+  --color-sage-soft: #1a1712;
+  --color-line: #2c271e;
+  --color-line-strong: #3d3628;
+  --color-ink: #f5efe3;
+  --color-ink-muted: #cbbfa8;
+  --color-ink-subtle: #a3977f;
+  --color-primary: #d4af5a;
+  --color-primary-hover: #e2c27a;
+  --color-primary-soft: #2a2416;
+  --color-on-primary: #14110a;
+  --color-hero: #1d1912;
+  --color-accent: #d4af5a;
+  --color-accent-strong: #e8cd8c;
+  --color-accent-soft: #2b2415;
+  --color-gold: #d4af5a;
+  --color-gold-strong: #ecd49c;
+  --color-gold-soft: #2e2716;
+  --color-info: #9fb3cf;
+  --color-info-soft: #1f2633;
+  --chart-in: #d4af5a;
+  --chart-out: #e08a6e;
+  --chart-net: #f5efe3;
+  --chart-cat-1: #f5efe3;
+  --chart-cat-2: #d4af5a;
+  --chart-cat-3: #a8977a;
+  --chart-cat-4: #e08a6e;
+  --chart-cat-5: #9fb3cf;
+  --chart-cat-6: #8d7b57;
+  --chart-cat-7: #9fb08a;
+  --chart-other: #a3977f;
+  --chart-grid: #2c271e;
+  --chart-axis: #3d3628;
+  --chart-reference: #a3977f;
+}
+:root[data-palette="emerald"] {
+  --font-display: "Baskerville", "Libre Baskerville", "Baskerville Old Face", Georgia, serif;
+  --radius-card: 1rem;
+}
+:root[data-palette="emerald"]:not([data-theme="dark"]) {
+  --color-canvas: #f5f3ec;
+  --color-surface: #fffef9;
+  --color-sage: #e3ebe4;
+  --color-sage-soft: #eff4ef;
+  --color-line: #dde3da;
+  --color-line-strong: #c3cfc4;
+  --color-ink: #10231b;
+  --color-ink-muted: #3f5449;
+  --color-ink-subtle: #5a6e63;
+  --color-primary: #0f4c3a;
+  --color-primary-hover: #0a3a2c;
+  --color-primary-soft: #e1eee8;
+  --color-on-primary: #fbf6e9;
+  --color-hero: #0f4c3a;
+  --color-accent: #1f7a5c;
+  --color-accent-strong: #135c44;
+  --color-accent-soft: #dcefe6;
+  --color-gold: #b8913f;
+  --color-gold-strong: #6e5214;
+  --color-gold-soft: #f5ecd6;
+  --color-info: #2f5d7c;
+  --color-info-soft: #e3edf3;
+  --color-overlay: rgb(16 35 27 / 0.5);
+  --shadow-card: 0 1px 2px rgb(16 35 27 / 0.04), 0 10px 30px rgb(16 35 27 / 0.06);
+  --shadow-raised: 0 18px 48px rgb(16 35 27 / 0.16), 0 2px 6px rgb(16 35 27 / 0.06);
+  --chart-in: #1f7a5c;
+  --chart-out: #c0674a;
+  --chart-net: #b8913f;
+  --chart-cat-1: #0f4c3a;
+  --chart-cat-2: #c0674a;
+  --chart-cat-3: #1f7a5c;
+  --chart-cat-4: #b8913f;
+  --chart-cat-5: #2f5d7c;
+  --chart-cat-6: #8a6fa8;
+  --chart-cat-7: #6c9a8b;
+  --chart-other: #5a6e63;
+  --chart-grid: #dde3da;
+  --chart-axis: #c3cfc4;
+  --chart-reference: #5a6e63;
+}
+:root[data-palette="emerald"][data-theme="dark"] {
+  --color-canvas: #08140f;
+  --color-surface: #0f1f18;
+  --color-sage: #183127;
+  --color-sage-soft: #13271f;
+  --color-line: #213a2f;
+  --color-line-strong: #2f4d40;
+  --color-ink: #eef5f0;
+  --color-ink-muted: #b5c9bd;
+  --color-ink-subtle: #8fa79a;
+  --color-primary: #c9a85a;
+  --color-primary-hover: #dbbe78;
+  --color-primary-soft: #263321;
+  --color-on-primary: #10180f;
+  --color-hero: #0f3a2c;
+  --color-accent: #4cb88f;
+  --color-accent-strong: #7fd3b1;
+  --color-accent-soft: #163a2c;
+  --color-gold: #c9a85a;
+  --color-gold-strong: #e2c88c;
+  --color-gold-soft: #2c2a1a;
+  --color-info: #8db8d6;
+  --color-info-soft: #172c38;
+  --chart-in: #4cb88f;
+  --chart-out: #e2967a;
+  --chart-net: #c9a85a;
+  --chart-cat-1: #6fd0aa;
+  --chart-cat-2: #e2967a;
+  --chart-cat-3: #4cb88f;
+  --chart-cat-4: #c9a85a;
+  --chart-cat-5: #8db8d6;
+  --chart-cat-6: #b9a0d8;
+  --chart-cat-7: #86b9a8;
+  --chart-other: #8fa79a;
+  --chart-grid: #213a2f;
+  --chart-axis: #2f4d40;
+  --chart-reference: #8fa79a;
+}
+:root[data-palette="sapphire"] {
+  --font-display: "Avenir Next", "Avenir", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --radius-card: 1.25rem;
+}
+:root[data-palette="sapphire"]:not([data-theme="dark"]) {
+  --color-canvas: #f3f5f9;
+  --color-surface: #ffffff;
+  --color-sage: #e6ebf4;
+  --color-sage-soft: #f0f3f9;
+  --color-line: #dde3ee;
+  --color-line-strong: #c4cede;
+  --color-ink: #0e1730;
+  --color-ink-muted: #3e4a66;
+  --color-ink-subtle: #5a6682;
+  --color-primary: #14245c;
+  --color-primary-hover: #0c1846;
+  --color-primary-soft: #e5e9f6;
+  --color-on-primary: #ffffff;
+  --color-hero: #14245c;
+  --color-accent: #2f56c4;
+  --color-accent-strong: #1f3f9b;
+  --color-accent-soft: #e3eafb;
+  --color-gold: #c7a35a;
+  --color-gold-strong: #6e5418;
+  --color-gold-soft: #f6eedb;
+  --color-info: #5241b8;
+  --color-info-soft: #ebe8fb;
+  --color-overlay: rgb(14 23 48 / 0.5);
+  --shadow-card: 0 1px 2px rgb(14 23 48 / 0.04), 0 10px 30px rgb(14 23 48 / 0.06);
+  --shadow-raised: 0 18px 48px rgb(14 23 48 / 0.16), 0 2px 6px rgb(14 23 48 / 0.06);
+  --chart-in: #2f56c4;
+  --chart-out: #d9735a;
+  --chart-net: #14245c;
+  --chart-cat-1: #14245c;
+  --chart-cat-2: #d9735a;
+  --chart-cat-3: #2f56c4;
+  --chart-cat-4: #c7a35a;
+  --chart-cat-5: #8a7ad8;
+  --chart-cat-6: #4aa3b5;
+  --chart-cat-7: #c06a9a;
+  --chart-other: #5a6682;
+  --chart-grid: #dde3ee;
+  --chart-axis: #c4cede;
+  --chart-reference: #5a6682;
+}
+:root[data-palette="sapphire"][data-theme="dark"] {
+  --color-canvas: #070b1a;
+  --color-surface: #0e1530;
+  --color-sage: #18224a;
+  --color-sage-soft: #131c3d;
+  --color-line: #1f2b55;
+  --color-line-strong: #2e3c6e;
+  --color-ink: #eef1fa;
+  --color-ink-muted: #b7bfd8;
+  --color-ink-subtle: #939cb9;
+  --color-primary: #a9bdf2;
+  --color-primary-hover: #c3d1f7;
+  --color-primary-soft: #1c2852;
+  --color-on-primary: #0b1330;
+  --color-hero: #142057;
+  --color-accent: #7d9cf0;
+  --color-accent-strong: #a9bdf5;
+  --color-accent-soft: #1b2a5a;
+  --color-gold: #d8bc7c;
+  --color-gold-strong: #ecd6a4;
+  --color-gold-soft: #2c2a22;
+  --color-info: #b3a8f2;
+  --color-info-soft: #241f4d;
+  --chart-in: #7d9cf0;
+  --chart-out: #ec987b;
+  --chart-net: #d8bc7c;
+  --chart-cat-1: #a9bdf2;
+  --chart-cat-2: #ec987b;
+  --chart-cat-3: #7d9cf0;
+  --chart-cat-4: #d8bc7c;
+  --chart-cat-5: #b3a8f2;
+  --chart-cat-6: #6cc3d3;
+  --chart-cat-7: #e08cba;
+  --chart-other: #939cb9;
+  --chart-grid: #1f2b55;
+  --chart-axis: #2e3c6e;
+  --chart-reference: #939cb9;
+}
+:root[data-palette="bordeaux"] {
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --radius-card: 1rem;
+}
+:root[data-palette="bordeaux"]:not([data-theme="dark"]) {
+  --color-canvas: #f8f3f0;
+  --color-surface: #fffcfa;
+  --color-sage: #f1e6e3;
+  --color-sage-soft: #f7efec;
+  --color-line: #eadcd7;
+  --color-line-strong: #d9c4bd;
+  --color-ink: #2a1016;
+  --color-ink-muted: #5c4148;
+  --color-ink-subtle: #735960;
+  --color-primary: #6d1a2e;
+  --color-primary-hover: #551324;
+  --color-primary-soft: #f5e4e8;
+  --color-on-primary: #fff6f3;
+  --color-hero: #6d1a2e;
+  --color-accent: #a85a54;
+  --color-accent-strong: #83392f;
+  --color-accent-soft: #f7e5e1;
+  --color-gold: #c49a5a;
+  --color-gold-strong: #6f4e1a;
+  --color-gold-soft: #f7ecdb;
+  --color-info: #564989;
+  --color-info-soft: #ece9f6;
+  --color-overlay: rgb(42 16 22 / 0.5);
+  --shadow-card: 0 1px 2px rgb(42 16 22 / 0.04), 0 10px 30px rgb(42 16 22 / 0.06);
+  --shadow-raised: 0 18px 48px rgb(42 16 22 / 0.16), 0 2px 6px rgb(42 16 22 / 0.06);
+  --chart-in: #4e8a6e;
+  --chart-out: #a85a54;
+  --chart-net: #6d1a2e;
+  --chart-cat-1: #6d1a2e;
+  --chart-cat-2: #a85a54;
+  --chart-cat-3: #c49a5a;
+  --chart-cat-4: #4e8a6e;
+  --chart-cat-5: #564989;
+  --chart-cat-6: #d18a8a;
+  --chart-cat-7: #8a6a4e;
+  --chart-other: #735960;
+  --chart-grid: #eadcd7;
+  --chart-axis: #d9c4bd;
+  --chart-reference: #735960;
+}
+:root[data-palette="bordeaux"][data-theme="dark"] {
+  --color-canvas: #140809;
+  --color-surface: #1f0f12;
+  --color-sage: #2e1a1d;
+  --color-sage-soft: #261518;
+  --color-line: #3a2226;
+  --color-line-strong: #503137;
+  --color-ink: #f8eeee;
+  --color-ink-muted: #d4bfc1;
+  --color-ink-subtle: #ae969a;
+  --color-primary: #e6a7a0;
+  --color-primary-hover: #f0c1bb;
+  --color-primary-soft: #3a1d22;
+  --color-on-primary: #2a0d12;
+  --color-hero: #4a1420;
+  --color-accent: #e3a197;
+  --color-accent-strong: #f2c3bb;
+  --color-accent-soft: #3d2023;
+  --color-gold: #d9b57a;
+  --color-gold-strong: #edd3a6;
+  --color-gold-soft: #33281a;
+  --color-info: #b8acea;
+  --color-info-soft: #2a2440;
+  --chart-in: #7cc4a2;
+  --chart-out: #e3a197;
+  --chart-net: #e6a7a0;
+  --chart-cat-1: #e6a7a0;
+  --chart-cat-2: #e3a197;
+  --chart-cat-3: #d9b57a;
+  --chart-cat-4: #7cc4a2;
+  --chart-cat-5: #b8acea;
+  --chart-cat-6: #f0b3c0;
+  --chart-cat-7: #c7a585;
+  --chart-other: #ae969a;
+  --chart-grid: #3a2226;
+  --chart-axis: #503137;
+  --chart-reference: #ae969a;
+}
+:root[data-palette="pearl"] {
+  --font-display: "Optima", "Candara", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --radius-card: 1.5rem;
+}
+:root[data-palette="pearl"]:not([data-theme="dark"]) {
+  --color-canvas: #faf8f5;
+  --color-surface: #ffffff;
+  --color-sage: #f1ece4;
+  --color-sage-soft: #f7f4ef;
+  --color-line: #ebe4da;
+  --color-line-strong: #d9cfc1;
+  --color-ink: #2b2622;
+  --color-ink-muted: #5f574f;
+  --color-ink-subtle: #766d63;
+  --color-primary: #3d342c;
+  --color-primary-hover: #2a231d;
+  --color-primary-soft: #f0ebe4;
+  --color-on-primary: #fbf7f1;
+  --color-hero: #3d342c;
+  --color-accent: #a07d52;
+  --color-accent-strong: #6c5029;
+  --color-accent-soft: #f4ece0;
+  --color-gold: #c5a572;
+  --color-gold-strong: #6e5326;
+  --color-gold-soft: #f7efe1;
+  --color-info: #56677b;
+  --color-info-soft: #edf0f4;
+  --color-overlay: rgb(43 38 34 / 0.5);
+  --shadow-card: 0 1px 2px rgb(43 38 34 / 0.04), 0 10px 30px rgb(43 38 34 / 0.06);
+  --shadow-raised: 0 18px 48px rgb(43 38 34 / 0.16), 0 2px 6px rgb(43 38 34 / 0.06);
+  --chart-in: #8aa48a;
+  --chart-out: #c98a72;
+  --chart-net: #3d342c;
+  --chart-cat-1: #3d342c;
+  --chart-cat-2: #c98a72;
+  --chart-cat-3: #a07d52;
+  --chart-cat-4: #8aa48a;
+  --chart-cat-5: #6f7f92;
+  --chart-cat-6: #c9a0a8;
+  --chart-cat-7: #b8a588;
+  --chart-other: #766d63;
+  --chart-grid: #ebe4da;
+  --chart-axis: #d9cfc1;
+  --chart-reference: #766d63;
+}
+:root[data-palette="pearl"][data-theme="dark"] {
+  --color-canvas: #13110f;
+  --color-surface: #1c1916;
+  --color-sage: #2a2520;
+  --color-sage-soft: #221e1a;
+  --color-line: #332d27;
+  --color-line-strong: #463e35;
+  --color-ink: #f5f0e8;
+  --color-ink-muted: #cfc5b8;
+  --color-ink-subtle: #a89d8f;
+  --color-primary: #e3cba4;
+  --color-primary-hover: #eedcbd;
+  --color-primary-soft: #2f2820;
+  --color-on-primary: #1c1610;
+  --color-hero: #2d2620;
+  --color-accent: #d6b88a;
+  --color-accent-strong: #ead2ab;
+  --color-accent-soft: #30281d;
+  --color-gold: #d6b88a;
+  --color-gold-strong: #ead2ab;
+  --color-gold-soft: #30291c;
+  --color-info: #aebccd;
+  --color-info-soft: #232a33;
+  --chart-in: #a8c4a8;
+  --chart-out: #e0a58e;
+  --chart-net: #e3cba4;
+  --chart-cat-1: #e3cba4;
+  --chart-cat-2: #e0a58e;
+  --chart-cat-3: #d6b88a;
+  --chart-cat-4: #a8c4a8;
+  --chart-cat-5: #aebccd;
+  --chart-cat-6: #dcb4bb;
+  --chart-cat-7: #c9b79b;
+  --chart-other: #a89d8f;
+  --chart-grid: #332d27;
+  --chart-axis: #463e35;
+  --chart-reference: #a89d8f;
+}
+/* Headings take the palette's display face; body text stays in the readable sans. */
+:root[data-palette] h1, :root[data-palette] h2 { font-family: var(--font-display); letter-spacing: 0.005em; }
+/* A hairline of the accent on raised surfaces gives the luxury palettes a finished edge. */
+:root[data-palette] .dialog-content { box-shadow: var(--shadow-raised), inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent); }
+
+/* ------------------------------------------------------------------ surface styles
+   How cards and panels are built (glass, soft, clay, flat, bold), independent of the colour
+   palette. Tokens are set on <body> so they win over the palette's :root values by inheritance,
+   and the element rules target the shared card classes (border + bg-surface). */
+
+/* Glass: frosted, translucent panels over a richer backdrop. */
+:root[data-surface="glass"] body {
+  --shadow-card: 0 8px 32px rgb(15 23 42 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.55);
+  --shadow-raised: 0 24px 64px rgb(15 23 42 / 0.22), inset 0 1px 0 rgb(255 255 255 / 0.5);
+  --radius-card: 1.5rem;
+  background:
+    radial-gradient(42rem 32rem at 88% -6%, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent 70%),
+    radial-gradient(38rem 30rem at 8% 38%, color-mix(in srgb, var(--color-info) 45%, transparent), transparent 70%),
+    radial-gradient(34rem 28rem at 62% 102%, color-mix(in srgb, var(--color-gold) 45%, transparent), transparent 70%),
+    radial-gradient(26rem 22rem at 45% 40%, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 70%),
+    var(--color-canvas);
+  background-attachment: fixed;
+}
+:root[data-surface="glass"][data-theme="dark"] body {
+  --shadow-card: 0 8px 32px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.07);
+  --shadow-raised: 0 24px 64px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+:root[data-surface="glass"] .bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 52%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+}
+:root[data-surface="glass"] .bg-surface.border { border-color: rgb(255 255 255 / 0.6); }
+:root[data-surface="glass"][data-theme="dark"] .bg-surface.border { border-color: rgb(255 255 255 / 0.09); }
+/* Dialogs and menus stay more opaque so text over busy content stays readable. */
+:root[data-surface="glass"] .dialog-content, :root[data-surface="glass"] [role="dialog"].bg-surface, :root[data-surface="glass"] [role="group"].bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 86%, transparent);
+}
+:root[data-surface="glass"] aside { background: color-mix(in srgb, var(--color-canvas) 55%, transparent); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+
+/* Soft (neumorphism): panels the same colour as the page, lifted by a light and a dark shadow.
+   A faint border is kept so edges stay visible for low-vision users. */
+:root[data-surface="soft"] body {
+  --shadow-card: 12px 12px 28px color-mix(in srgb, var(--color-ink) 14%, transparent), -12px -12px 28px rgb(255 255 255 / 0.95);
+  --shadow-raised: 14px 14px 36px color-mix(in srgb, var(--color-ink) 16%, transparent), -10px -10px 30px rgb(255 255 255 / 0.7);
+  --radius-card: 1.75rem;
+  /* The page is a touch darker here, so the lightest text is darkened to keep 4.5:1 contrast. */
+  --color-ink-subtle: var(--color-ink-muted);
+}
+:root[data-surface="soft"][data-theme="dark"] body {
+  --shadow-card: 8px 8px 20px rgb(0 0 0 / 0.5), -6px -6px 16px rgb(255 255 255 / 0.035);
+  --shadow-raised: 14px 14px 36px rgb(0 0 0 / 0.6), -8px -8px 24px rgb(255 255 255 / 0.04);
+}
+:root[data-surface="soft"] body { background: color-mix(in srgb, var(--color-canvas) 95%, var(--color-ink)); }
+:root[data-surface="soft"] .bg-surface.border, :root[data-surface="soft"] aside, :root[data-surface="soft"] header { background-color: color-mix(in srgb, var(--color-canvas) 95%, var(--color-ink)); }
+:root[data-surface="soft"] .bg-surface.border { border-color: color-mix(in srgb, var(--color-line) 45%, transparent); }
+:root[data-surface="soft"][data-theme="dark"] body, :root[data-surface="soft"][data-theme="dark"] .bg-surface.border, :root[data-surface="soft"][data-theme="dark"] aside, :root[data-surface="soft"][data-theme="dark"] header { background: var(--color-surface); }
+:root[data-surface="soft"] input.bg-surface, :root[data-surface="soft"] select.bg-surface, :root[data-surface="soft"] textarea.bg-surface {
+  background-color: var(--color-canvas);
+  box-shadow: inset 3px 3px 7px color-mix(in srgb, var(--color-ink) 10%, transparent), inset -3px -3px 7px rgb(255 255 255 / 0.8);
+}
+:root[data-surface="soft"][data-theme="dark"] input.bg-surface, :root[data-surface="soft"][data-theme="dark"] select.bg-surface {
+  box-shadow: inset 3px 3px 7px rgb(0 0 0 / 0.5), inset -3px -3px 7px rgb(255 255 255 / 0.03);
+}
+
+/* Clay: puffy, rounded panels with soft inner highlights and a floating drop shadow. */
+:root[data-surface="clay"] body {
+  --shadow-card: 0 22px 40px -16px color-mix(in srgb, var(--color-primary) 45%, transparent), inset 0 -8px 16px color-mix(in srgb, var(--color-ink) 8%, transparent), inset 0 8px 16px rgb(255 255 255 / 0.9);
+  --shadow-raised: 0 30px 60px -18px color-mix(in srgb, var(--color-primary) 40%, transparent), inset 0 -6px 12px color-mix(in srgb, var(--color-ink) 5%, transparent), inset 0 6px 12px rgb(255 255 255 / 0.7);
+  --radius-card: 2rem;
+}
+:root[data-surface="clay"][data-theme="dark"] body {
+  --shadow-card: 0 18px 34px -14px rgb(0 0 0 / 0.7), inset 0 -6px 12px rgb(0 0 0 / 0.25), inset 0 6px 12px rgb(255 255 255 / 0.05);
+  --shadow-raised: 0 30px 60px -18px rgb(0 0 0 / 0.8), inset 0 6px 12px rgb(255 255 255 / 0.05);
+}
+:root[data-surface="clay"] .bg-surface.border { border-color: transparent; background-color: color-mix(in srgb, var(--color-surface) 82%, var(--color-accent-soft)); }
+:root[data-surface="clay"] body { background: color-mix(in srgb, var(--color-canvas) 85%, var(--color-primary-soft)); }
+:root[data-surface="clay"] button.rounded-xl, :root[data-surface="clay"] .rounded-xl.border { border-radius: 1rem; }
+
+/* Flat: no shadows, crisp hairlines, quieter corners. */
+:root[data-surface="flat"] body {
+  --shadow-card: none;
+  --shadow-raised: 0 0 0 1px var(--color-line-strong), 0 12px 32px rgb(0 0 0 / 0.08);
+  --radius-card: 0.75rem;
+}
+:root[data-surface="flat"] .bg-surface.border { border-color: var(--color-line-strong); }
+:root[data-surface="flat"] .shadow-sm { box-shadow: none; }
+
+/* Bold (neo-brutalism): thick ink outlines and hard offset shadows. */
+:root[data-surface="bold"] body {
+  --shadow-card: 4px 4px 0 var(--color-ink);
+  --shadow-raised: 8px 8px 0 var(--color-ink);
+  --radius-card: 0.625rem;
+}
+:root[data-surface="bold"] .bg-surface.border { border-width: 2px; border-color: var(--color-ink); }
+:root[data-surface="bold"] .dialog-content { border: 2px solid var(--color-ink); }
+:root[data-surface="bold"] button.bg-primary, :root[data-surface="bold"] button.bg-danger { border: 2px solid var(--color-ink); box-shadow: 3px 3px 0 var(--color-ink); }
+:root[data-surface="bold"] button.bg-primary:active, :root[data-surface="bold"] button.bg-danger:active { transform: translate(3px, 3px); box-shadow: none; }
+
 /* Smooth colour change when the theme is switched (never on first paint). */
 :root.theme-transition, :root.theme-transition * {
   transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease !important;
