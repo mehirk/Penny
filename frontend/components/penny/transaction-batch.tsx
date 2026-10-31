@@ -147,7 +147,7 @@ export function BatchReview({ dashboard, drafts, onChange, onSubmitMany, onBack,
       </ol>
       <Button type="button" variant="outline" className="w-full" onClick={() => onChange([...drafts, draftFrom(null, dashboard, fallbackDate)])}><Plus className="size-4" aria-hidden="true" />Add another</Button>
       {formError && <p role="alert" className="rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">{formError}</p>}
-      <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row">
+      <div className="sheet-footer flex flex-col-reverse gap-2 pt-1 sm:flex-row">
         <Button type="button" variant="ghost" onClick={onBack} disabled={busy}>Start over</Button>
         <Button type="button" className="min-h-12 flex-1" onClick={() => void save()} disabled={busy}>
           {busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}Add {drafts.length} transaction{drafts.length === 1 ? "" : "s"}

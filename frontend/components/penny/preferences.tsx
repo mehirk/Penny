@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { setKeyboardTheme, setUpNativeApp } from "@/lib/native";
 
 export type ThemeSetting = "light" | "dark" | "system";
 
@@ -113,7 +114,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     const root = document.documentElement;
     if (root.dataset.theme !== resolvedTheme) withThemeTransition(() => { root.dataset.theme = resolvedTheme; });
+    setKeyboardTheme(resolvedTheme);
   }, [resolvedTheme]);
+
+  useEffect(() => setUpNativeApp(), []);
 
   useEffect(() => {
     const root = document.documentElement;

@@ -96,6 +96,43 @@ npm run dev
 
 Open `http://localhost:3000`. The frontend health endpoint is `http://localhost:3000/api/health`; `/login` signs in with Supabase email and password, then returns to the dashboard. Without a session (or explicit demo mode), the dashboard shows a sign-in prompt instead of financial data.
 
+### 4. iPhone app (optional)
+
+`frontend/ios` is a native iOS app (Capacitor) that bundles the same UI as static files. It still calls FastAPI and Supabase over the network, so the Mac running FastAPI and the iPhone must be on the same network. You need full Xcode from the Mac App Store; the Command Line Tools alone can't build for a phone. A free Apple ID is enough.
+
+**On this Mac (iOS Simulator).** The Simulator shares the Mac's network, so the usual FastAPI on `localhost:8000` works unchanged:
+
+```bash
+cd frontend
+npm run ios:build:sim
+npm run ios:open
+```
+
+In Xcode, pick an iPhone simulator as the run destination and press **Run** (no Apple ID needed). In Xcode 27 the simulator window is the **DeviceHub** app. Rerun `npm run ios:build:sim` and **Run** after frontend changes. A Simulator build can't reach FastAPI from a real iPhone; use the steps below for that.
+
+**On an iPhone:**
+
+1. Start FastAPI so other devices can reach it, and allow incoming connections if macOS asks:
+
+   ```bash
+   cd backend
+   uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+2. Build the app with the Mac's network address (a phone can't reach `localhost`; the build refuses it):
+
+   ```bash
+   cd frontend
+   NEXT_PUBLIC_API_BASE_URL=http://$(ipconfig getifaddr en0):8000 npm run ios:build
+   npm run ios:open
+   ```
+
+3. In Xcode: **Settings → Accounts**, add your Apple ID. Select the **App** target → **Signing & Capabilities**, choose your **Personal Team**, and if the bundle identifier is taken, change `com.mehirkumar.penny` to something unique (also update `appId` in `capacitor.config.ts`).
+4. Connect the iPhone by cable, tap **Trust**, pick it as the run destination, and press **Run**. On the iPhone, turn on **Settings → Privacy & Security → Developer Mode** when asked (it restarts), then trust your Apple ID under **Settings → General → VPN & Device Management**.
+5. Open Penny and tap **Allow** for local network access.
+
+Rerun `npm run ios:build` after any frontend change or when the Mac's address changes. With a free Apple ID the install expires after 7 days; press **Run** again to renew it. If the Wi-Fi blocks devices from reaching each other (common on campus networks), connect the Mac to the iPhone's Personal Hotspot and rebuild with the new address.
+
 ## Verification
 
 Automated verification is intentionally deferred during the active redesign phase. The Python modules in `backend/app/domain/finance.py` and `backend/app/coach/calculations.py` remain the authoritative financial calculation layer. Amounts are integer cents, and the frontend converts editable decimal strings to cents without floating-point money arithmetic. Run lint, type checking, builds, and end-to-end checks during the final verification phase before release.
@@ -104,6 +141,7 @@ Automated verification is intentionally deferred during the active redesign phas
 
 ```text
 frontend/             Next.js, Tailwind CSS, shadcn/ui components, Supabase Auth client
+frontend/ios/         Native iOS shell (Capacitor) around the static export of the frontend
 backend/              FastAPI, Pydantic models, deterministic financial domain (app/domain), Penny AI (app/coach)
 supabase/migrations/  Postgres schema, Auth trigger, grants, indexes, and RLS policies
 supabase/seed.sql     Fictional educational content

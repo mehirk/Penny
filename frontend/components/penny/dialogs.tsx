@@ -12,6 +12,7 @@ import { BatchReview, type Draft, draftFrom } from "./transaction-batch";
 import { defaultTransactionDate, formatMonth } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cad, Field } from "./shared";
+import { haptic } from "@/lib/native";
 import { cn } from "@/lib/utils";
 
 /** Resolves to an error message to show in the dialog, or null on success. */
@@ -157,6 +158,7 @@ function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestD
   const options = categoryOptions(dashboard.categories, kind);
 
   function switchKind(next: Transaction["kind"]) {
+    if (next !== kind) haptic("selection");
     setKind(next);
     if (dashboard.categories.find((c) => c.id === category)?.kind !== next) { setCategory(""); setCategoryTouched(false); setSuggestion(null); }
   }
@@ -236,13 +238,13 @@ function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestD
             <span className="tabular shrink-0 whitespace-nowrap text-3xl font-semibold" aria-hidden="true">{style.sign}$</span>
             {splitMode
               ? <output {...props} className="tabular flex min-h-16 w-full min-w-0 items-center px-1 text-3xl font-semibold text-ink">{centsToInput(String(splitTotal))}</output>
-              : <input {...props} name="amount" inputMode="decimal" autoComplete="off" placeholder="0.00" defaultValue={item ? centsToInput(String(item.amount_cents)) : prefill?.amount_cents ? centsToInput(String(prefill.amount_cents)) : ""} required className="tabular min-h-16 w-full min-w-0 bg-transparent px-1 text-3xl font-semibold text-ink placeholder:text-ink-subtle/60 focus:outline-none" />}
+              : <input {...props} name="amount" inputMode="decimal" enterKeyHint="next" autoComplete="off" placeholder="0.00" defaultValue={item ? centsToInput(String(item.amount_cents)) : prefill?.amount_cents ? centsToInput(String(prefill.amount_cents)) : ""} required className="tabular min-h-16 w-full min-w-0 bg-transparent px-1 text-3xl font-semibold text-ink placeholder:text-ink-subtle/60 focus:outline-none" />}
           </div>
         )}
       </Field>
 
       <Field label="Description">
-        {(props) => <Input {...props} name="description" placeholder={kind === "income" ? "e.g. Harbour Books pay" : "e.g. Starbucks"} defaultValue={item?.description ?? prefill?.description} required maxLength={160} onBlur={(event) => void suggestCategory(event.target.value)} />}
+        {(props) => <Input {...props} name="description" placeholder={kind === "income" ? "e.g. Harbour Books pay" : "e.g. Starbucks"} defaultValue={item?.description ?? prefill?.description} required maxLength={160} enterKeyHint="done" autoCapitalize="words" onBlur={(event) => void suggestCategory(event.target.value)} />}
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -297,7 +299,7 @@ function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestD
       )}
 
       <FormError message={formError} />
-      <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row">
+      <div className="sheet-footer flex flex-col-reverse gap-2 pt-1 sm:flex-row">
         {onRequestDelete && <Button variant="destructive-soft" onClick={onRequestDelete} disabled={busy}><Trash2 className="size-4" aria-hidden="true" />Delete</Button>}
         <Button type="submit" disabled={busy} className={cn("min-h-12 flex-1", style.button)}>
           {busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
@@ -342,11 +344,12 @@ function QuickAdd({ onParsed, filled }: { onParsed: (items: ParsedTransaction[])
           value={text}
           rows={text.includes("\n") ? Math.min(6, text.split("\n").length + 1) : 2}
           maxLength={1000}
+          enterKeyHint="go"
           aria-describedby={hintId}
           placeholder="coffee 4.50 yesterday; phone bill 65 every 2nd of the month"
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void read(); } }}
-          className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-ink-subtle focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15"
+          className="min-h-[5.75rem] min-w-0 flex-1 resize-none rounded-xl border border-line bg-surface px-3 py-2.5 text-base text-ink sm:min-h-11 sm:text-sm placeholder:text-ink-subtle focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15"
         />
         <Button type="button" onClick={() => void read()} disabled={busy || !text.trim()} className="shrink-0">
           {busy ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}Fill in
@@ -546,7 +549,7 @@ function BudgetForm({ item, dashboard, onSubmit, onRequestDelete }: { item: Budg
         {(props) => <Input {...props} name="limit" inputMode="decimal" autoComplete="off" placeholder="0.00" defaultValue={item ? centsToInput(String(item.limit_cents)) : ""} required autoFocus={Boolean(item)} />}
       </Field>
       <FormError message={formError} />
-      <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row">
+      <div className="sheet-footer flex flex-col-reverse gap-2 pt-1 sm:flex-row">
         {onRequestDelete && <Button variant="destructive-soft" onClick={onRequestDelete} disabled={busy}><Trash2 className="size-4" aria-hidden="true" />Delete</Button>}
         <SubmitButton busy={busy} label="Save budget" />
       </div>
@@ -639,7 +642,7 @@ function GoalForm({ item, dashboard, onSubmit, onRequestDelete }: { item: Saving
         )}
       </div>
       <FormError message={formError} />
-      <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row">
+      <div className="sheet-footer flex flex-col-reverse gap-2 pt-1 sm:flex-row">
         {onRequestDelete && <Button variant="destructive-soft" onClick={onRequestDelete} disabled={busy}><Trash2 className="size-4" aria-hidden="true" />Delete</Button>}
         <SubmitButton busy={busy} label={item ? "Save goal" : "Create goal"} />
       </div>
@@ -723,7 +726,7 @@ function AddMoneyForm({ goal, dashboard, onSubmit }: { goal: SavingsGoal; dashbo
           : <span>The money is already in <span className="font-semibold text-ink">{source?.name}</span>, so it’s simply set aside for this goal.</span>}
       </p>
       <FormError message={formError} />
-      <div className="flex pt-1">
+      <div className="sheet-footer flex pt-1">
         <Button type="submit" disabled={busy} className="flex-1">
           {busy ? <><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Adding…</> : <><PiggyBank className="size-4" aria-hidden="true" />Add to {goal.name}</>}
         </Button>

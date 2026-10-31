@@ -1,7 +1,8 @@
+import { Capacitor } from "@capacitor/core";
 import { createBrowserClient } from "@supabase/ssr";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-type BrowserClient = ReturnType<typeof createBrowserClient>;
-let browserClient: BrowserClient | null = null;
+let browserClient: SupabaseClient | null = null;
 
 export function isSupabaseConfigured(): boolean {
   return Boolean(
@@ -10,11 +11,12 @@ export function isSupabaseConfigured(): boolean {
   );
 }
 
-export function createSupabaseBrowserClient(): BrowserClient {
+export function createSupabaseBrowserClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) throw new Error("Supabase environment variables are not configured");
-  browserClient ??= createBrowserClient(url, key);
+  // The iOS app's web view doesn't keep cookies on its capacitor:// origin, so the session lives in localStorage there.
+  browserClient ??= Capacitor.isNativePlatform() ? createClient(url, key, { auth: { detectSessionInUrl: false } }) : createBrowserClient(url, key);
   return browserClient;
 }
 

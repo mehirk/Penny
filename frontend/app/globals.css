@@ -750,6 +750,41 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .dialog-content[data-state="open"] { animation: dialog-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1); }
 .dialog-content[data-state="closed"] { animation: dialog-out 150ms ease-in forwards; }
 
+/*
+ * Phone bottom sheets behave like iOS sheets: they slide up, slide back down (from wherever a
+ * drag left them, so no `from` frame), and keep their main action pinned above the home bar.
+ */
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes sheet-out { to { transform: translateY(100%); } }
+@media (max-width: 639px) {
+  .dialog-content { --sheet-pb: max(1.25rem, env(safe-area-inset-bottom)); }
+  .dialog-content[data-state="open"] { animation: sheet-in 340ms cubic-bezier(0.32, 0.72, 0, 1); }
+  .dialog-content[data-state="closed"] { animation: sheet-out 220ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+  .dialog-content .sheet-footer {
+    position: sticky;
+    bottom: calc(-1 * var(--sheet-pb));
+    z-index: 1;
+    flex-direction: row;
+    margin: 1rem -1.25rem calc(-1 * var(--sheet-pb));
+    padding: 0.75rem 1.25rem var(--sheet-pb);
+    border-top: 1px solid var(--color-line);
+    background: var(--color-surface);
+  }
+}
+
+/* Touch: no grey flash on tap, no 300 ms double-tap wait. */
+html { touch-action: manipulation; }
+[role="button"], [role="tab"], [role="radio"], label { -webkit-tap-highlight-color: transparent; }
+
+/* In the iOS app, controls behave like native ones: long-press doesn't select text or open link previews. */
+:root[data-native] :where(button, a, nav, [role="button"], [role="tab"], [role="radio"], img, svg) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* The tab bar would sit on top of the keyboard; hide it while typing. */
+:root[data-keyboard] .mobile-tab-bar { display: none; }
+
 /* Thin, visible scrollbars for in-card scroll regions. */
 .scroll-area {
   scrollbar-width: thin;

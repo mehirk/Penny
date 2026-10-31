@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { ArrowDownLeft, ArrowUpDown, ArrowUpRight, CalendarDays, ChevronRight, Download, LoaderCircle, Pencil, Plus, ReceiptText, Repeat, Search, Sparkles, Trash2, X } from "lucide-react";
 import { Calendar, shortDateLabel } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
@@ -33,8 +34,8 @@ const SORT_OPTIONS: { value: TransactionSort; label: string }[] = [
   { value: "largest", label: "Largest" },
   { value: "smallest", label: "Smallest" },
 ];
-/** Filter controls share one compact size so the bar reads as a single row of tools. */
-const CONTROL = "min-h-10 rounded-lg text-sm";
+/** Filter controls share one compact size so the bar reads as a single row of tools. 16px on phones, where iOS zooms into smaller fields. */
+const CONTROL = "min-h-10 rounded-lg text-base sm:text-sm";
 
 export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, onDelete }: Props) {
   const [filters, setFilters] = useState<TransactionFilters>(EMPTY_FILTERS);
@@ -91,10 +92,17 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
 
   function exportCsv() {
     const blob = new Blob([`\ufeff${transactionsToCsv(rows, accounts)}`], { type: "text/csv;charset=utf-8" });
+    const name = `penny-transactions-${period.start}-to-${period.end}.csv`;
+    // The iOS app's web view ignores download links, so it hands the file to the share sheet (Save to Files, AirDrop, Mail).
+    const file = new File([blob], name, { type: blob.type });
+    if (Capacitor.isNativePlatform() && navigator.canShare?.({ files: [file] })) {
+      navigator.share({ files: [file] }).catch(() => undefined);
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `penny-transactions-${period.start}-to-${period.end}.csv`;
+    link.download = name;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -118,7 +126,7 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
             <div className="relative min-w-full flex-1 sm:min-w-56">
               <label htmlFor={searchId} className="sr-only">Search transactions</label>
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-subtle" aria-hidden="true" />
-              <Input id={searchId} type="search" placeholder="Search, or ask: “eating out over $20 last month”" value={filters.query} aria-describedby={`${searchId}-hint`} onChange={(event) => { setFilters({ ...filters, query: event.target.value }); setUnderstood(null); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void smartSearch(); } }} className={cn(CONTROL, "pl-9 pr-10")} />
+              <Input id={searchId} type="search" enterKeyHint="search" placeholder="Search, or ask: “eating out over $20 last month”" value={filters.query} aria-describedby={`${searchId}-hint`} onChange={(event) => { setFilters({ ...filters, query: event.target.value }); setUnderstood(null); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void smartSearch(); } }} className={cn(CONTROL, "pl-9 pr-10")} />
               <button type="button" onClick={() => void smartSearch()} disabled={searching || !filters.query.trim()} aria-label="Smart search with Penny" title="Smart search (Enter)" className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-accent-strong hover:bg-accent-soft disabled:opacity-40">
                 {searching ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
               </button>
