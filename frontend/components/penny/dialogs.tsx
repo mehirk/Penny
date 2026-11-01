@@ -71,12 +71,12 @@ export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubm
 }
 
 /**
- * New transactions start with Quick add on its own. One entry opens the form already filled in
- * for review; several open a review list. "Add manually" opens an empty form, and the form can
- * switch to adding several by hand.
+ * New transactions open on the form. "Quick AI add" expands above it: one entry fills the form
+ * in for review; several open a review list. The form can also switch to adding several by hand.
  */
 function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dashboard: Dashboard; onSubmit: Submit<TransactionWrite | SplitTransactionWrite>; onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>; onCreate: InlineCreate }) {
-  const [mode, setMode] = useState<"quick" | "form" | "batch">("quick");
+  const [mode, setMode] = useState<"form" | "batch">("form");
+  const [quickOpen, setQuickOpen] = useState(false);
   const [prefill, setPrefill] = useState<ParsedTransaction | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -86,7 +86,6 @@ function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dash
     if (items.length === 1) {
       setPrefill(items[0]);
       setFormKey((key) => key + 1);
-      setMode("form");
     } else {
       setDrafts(items.map((parsed) => draftFrom(parsed, dashboard, today)));
       setMode("batch");
@@ -94,21 +93,21 @@ function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dash
   }
 
   if (mode === "batch") {
-    return <BatchReview dashboard={dashboard} drafts={drafts} onChange={setDrafts} onSubmitMany={onSubmitMany} onBack={() => { setDrafts([]); setMode("quick"); }} fallbackDate={today} />;
+    return <BatchReview dashboard={dashboard} drafts={drafts} onChange={setDrafts} onSubmitMany={onSubmitMany} onBack={() => { setDrafts([]); setMode("form"); }} fallbackDate={today} />;
   }
 
   return (
     <div className="space-y-4">
-      <QuickAdd onParsed={onParsed} filled={mode === "form" ? prefill : null} />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button type="button" aria-expanded={mode === "form"} onClick={() => { if (mode === "form") { setMode("quick"); setPrefill(null); } else { setPrefill(null); setFormKey((key) => key + 1); setMode("form"); } }} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-ink-muted hover:bg-sage-soft hover:text-ink">
-          <ChevronDown className={cn("size-4 transition-transform", mode === "form" && "rotate-180")} aria-hidden="true" />{mode === "form" ? (prefill ? "Hide the details" : "Hide manual entry") : "Add manually"}
+        <button type="button" aria-expanded={quickOpen} aria-controls="quick-add-panel" onClick={() => setQuickOpen(!quickOpen)} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-accent-strong hover:bg-accent-soft">
+          <Wand2 className="size-4" aria-hidden="true" />Quick AI add<ChevronDown className={cn("size-4 transition-transform", quickOpen && "rotate-180")} aria-hidden="true" />
         </button>
         <button type="button" onClick={() => { setDrafts([draftFrom(null, dashboard, today), draftFrom(null, dashboard, today)]); setMode("batch"); }} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-ink-muted hover:bg-sage-soft hover:text-ink">
           <ListPlus className="size-4" aria-hidden="true" />Add several by hand
         </button>
       </div>
-      {mode === "form" && <TransactionForm key={formKey} item={null} prefill={prefill} dashboard={dashboard} onCreate={onCreate} onSubmit={onSubmit} />}
+      {quickOpen && <div id="quick-add-panel"><QuickAdd onParsed={onParsed} filled={prefill} /></div>}
+      <TransactionForm key={formKey} item={null} prefill={prefill} dashboard={dashboard} onCreate={onCreate} onSubmit={onSubmit} />
     </div>
   );
 }
@@ -330,7 +329,7 @@ function QuickAdd({ onParsed, filled }: { onParsed: (items: ParsedTransaction[])
       if (items.length === 0) setError("Penny couldn’t find a transaction in that. Try “coffee 4.50 yesterday”.");
       else onParsed(items);
     } catch {
-      setError("Penny couldn’t read that. Add it manually below instead.");
+      setError("Penny couldn’t read that. Fill in the form below instead.");
     } finally {
       setBusy(false);
     }
@@ -339,7 +338,7 @@ function QuickAdd({ onParsed, filled }: { onParsed: (items: ParsedTransaction[])
   const repeat = filled?.repeat && filled.kind === "spending" ? filled.repeat : null;
   return (
     <div className="rounded-2xl border border-accent/30 bg-accent-soft/50 p-3">
-      <label htmlFor="quick-add" className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Wand2 className="size-4 text-accent-strong" aria-hidden="true" />Quick add</label>
+      <label htmlFor="quick-add" className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Wand2 className="size-4 text-accent-strong" aria-hidden="true" />Type it in plain words</label>
       <div className="mt-2 flex items-start gap-2">
         <textarea
           id="quick-add"

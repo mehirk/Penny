@@ -5,7 +5,7 @@ import { ArrowLeft, Check, Lock, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
-import { type AccountType, type Dashboard, onboardingApi, type OnboardingAnswers, type PayFrequency, type SpendingFrom, type StarterPlan } from "@/lib/api";
+import { type AccountType, type Dashboard, onboardingApi, type OnboardingAnswers, type PayFrequency, type StarterCheck, type StarterPlan } from "@/lib/api";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
@@ -68,7 +68,6 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
   const [busy, setBusy] = useState(false);
 
   const [balances, setBalances] = useState<Record<string, string>>(() => Object.fromEntries(editable.map((a) => [a.id, centsToInput(String(a.balance_cents))])));
-  const [spendingFrom, setSpendingFrom] = useState<SpendingFrom>(dashboard.profile.spending_from);
   const [newAccounts, setNewAccounts] = useState<NewAccount[]>([]);
   const [incomeMode, setIncomeMode] = useState<"pay" | "monthly">("pay");
   const [pay, setPay] = useState({ amount: "", frequency: "biweekly" as PayFrequency, next: today });
@@ -77,6 +76,8 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
   const [everyday, setEveryday] = useState<Record<string, string>>(() => Object.fromEntries(EVERYDAY_PRESETS.filter((p) => categoryIds.has(p.category)).map((p) => [p.category, p.amount])));
   const [savings, setSavings] = useState(1_000);
   const [plan, setPlan] = useState<StarterPlan | null>(null);
+  // Shown once when the budget so far adds up to more than comes in; Continue again keeps it.
+  const [warning, setWarning] = useState<{ check: StarterCheck; key: string } | null>(null);
   const [limits, setLimits] = useState<Record<string, string>>({});
 
   /** The answers as the API expects them, or an error message for the first bad amount. */
@@ -118,11 +119,27 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
       if (cents === null) return "Enter an amount for each everyday category (0.00 to skip one).";
       if (cents > 0) spend[category] = cents;
     }
-    return { opening_balances: opening, new_accounts: accounts, income, monthly_money_cents: monthlyMoney, bills: billList, everyday: spend, savings_basis_points: savings, spending_from: spendingFrom };
+    return { opening_balances: opening, new_accounts: accounts, income, monthly_money_cents: monthlyMoney, bills: billList, everyday: spend, savings_basis_points: savings };
   }
 
   async function next() {
     setError("");
+    if (step === 3 || step === 4) {
+      const draft = answers();
+      if (typeof draft === "string") { setError(draft); return; }
+      const key = JSON.stringify([draft.everyday, draft.bills, draft.savings_basis_points, draft.income, draft.monthly_money_cents]);
+      if (warning?.key !== key) {
+        setBusy(true);
+        try {
+          const check = await onboardingApi.check(draft);
+          if (check.status !== "fits") { setWarning({ check, key }); return; }
+        } catch {
+          // The warning is a courtesy; never block setup on it.
+        } finally {
+          setBusy(false);
+        }
+      }
+    }
     if (step < STEPS.length - 2) { setStep(step + 1); return; }
     const built = answers();
     if (typeof built === "string") { setError(built); return; }
@@ -209,18 +226,6 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
               </ul>
               {newAccounts.length < 4 && <Button variant="outline" className="mt-3 w-full" onClick={() => setNewAccounts([...newAccounts, { name: "", type: "savings", balance: "0.00", limit: "" }])}><Plus className="size-4" aria-hidden="true" />Add a savings account or card</Button>}
 
-              <fieldset className="mt-8">
-                <legend className="text-base font-semibold text-ink">Where do you keep your spending money?</legend>
-                <p className="mt-1 text-sm text-ink-subtle">Safe to spend comes from these accounts, after bills, card balances, and money set aside for goals.</p>
-                <div className="mt-3 space-y-2">
-                  {([["chequing", "In chequing", "Savings is off-limits for everyday spending."], ["chequing_and_savings", "In chequing and savings", "I keep chequing low and spend from savings too."]] as const).map(([value, label, detail]) => (
-                    <label key={value} className={cn("flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border p-3", spendingFrom === value ? "border-primary bg-primary-soft" : "border-line")}>
-                      <input type="radio" name="spending-from" checked={spendingFrom === value} onChange={() => setSpendingFrom(value)} className="size-4 accent-[var(--color-primary)]" />
-                      <span><span className="block font-semibold text-ink">{label}</span><span className="block text-xs text-ink-subtle">{detail}</span></span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
             </section>
           )}
 
@@ -298,16 +303,32 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
             </section>
           )}
 
+          {(step === 3 || step === 4) && warning && <IncomeWarning check={warning.check} />}
+
           {step === 5 && plan && <PlanReview plan={plan} limits={limits} onLimit={(category, value) => setLimits({ ...limits, [category]: value })} />}
         </div>
 
         {error && <p role="alert" className="mt-4 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         <div className="sticky bottom-0 -mx-4 mt-6 bg-canvas/90 px-4 pb-1 pt-3 backdrop-blur">
           {step < STEPS.length - 1
-            ? <Button className="min-h-12 w-full text-base" disabled={busy} onClick={() => void next()}>{busy ? "Building your plan…" : step === STEPS.length - 2 ? <><Sparkles className="size-4" aria-hidden="true" />See my plan</> : "Continue"}</Button>
+            ? <Button className="min-h-12 w-full text-base" disabled={busy} onClick={() => void next()}>{busy ? (step === STEPS.length - 2 ? "Building your plan…" : "Checking…") : (step === 3 || step === 4) && warning ? "Keep these amounts" : step === STEPS.length - 2 ? <><Sparkles className="size-4" aria-hidden="true" />See my plan</> : "Continue"}</Button>
             : <Button className="min-h-12 w-full text-base" disabled={busy} onClick={() => void approve()}><Check className="size-4" aria-hidden="true" />{busy ? "Saving…" : "Use this plan"}</Button>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** "This seems high": the budget is more than comes in. Advice only; the user can keep it. */
+function IncomeWarning({ check }: { check: Pick<StarterCheck, "income_cents" | "planned_cents" | "over_income_cents" | "guide_needs_cents" | "guide_wants_cents" | "guide_savings_cents"> }) {
+  return (
+    <div role="alert" className="mt-5 rounded-xl border border-gold/50 bg-gold-soft p-4 text-sm text-ink">
+      <p className="font-semibold">This seems too high for your income</p>
+      <p className="mt-1 text-ink-muted">
+        Your plan comes to <span className="tabular font-semibold text-ink">{cad(check.planned_cents)}</span> a month, <span className="tabular font-semibold text-ink">{cad(check.over_income_cents)}</span> more than the <span className="tabular font-semibold text-ink">{cad(check.income_cents)}</span> coming in. We recommend keeping it below your income.
+      </p>
+      <p className="mt-2 text-ink-muted">The 50/30/20 rule is a simple guide: about <span className="tabular font-semibold text-ink">{cad(check.guide_needs_cents)}</span> for needs (rent, bills, groceries), <span className="tabular font-semibold text-ink">{cad(check.guide_wants_cents)}</span> for wants, and <span className="tabular font-semibold text-ink">{cad(check.guide_savings_cents)}</span> for savings.</p>
+      <p className="mt-2 text-xs text-ink-subtle">You can still keep these amounts. Safe to spend will show in red if you go over. Educational, not financial advice.</p>
     </div>
   );
 }
@@ -317,6 +338,8 @@ function PlanReview({ plan, limits, onLimit }: { plan: StarterPlan; limits: Reco
   const fixed = plan.lines.filter((l) => l.fixed_cents > 0);
   const everyday = plan.lines.filter((l) => l.requested_cents > 0);
   const card = "rounded-[var(--radius-card)] border border-line bg-surface";
+  // Re-totals as everyday amounts are edited, to keep the warning current (advice only; the saved plan comes from the API).
+  const planned = plan.fixed_cents + plan.savings_cents + everyday.reduce((sum, l) => sum + (toCents(limits[l.category_id] ?? "") ?? l.flexible_cents), 0);
   return (
     <section>
       <h1 id="setup-title" className="text-2xl font-semibold tracking-tight text-ink">Your starting plan</h1>
@@ -325,7 +348,7 @@ function PlanReview({ plan, limits, onLimit }: { plan: StarterPlan; limits: Reco
         <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-subtle"><Sparkles className="size-3.5" aria-hidden="true" />{plan.summary.source === "ai" ? "Penny AI" : "Penny"} · suggestion</p>
         <p className="mt-1 text-sm text-ink">{plan.summary.items[0]}</p>
       </div>
-      {plan.status === "short" && <p role="status" className="mt-3 rounded-xl bg-danger-soft px-3 py-2 text-sm text-ink">Your fixed bills are more than what comes in. Everyday spending starts at $0 until that changes.</p>}
+      {planned > plan.income_cents && <IncomeWarning check={{ ...plan, planned_cents: planned, over_income_cents: planned - plan.income_cents }} />}
 
       {fixed.length > 0 && (
         <>
@@ -342,7 +365,7 @@ function PlanReview({ plan, limits, onLimit }: { plan: StarterPlan; limits: Reco
           <ul className={cn(card, "divide-y divide-line")}>
             {everyday.map((l) => (
               <li key={l.category_id} className="flex min-h-14 items-center gap-3 px-4 py-2">
-                <span className="min-w-0 flex-1"><span className="block text-sm text-ink">{l.category_name}</span>{l.flexible_cents < l.requested_cents && <span className="text-xs text-ink-subtle">You said <span className="tabular">{cad(l.requested_cents)}</span></span>}</span>
+                <span className="min-w-0 flex-1"><span className="block text-sm text-ink">{l.category_name}</span></span>
                 <div className="relative w-32">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-subtle" aria-hidden="true">$</span>
                   <Input inputMode="decimal" aria-label={`${l.category_name} budget`} value={limits[l.category_id] ?? ""} onChange={(e) => onLimit(l.category_id, e.target.value)} className="min-h-11 pl-7 text-base tabular" />

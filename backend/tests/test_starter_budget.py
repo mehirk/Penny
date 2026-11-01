@@ -1,28 +1,42 @@
+from datetime import date
+
 import pytest
 
-from app.domain.runway import safe_to_spend_cents
+from app.domain.runway import runway, safe_to_spend
 from app.domain.starter_budget import monthly_income_cents, starter_plan
 
 # ------------------------------------------------------------------ safe to spend
 
 
-def test_cash_after_unpaid_bills() -> None:
-    assert safe_to_spend_cents(250_000, 82_500) == 167_500
+def test_budget_minus_spent_minus_unpaid_bills() -> None:
+    result = safe_to_spend(100_000, 30_000, 10_000)
+    assert (result.safe_cents, result.over_cents) == (60_000, 0)
 
 
-def test_bills_above_cash_is_zero() -> None:
-    assert safe_to_spend_cents(50_000, 82_500) == 0
+def test_paid_bill_counts_once() -> None:
+    # $500 budget with $100 rent: unpaid it's held back; once paid it's part of what's spent.
+    assert safe_to_spend(50_000, 0, 10_000).safe_cents == 40_000
+    assert safe_to_spend(50_000, 10_000, 0).safe_cents == 40_000
 
 
-def test_paid_bill_is_not_counted_twice() -> None:
-    # $500 chequing, $100 rent already paid: the balance is $400 and all of it is safe to spend,
-    # even though the $100 Housing budget is fully used.
-    assert safe_to_spend_cents(40_000, 0) == 40_000
+def test_goes_negative_when_over_budget() -> None:
+    result = safe_to_spend(50_000, 62_000, 0)
+    assert (result.safe_cents, result.over_cents) == (-12_000, 12_000)
 
 
-def test_safe_to_spend_rejects_negative_inputs() -> None:
+def test_exactly_used_up_is_zero() -> None:
+    assert safe_to_spend(50_000, 40_000, 10_000).safe_cents == 0
+
+
+@pytest.mark.parametrize("values", [(-1, 0, 0), (0, -1, 0), (0, 0, -1)])
+def test_safe_to_spend_rejects_negative_inputs(values: tuple[int, int, int]) -> None:
     with pytest.raises(ValueError):
-        safe_to_spend_cents(0, -1)
+        safe_to_spend(*values)
+
+
+def test_runway_over_budget_has_no_daily_amount() -> None:
+    result = runway(-500, date(2026, 11, 10), None, date(2026, 11, 30), 1_000)
+    assert (result.status, result.per_day_cents, result.days_left) == ("over", 0, 21)
 
 
 # ------------------------------------------------------------------ income
@@ -59,14 +73,20 @@ def test_plan_fits_and_keeps_requests() -> None:
     assert lines["cat-groceries"].limit_cents == 30_000
 
 
-def test_plan_trims_everyday_proportionally_to_five_dollars() -> None:
+def test_plan_over_income_keeps_amounts_and_says_by_how_much() -> None:
     plan = starter_plan(100_000, {"cat-housing": 60_000}, {"a": 30_000, "b": 30_000}, 0)
-    # $400 of room for $600 requested: each gets 2/3, rounded down to $5.
     lines = {line.category_id: line for line in plan.lines}
-    assert lines["a"].flexible_cents == 20_000
-    assert lines["b"].flexible_cents == 20_000
-    assert plan.status == "trimmed"
-    assert plan.fixed_cents + plan.flexible_cents + plan.savings_cents <= plan.income_cents
+    assert (lines["a"].flexible_cents, lines["b"].flexible_cents) == (30_000, 30_000)
+    assert (plan.status, plan.over_income_cents, plan.buffer_cents) == ("over", 20_000, 0)
+
+
+def test_fifty_thirty_twenty_guide() -> None:
+    plan = starter_plan(200_001, {}, {}, 0)
+    assert (plan.guide_needs_cents, plan.guide_wants_cents, plan.guide_savings_cents) == (
+        100_000,
+        60_000,
+        40_000,
+    )
 
 
 def test_fixed_and_everyday_share_a_category() -> None:
@@ -83,7 +103,8 @@ def test_savings_never_exceed_what_is_left_after_fixed() -> None:
 def test_fixed_above_income_is_short_with_nothing_everyday() -> None:
     plan = starter_plan(50_000, {"cat-housing": 82_500}, {"cat-groceries": 20_000}, 1_000)
     assert plan.status == "short"
-    assert (plan.savings_cents, plan.flexible_cents, plan.buffer_cents) == (0, 0, 0)
+    assert (plan.savings_cents, plan.flexible_cents, plan.buffer_cents) == (0, 20_000, 0)
+    assert plan.over_income_cents == 52_500
     lines = {line.category_id: line for line in plan.lines}
     assert lines["cat-housing"].limit_cents == 82_500
 
@@ -103,13 +124,3 @@ def test_plan_rejects_invalid_input(
 ) -> None:
     with pytest.raises(ValueError):
         starter_plan(income, fixed, everyday, savings)
-
-
-def test_set_aside_cards_and_outside_spending_come_off() -> None:
-    # $1,000 spending money − $200 goal − $50 card − $300 bills − $40 spent from savings.
-    assert safe_to_spend_cents(100_000, 30_000, 20_000, 5_000, 4_000) == 41_000
-
-
-def test_safe_to_spend_rejects_negative_deductions() -> None:
-    with pytest.raises(ValueError):
-        safe_to_spend_cents(0, 0, set_aside_cents=-1)

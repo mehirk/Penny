@@ -2,7 +2,7 @@
 
 import { createElement, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import { ArrowUpDown, CalendarDays, ChevronRight, Download, LoaderCircle, Pencil, Plus, ReceiptText, Repeat, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowUpDown, CalendarDays, ChevronRight, Download, LoaderCircle, Plus, ReceiptText, Repeat, Search, Sparkles, X } from "lucide-react";
 import { Calendar, shortDateLabel } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { assistApi, type Category, type Dashboard, type SearchFilters, type Tran
 import { formatShortDate } from "@/lib/format";
 import { EMPTY_FILTERS, filterTransactions, hasActiveFilters, type KindFilter, sortTransactions, type TransactionFilters, type TransactionSort, transactionsToCsv } from "@/lib/transactions";
 import { cn } from "@/lib/utils";
+import { BackBar } from "./back-bar";
 import { categoryOptions } from "./dialogs";
 import { cad, EmptyState } from "./shared";
 import { SwipeRow } from "./swipe-row";
@@ -21,9 +22,61 @@ type Props = {
   /** Switches the period on screen, for searches about another month. */
   onChangePeriod?: (range: { start: string; end: string }) => void;
   onAdd: () => void;
-  onEdit: (item: Transaction) => void;
+  /** Opens one transaction on its own page. */
+  onOpen: (item: Transaction) => void;
   onDelete: (item: Transaction) => void;
+  onBack: () => void;
 };
+
+const RECENT_COUNT = 5;
+const DAY_HEADING = new Intl.DateTimeFormat("en-CA", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+const dayHeading = (day: string) => DAY_HEADING.format(new Date(`${day}T00:00:00Z`)).toUpperCase();
+
+/** A list row: icon, name and category, amount. Tapping opens the transaction's page; on touch, swipe to delete. */
+function ActivityRow({ item, category, onOpen, onDelete }: { item: Transaction; category: Category | undefined; onOpen: () => void; onDelete: () => void }) {
+  const income = item.kind === "income";
+  return (
+    <SwipeRow label={item.description} onDelete={onDelete}>
+      <button type="button" onClick={onOpen} className="flex min-h-16 w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-sage-soft/60 sm:px-5" aria-label={`${item.description}, ${income ? "money in" : "money out"} ${cad(item.amount_cents)}, ${item.category}, ${formatShortDate(item.occurred_on)}. Open`}>
+        <TransactionIdentity item={item} category={category} />
+        <span className={cn("tabular shrink-0 whitespace-nowrap font-semibold", income ? "text-money-in" : "text-ink")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</span>
+        <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+      </button>
+    </SwipeRow>
+  );
+}
+
+/** Spending's Transactions card: the latest few, and "See all" for the full activity page. */
+export function RecentTransactions({ dashboard, onAdd, onOpen, onDelete, onSeeAll }: Pick<Props, "dashboard" | "onAdd" | "onOpen" | "onDelete"> & { onSeeAll: () => void }) {
+  const categories = useMemo(() => new Map(dashboard.categories.map((category) => [category.id, category])), [dashboard.categories]);
+  const rows = useMemo(() => sortTransactions(dashboard.transactions, "newest").slice(0, RECENT_COUNT), [dashboard.transactions]);
+  const total = dashboard.transactions.length;
+  const { period } = dashboard;
+  return (
+    <Card id="transactions" className="scroll-mt-28 overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold tracking-tight text-ink">Transactions</h2>
+          <p className="text-sm text-ink-subtle">{total} {period.phrase}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" onClick={onAdd} className="max-sm:hidden"><Plus className="size-4" aria-hidden="true" />Add<span className="sr-only"> transaction</span></Button>
+          {total > 0 && <Button size="sm" variant="ghost" onClick={onSeeAll}>See all<ChevronRight className="size-4" aria-hidden="true" /></Button>}
+        </div>
+      </div>
+      {total === 0 ? (
+        <div className="p-5 pt-3">
+          <EmptyState icon={ReceiptText} title={`No transactions ${period.phrase}`} description="Add one, or pick a different period at the top of the page." action={<Button size="sm" onClick={onAdd}><Plus className="size-4" aria-hidden="true" />Add transaction</Button>} />
+        </div>
+      ) : (
+        <ul className="mt-2 divide-y divide-line/70 border-t border-line">
+          {rows.map((item) => <li key={item.id}><ActivityRow item={item} category={item.category_id ? categories.get(item.category_id) : undefined} onOpen={() => onOpen(item)} onDelete={() => onDelete(item)} /></li>)}
+          {total > RECENT_COUNT && <li><button type="button" onClick={onSeeAll} className="flex min-h-12 w-full items-center justify-center gap-1 text-sm font-semibold text-accent-strong hover:bg-sage-soft">See all {total} transactions<ChevronRight className="size-4" aria-hidden="true" /></button></li>}
+        </ul>
+      )}
+    </Card>
+  );
+}
 
 const KIND_OPTIONS: { value: KindFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -39,7 +92,11 @@ const SORT_OPTIONS: { value: TransactionSort; label: string }[] = [
 /** Filter controls share one compact size so the bar reads as a single row of tools. 16px on phones, where iOS zooms into smaller fields. */
 const CONTROL = "min-h-10 rounded-lg text-base sm:text-sm";
 
-export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, onDelete }: Props) {
+/**
+ * Every transaction in the period on its own page, newest first and grouped by day like a bank's
+ * activity list. Filters sit in one row of chips that slides sideways on a phone.
+ */
+export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onOpen, onDelete, onBack }: Props) {
   const [filters, setFilters] = useState<TransactionFilters>(EMPTY_FILTERS);
   const [understood, setUnderstood] = useState<{ summary: string; source: SearchFilters["source"] } | null>(null);
   const [searching, setSearching] = useState(false);
@@ -80,7 +137,6 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
     setSearchError("");
   }
   const [sort, setSort] = useState<TransactionSort>("newest");
-  const [expanded, setExpanded] = useState<string | null>(null);
   const headingId = useId();
   const searchId = useId();
   const accounts = useMemo(() => new Map(dashboard.accounts.map((account) => [account.id, account.name])), [dashboard.accounts]);
@@ -110,11 +166,25 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  // By day when sorted by date; one list when sorted by amount.
+  const groups = useMemo(() => {
+    if (sort !== "newest" && sort !== "oldest") return [{ day: "", items: rows }];
+    const byDay: { day: string; items: Transaction[] }[] = [];
+    for (const item of rows) {
+      const last = byDay[byDay.length - 1];
+      if (last && last.day === item.occurred_on) last.items.push(item);
+      else byDay.push({ day: item.occurred_on, items: [item] });
+    }
+    return byDay;
+  }, [rows, sort]);
+  const CHIP = "min-h-10 shrink-0 snap-start rounded-full border px-3 text-sm font-semibold";
+
   return (
-    <Card id="transactions" className="scroll-mt-28 flex flex-col">
-      <div className="flex items-center justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
+    <div className="mx-auto max-w-3xl">
+      <BackBar label="Spending" onBack={onBack} />
+      <div className="flex items-center justify-between gap-3 pb-2 pt-1">
         <div className="min-w-0">
-          <h2 id={headingId} className="text-lg font-semibold tracking-tight text-ink">Transactions</h2>
+          <h2 id={headingId} className="text-2xl font-semibold tracking-tight text-ink">Activity</h2>
           <p className="text-sm text-ink-subtle" aria-live="polite">{filtering ? `${rows.length} of ${total} shown` : `${total} ${period.phrase}`}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -124,114 +194,74 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
       </div>
 
       {total > 0 && (
-        <div role="search" aria-label="Filter transactions" className="relative border-b border-line px-4 pb-3 pt-3 sm:px-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-full flex-1 sm:min-w-56">
-              <label htmlFor={searchId} className="sr-only">Search transactions</label>
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-subtle" aria-hidden="true" />
-              <Input id={searchId} type="search" enterKeyHint="search" placeholder="Search, or ask: “eating out over $20 last month”" value={filters.query} aria-describedby={`${searchId}-hint`} onChange={(event) => { setFilters({ ...filters, query: event.target.value }); setUnderstood(null); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void smartSearch(); } }} className={cn(CONTROL, "pl-9 pr-10")} />
-              <button type="button" onClick={() => void smartSearch()} disabled={searching || !filters.query.trim()} aria-label="Smart search with Penny" title="Smart search (Enter)" className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-accent-strong hover:bg-accent-soft disabled:opacity-40">
-                {searching ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
+        <div role="search" aria-label="Filter transactions" className="relative sticky top-[calc(env(safe-area-inset-top)+3.25rem)] z-10 -mx-4 bg-canvas/90 px-4 pb-3 pt-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:top-0">
+          <div className="relative">
+            <label htmlFor={searchId} className="sr-only">Search transactions</label>
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-subtle" aria-hidden="true" />
+            <Input id={searchId} type="search" enterKeyHint="search" placeholder="Search, or ask: “eating out over $20 last month”" value={filters.query} aria-describedby={`${searchId}-hint`} onChange={(event) => { setFilters({ ...filters, query: event.target.value }); setUnderstood(null); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void smartSearch(); } }} className={cn(CONTROL, "rounded-full pl-9 pr-10")} />
+            <button type="button" onClick={() => void smartSearch()} disabled={searching || !filters.query.trim()} aria-label="Smart search with Penny" title="Smart search (Enter)" className="absolute right-1 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full text-accent-strong hover:bg-accent-soft disabled:opacity-40">
+              {searching ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
+            </button>
+          </div>
+          {/* One row of filter chips; on a phone it slides sideways instead of wrapping. */}
+          <div className="-mx-4 mt-2 flex snap-x scroll-px-4 items-center gap-2 overflow-x-auto px-4 pb-1 sm:scroll-px-6 [scrollbar-width:none] sm:-mx-6 sm:px-6 [&::-webkit-scrollbar]:hidden">
+            {KIND_OPTIONS.map((option) => (
+              <button key={option.value} type="button" aria-pressed={filters.kind === option.value} onClick={() => setFilters({ ...filters, kind: option.value })} className={cn(CHIP, filters.kind === option.value ? "border-ink bg-ink text-canvas" : "border-line-strong bg-surface text-ink")}>
+                {option.value === "all" ? "All" : option.value === "income" ? "Money in" : "Money out"}
               </button>
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div role="radiogroup" aria-label="Money in or out" className="inline-flex rounded-lg bg-sage-soft p-0.5">
-              {KIND_OPTIONS.map((option) => (
-                <button key={option.value} type="button" role="radio" aria-checked={filters.kind === option.value} onClick={() => setFilters({ ...filters, kind: option.value })} className={cn("min-h-9 rounded-md px-3 text-sm font-semibold transition-colors", filters.kind === option.value ? "bg-surface text-ink shadow-sm" : "text-ink-muted hover:text-ink")}>
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            ))}
             <label className="sr-only" htmlFor={`${searchId}-account`}>Account</label>
-            <Select id={`${searchId}-account`} value={filters.account ?? "all"} onChange={(event) => setFilters({ ...filters, account: event.target.value })} className={cn(CONTROL, "w-auto max-w-[12rem]", filters.account && filters.account !== "all" && "border-accent")}>
+            <Select id={`${searchId}-account`} value={filters.account ?? "all"} onChange={(event) => setFilters({ ...filters, account: event.target.value })} className={cn(CONTROL, "w-auto shrink-0 snap-start rounded-full font-semibold", filters.account && filters.account !== "all" && "border-ink")}>
               <option value="all">All accounts</option>
               {dashboard.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
             </Select>
             <label className="sr-only" htmlFor={`${searchId}-category`}>Category</label>
-            <Select id={`${searchId}-category`} value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })} className={cn(CONTROL, "w-auto max-w-[12rem]", filters.category !== "all" && "border-accent")}>
+            <Select id={`${searchId}-category`} value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })} className={cn(CONTROL, "w-auto shrink-0 snap-start rounded-full font-semibold", filters.category !== "all" && "border-ink")}>
               <option value="all">All categories</option>
               <optgroup label="Money out">{categoryOptions(dashboard.categories, "spending").map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</optgroup>
               <optgroup label="Money in">{categoryOptions(dashboard.categories, "income").map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</optgroup>
               <option value="uncategorized">Uncategorized</option>
             </Select>
-            <DateFilter start={period.start} end={period.end} transactions={dashboard.transactions} from={filters.from} to={filters.to} onChange={(from, to) => setFilters({ ...filters, from, to })} />
+            <div className="shrink-0 snap-start"><DateFilter start={period.start} end={period.end} transactions={dashboard.transactions} from={filters.from} to={filters.to} onChange={(from, to) => setFilters({ ...filters, from, to })} /></div>
             <label className="sr-only" htmlFor={`${searchId}-sort`}>Sort</label>
-            <span className="relative">
+            <span className="relative shrink-0 snap-start">
               <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-subtle" aria-hidden="true" />
-              <Select id={`${searchId}-sort`} value={sort} onChange={(event) => setSort(event.target.value as TransactionSort)} className={cn(CONTROL, "w-auto pl-9")}>
+              <Select id={`${searchId}-sort`} value={sort} onChange={(event) => setSort(event.target.value as TransactionSort)} className={cn(CONTROL, "w-auto rounded-full pl-9 font-semibold")}>
                 {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </Select>
             </span>
-            {filtering && <Button variant="ghost" size="sm" onClick={clearAll}><X className="size-4" aria-hidden="true" />Clear</Button>}
-            </div>
+            {filtering && <button type="button" onClick={clearAll} className={cn(CHIP, "inline-flex items-center gap-1 border-transparent text-ink-muted")}><X className="size-4" aria-hidden="true" />Clear</button>}
           </div>
-          <p id={`${searchId}-hint`} aria-live="polite" className={cn("mt-2 flex flex-wrap items-center gap-1.5 text-xs", searchError ? "text-danger" : "text-ink-subtle")}>
+          <p id={`${searchId}-hint`} aria-live="polite" className={cn("mt-1 flex flex-wrap items-center gap-1.5 text-xs", searchError ? "text-danger" : "text-ink-subtle")}>
             {searchError || (understood
               ? <><Sparkles className="size-3.5 text-accent-strong" aria-hidden="true" />Showing <span className="font-semibold text-ink">{understood.summary}</span>{understood.source === "ai" ? " · read by Penny AI" : ""}</>
-              : <span className="max-sm:sr-only">Type to filter by name, or press Enter to search in plain words.</span>)}
+              : <span className="sr-only">Type to filter by name, or press Enter to search in plain words.</span>)}
           </p>
         </div>
       )}
 
       {total === 0 ? (
-        <div className="p-5 pt-3">
-          <EmptyState icon={ReceiptText} title={`No transactions ${period.phrase}`} description="Add one, or pick a different period at the top of the page." action={<Button size="sm" onClick={onAdd}><Plus className="size-4" aria-hidden="true" />Add transaction</Button>} />
-        </div>
+        <EmptyState className="mt-4" icon={ReceiptText} title={`No transactions ${period.phrase}`} description="Add one, or pick a different period on Spending." action={<Button size="sm" onClick={onAdd}><Plus className="size-4" aria-hidden="true" />Add transaction</Button>} />
       ) : rows.length === 0 ? (
-        <div className="p-5">
-          <EmptyState icon={Search} title="No matching transactions" description="Try a different search, or clear the filters to see everything." action={<Button size="sm" variant="outline" onClick={clearAll}><X className="size-4" aria-hidden="true" />Clear filters</Button>} />
-        </div>
+        <EmptyState className="mt-4" icon={Search} title="No matching transactions" description="Try a different search, or clear the filters to see everything." action={<Button size="sm" variant="outline" onClick={clearAll}><X className="size-4" aria-hidden="true" />Clear filters</Button>} />
       ) : (
-        <div tabIndex={0} role="region" aria-labelledby={headingId} className="scroll-area relative max-h-[min(34rem,65dvh)] overflow-y-auto rounded-b-[var(--radius-card)] focus-visible:outline-offset-[-3px]">
-          <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
-            <caption className="sr-only">Transactions {period.phrase}</caption>
-            <thead className="sticky top-0 z-10 hidden bg-sage-soft md:table-header-group">
-              <tr className="text-left text-xs font-semibold uppercase tracking-wider text-ink-subtle">
-                <th scope="col" className="border-b border-line py-2.5 pl-5 pr-3 font-semibold">Transaction</th>
-                <th scope="col" className="hidden w-44 border-b border-line px-3 py-2.5 font-semibold lg:table-cell">Account</th>
-                <th scope="col" className="w-32 border-b border-line px-3 py-2.5 text-right font-semibold">Amount</th>
-                <th scope="col" className="w-28 border-b border-line py-2.5 pl-3 pr-5 text-right font-semibold"><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((item) => {
-                const income = item.kind === "income";
-                return (
-                  <tr key={item.id} className="group transition-colors hover:bg-sage-soft/60">
-                    <td className="border-b border-line/70 p-0 group-last:border-b-0 md:py-3 md:pl-5 md:pr-3">
-                      <SwipeRow label={item.description} onDelete={() => onDelete(item)} className="md:hidden">
-                        <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left md:hidden" aria-expanded={expanded === item.id} aria-label={`${item.description}, ${income ? "money in" : "money out"} ${cad(item.amount_cents)}, ${item.category}, ${formatShortDate(item.occurred_on)}. Show details`}>
-                        <TransactionIdentity item={item} category={item.category_id ? categories.get(item.category_id) : undefined} />
-                        <span className={cn("tabular whitespace-nowrap shrink-0 font-semibold", income ? "text-money-in" : "text-ink")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</span>
-                        <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
-                      </button>
-                      </SwipeRow>
-                      <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id} className="hidden min-w-0 items-center gap-3 text-left md:flex"><TransactionIdentity item={item} category={item.category_id ? categories.get(item.category_id) : undefined} /></button>
-                      {expanded === item.id && <div className="mx-4 mb-3 rounded-xl bg-sage-soft p-3 text-xs text-ink-muted md:mx-0 md:mb-0 md:mt-2"><p>{income ? "Income" : "Expense"} · {accounts.get(item.account_id) ?? "Unknown account"}{item.bill_id ? ` · ${item.paid_automatically === true ? "paid automatically" : item.paid_automatically === false ? "you marked it paid" : "recurring payment"}` : ""}</p><div className="mt-2 flex gap-2 md:hidden"><Button size="sm" variant="outline" onClick={() => onEdit(item)}>Edit</Button><Button size="sm" variant="destructive-soft" onClick={() => onDelete(item)}>Delete</Button></div></div>}
-                    </td>
-                    <td className="hidden truncate border-b border-line/70 px-3 py-3 text-ink-muted group-last:border-b-0 lg:table-cell">{accounts.get(item.account_id) ?? "—"}</td>
-                    <td className={cn("tabular hidden whitespace-nowrap border-b border-line/70 px-3 py-3 text-right font-semibold group-last:border-b-0 md:table-cell", income ? "text-money-in" : "text-ink")}>
-                      {income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}
-                    </td>
-                    <td className="hidden border-b border-line/70 py-2 pl-3 pr-4 text-right group-last:border-b-0 md:table-cell">
-                      <div className="flex justify-end gap-1">
-                        <button type="button" onClick={() => onEdit(item)} className="grid size-10 place-items-center rounded-lg text-ink-subtle transition-colors hover:bg-sage hover:text-ink" aria-label={`Edit ${item.description}`}><Pencil className="size-4" /></button>
-                        <button type="button" onClick={() => onDelete(item)} className="grid size-10 place-items-center rounded-lg text-ink-subtle transition-colors hover:bg-danger-soft hover:text-danger" aria-label={`Delete ${item.description}`}><Trash2 className="size-4" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <section aria-labelledby={headingId} className="mt-2 space-y-5">
+          {groups.map((group) => (
+            <div key={group.day || "all"}>
+              {group.day && <h3 className="mb-1.5 px-1 text-xs font-semibold tracking-wider text-ink-subtle">{dayHeading(group.day)}</h3>}
+              <ul className="divide-y divide-line/70 overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
+                {group.items.map((item) => <li key={item.id}><ActivityRow item={item} category={item.category_id ? categories.get(item.category_id) : undefined} onOpen={() => onOpen(item)} onDelete={() => onDelete(item)} /></li>)}
+              </ul>
+            </div>
+          ))}
+        </section>
       )}
-    </Card>
+    </div>
   );
 }
 
 /** The category's icon, as on Home, so a list of purchases can be scanned by kind. */
-function TransactionIdentity({ item, category }: { item: Transaction; category: Category | undefined }) {
+export function TransactionIdentity({ item, category }: { item: Transaction; category: Category | undefined }) {
   const income = item.kind === "income";
   return (
     <>

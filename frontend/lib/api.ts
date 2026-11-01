@@ -84,8 +84,8 @@ export type Dashboard = {
 };
 
 /** Each step of Safe to spend, as the API computed it. */
-export type SafeToSpendBreakdown = { spending_from: SpendingFrom; spending_money_cents: number; set_aside_cents: number; owed_on_cards_cents: number; unpaid_bills_cents: number; spent_outside_cents: number; safe_cents: number; short_cents: number; holds_until: string };
-export type SpendingRunway = { until: string; until_payday: boolean; days_left: number; per_day_cents: number; status: "on_track" | "tight" | "empty" };
+export type SafeToSpendBreakdown = { budget_cents: number; spent_cents: number; unpaid_bills_cents: number; safe_cents: number; over_cents: number; has_budget: boolean };
+export type SpendingRunway = { until: string; until_payday: boolean; days_left: number; per_day_cents: number; status: "on_track" | "tight" | "empty" | "over" };
 
 export type HistoryMonth = { month: string; income_cents: number; spending_cents: number; cash_flow_cents: number; budget_cents: number; transaction_count: number };
 export type History = {
@@ -221,7 +221,6 @@ export const dashboardApi = {
   deleteCategory: (id: string) => request(`/api/v1/categories/${id}`, { method: "DELETE" }),
   createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
   updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  setSpendingFrom: (spendingFrom: SpendingFrom) => request("/api/v1/profile/spending-from", { method: "PUT", body: JSON.stringify({ spending_from: spendingFrom }) }),
   deleteAccount: (id: string) => request(`/api/v1/accounts/${id}`, { method: "DELETE" }),
   importRows: (account_id: string, rows: ImportRow[]) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; ai_categorized: number; dashboard: Dashboard }>("/api/v1/transactions/import-rows", { method: "POST", body: JSON.stringify({ account_id, rows }) }),
   applyBudgetChanges: (changes: { budget_id: string; limit_cents: number }[], month?: string) => request(inMonth("/api/v1/budgets/changes", month), { method: "POST", body: JSON.stringify({ changes }) }),
@@ -257,13 +256,16 @@ export type OnboardingAnswers = {
   bills: { name: string; amount_cents: number; category_id: string; frequency: BillFrequency; next_due: string }[];
   everyday: Record<string, number>;
   savings_basis_points: number;
-  spending_from: SpendingFrom;
+  spending_from?: SpendingFrom;
 };
 export type StarterPlanLine = { category_id: string; category_name: string; fixed_cents: number; flexible_cents: number; requested_cents: number; limit_cents: number };
-export type StarterPlan = { income_cents: number; fixed_cents: number; savings_cents: number; flexible_cents: number; buffer_cents: number; status: "fits" | "trimmed" | "short"; lines: StarterPlanLine[]; summary: AssistText };
+export type StarterPlan = { income_cents: number; fixed_cents: number; savings_cents: number; flexible_cents: number; buffer_cents: number; over_income_cents: number; status: "fits" | "over" | "short"; lines: StarterPlanLine[]; guide_needs_cents: number; guide_wants_cents: number; guide_savings_cents: number; summary: AssistText };
+
+export type StarterCheck = { income_cents: number; planned_cents: number; over_income_cents: number; status: "fits" | "over" | "short"; guide_needs_cents: number; guide_wants_cents: number; guide_savings_cents: number };
 
 /** First-run setup: the plan is only a proposal until `apply` (the user's approval). */
 export const onboardingApi = {
+  check: (answers: OnboardingAnswers) => authorizedRequest<StarterCheck>("/api/v1/onboarding/check", { method: "POST", body: JSON.stringify(answers) }),
   plan: (answers: OnboardingAnswers) => authorizedRequest<StarterPlan>("/api/v1/onboarding/plan", { method: "POST", body: JSON.stringify(answers) }),
   apply: (answers: OnboardingAnswers, everydayLimits: Record<string, number>) => request("/api/v1/onboarding/apply", { method: "POST", body: JSON.stringify({ answers, everyday_limits: everydayLimits }) }),
 };

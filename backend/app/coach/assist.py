@@ -680,9 +680,38 @@ class StarterPlanOut(AssistModel):
     savings_cents: int
     flexible_cents: int
     buffer_cents: int
-    status: Literal["fits", "trimmed", "short"]
+    over_income_cents: int
+    status: Literal["fits", "over", "short"]
     lines: list[StarterPlanLine]
+    guide_needs_cents: int
+    guide_wants_cents: int
+    guide_savings_cents: int
     summary: AssistText
+
+
+class StarterCheck(AssistModel):
+    """Whether the setup answers fit the income, with the 50/30/20 guide. No AI involved."""
+
+    income_cents: int
+    planned_cents: int  # fixed bills + savings + everyday
+    over_income_cents: int
+    status: Literal["fits", "over", "short"]
+    guide_needs_cents: int
+    guide_wants_cents: int
+    guide_savings_cents: int
+
+
+def starter_check(store: DashboardStore, user_id: str, answers: OnboardingAnswers) -> StarterCheck:
+    plan = store.starter_plan_for(user_id, answers)
+    return StarterCheck(
+        income_cents=plan.income_cents,
+        planned_cents=plan.fixed_cents + plan.savings_cents + plan.flexible_cents,
+        over_income_cents=plan.over_income_cents,
+        status=plan.status,
+        guide_needs_cents=plan.guide_needs_cents,
+        guide_wants_cents=plan.guide_wants_cents,
+        guide_savings_cents=plan.guide_savings_cents,
+    )
 
 
 async def onboarding_plan(
@@ -698,15 +727,19 @@ async def onboarding_plan(
     savings = f.money("Savings", plan.savings_cents, "onboarding")
     everyday = f.money("Everyday spending", plan.flexible_cents, "onboarding")
     buffer = f.money("Unassigned buffer", plan.buffer_cents, "onboarding")
+    over = f.money("Over income by", plan.over_income_cents, "onboarding")
+    needs = f.money("50/30/20 needs", plan.guide_needs_cents, "onboarding")
+    wants = f.money("50/30/20 wants", plan.guide_wants_cents, "onboarding")
+    saved = f.money("50/30/20 savings", plan.guide_savings_cents, "onboarding")
     if plan.status == "short":
         fallback = [
-            f"Your fixed costs ({fixed}) are more than the {income} coming in each month, so "
-            "there's nothing left for everyday spending yet. Look at your bills or add income."
+            f"Your fixed costs ({fixed}) are more than the {income} coming in each month. You "
+            "can keep this plan, but look at your bills or add income when you can."
         ]
-    elif plan.status == "trimmed":
+    elif plan.status == "over":
         fallback = [
-            f"Your everyday estimates didn't fit after {fixed} in fixed costs and {savings} for "
-            f"savings, so each was scaled down to fit {everyday}. Adjust any of them below."
+            f"This plan is {over} more than the {income} coming in. The 50/30/20 rule suggests "
+            f"about {needs} for needs, {wants} for wants, and {saved} for savings."
         ]
     else:
         fallback = [
@@ -720,7 +753,9 @@ async def onboarding_plan(
         "a student: what's fixed, what's saved, what's left for everyday spending. Educational "
         "only, no investment, tax, or credit advice.",
         f"PLAN: income {income}, fixed {fixed}, savings {savings}, everyday {everyday}, "
-        f"buffer {buffer}, status {plan.status}",
+        f"buffer {buffer}, over income by {over}, status {plan.status}, 50/30/20 guide: "
+        f"needs {needs}, wants {wants}, savings {saved}. If status is over or short, say so "
+        "kindly and mention the 50/30/20 guide; never tell them they can't keep it.",
         fallback,
         1,
         max_chars=320,
@@ -731,7 +766,11 @@ async def onboarding_plan(
         savings_cents=plan.savings_cents,
         flexible_cents=plan.flexible_cents,
         buffer_cents=plan.buffer_cents,
+        over_income_cents=plan.over_income_cents,
         status=plan.status,
+        guide_needs_cents=plan.guide_needs_cents,
+        guide_wants_cents=plan.guide_wants_cents,
+        guide_savings_cents=plan.guide_savings_cents,
         lines=[
             StarterPlanLine(
                 category_id=line.category_id,
@@ -1198,26 +1237,20 @@ async def safe_to_spend_read(settings: Settings, store: DashboardStore, user_id:
     """Why Safe to spend is what it is, what's coming, and one practical step."""
     d = store.dashboard_for_user(user_id)
     safe = d.safe_to_spend
-    if safe is None:
-        return AssistText(items=[], source="built_in", model=None)
+    if safe is None or not safe.has_budget:
+        return AssistText(
+            items=["Set a monthly budget and Safe to spend will show what's left of it."],
+            source="built_in",
+            model=None,
+        )
     f = FactBook()
-    money = {
-        "safe_to_spend": f.money("Safe to spend", safe.safe_cents, "safe_to_spend"),
-        "spending_money": f.money("Spending money", safe.spending_money_cents, "accounts"),
-        "goal_money_set_aside": f.money("Goal money", safe.set_aside_cents, "goals"),
-        "owed_on_cards": f.money("Owed on cards", safe.owed_on_cards_cents, "accounts"),
-        "unpaid_bills": f.money("Unpaid bills", safe.unpaid_bills_cents, "bills"),
-        "spent_from_other_accounts": f.money(
-            "Spent from other accounts", safe.spent_outside_cents, "transactions"
-        ),
-    }
     facts: dict[str, object] = {
-        **money,
-        "spending_money_is": "chequing and cash"
-        if safe.spending_from == "chequing"
-        else "chequing, cash, and savings",
-        "held_back_until": f"{safe.holds_until:%B} {safe.holds_until.day}",
+        "safe_to_spend": f.money("Safe to spend", safe.safe_cents, "safe_to_spend"),
+        "monthly_budget": f.money("Monthly budget", safe.budget_cents, "budgets"),
+        "spent_this_month": f.money("Spent this month", safe.spent_cents, "transactions"),
     }
+    if safe.unpaid_bills_cents:
+        facts["unpaid_bills_this_month"] = f.money("Unpaid bills", safe.unpaid_bills_cents, "bills")
     bills = [
         f"{item.name} {f.money(item.name, item.amount_cents, 'bills')} "
         + (
@@ -1229,43 +1262,36 @@ async def safe_to_spend_read(settings: Settings, store: DashboardStore, user_id:
     ]
     facts["unpaid_bill_list"] = bills
     runway = d.spending_runway
-    if runway:
+    if runway and safe.safe_cents > 0:
         facts["per_day"] = f.money("Per day", runway.per_day_cents, "safe_to_spend")
-        facts["days_left"] = runway.days_left
-    if safe.short_cents:
-        facts["short_by"] = f.money("Short by", safe.short_cents, "safe_to_spend")
+        facts["days_left_in_month"] = runway.days_left
+    if safe.over_cents:
+        facts["over_budget_by"] = f.money("Over budget by", safe.over_cents, "safe_to_spend")
     over = [b for b in d.budgets if not b.carried_over and b.remaining_cents < 0]
     if over:
-        facts["over_budget"] = [
+        facts["categories_over"] = [
             f"{b.category_name} over by "
             + f.money(b.category_name + " over", -b.remaining_cents, "budgets")
             for b in over[:3]
         ]
 
-    taken = [
-        f"{money[key]} {label}"
-        for key, label, cents in (
-            ("goal_money_set_aside", "for goals", safe.set_aside_cents),
-            ("owed_on_cards", "owed on cards", safe.owed_on_cards_cents),
-            ("unpaid_bills", "for unpaid bills", safe.unpaid_bills_cents),
-            ("spent_from_other_accounts", "spent from other accounts", safe.spent_outside_cents),
-        )
-        if cents
-    ]
     fallback = [
-        f"You have {money['spending_money']} in {facts['spending_money_is']}"
-        + (f"; Penny holds back {', '.join(taken)}." if taken else ", and nothing is held back.")
+        f"Your {facts['monthly_budget']} budget, minus {facts['spent_this_month']} spent"
+        + (
+            f" and {facts['unpaid_bills_this_month']} in bills still due this month"
+            if safe.unpaid_bills_cents
+            else ""
+        )
+        + f", leaves {facts['safe_to_spend']}."
     ]
-    if safe.short_cents:
+    if safe.over_cents:
         fallback.append(
-            f"What's spoken for is {facts['short_by']} more than you have, so hold off on extras "
-            "until money comes in."
+            f"You're {facts['over_budget_by']} over budget. Pausing extras until next month, "
+            "or moving room from another budget, gets you back on track."
         )
     elif bills:
-        fallback.append(f"Next up: {bills[0]}. It's already set aside, so you can't overspend it.")
-    else:
-        fallback.append("No unpaid bills are coming up, so all of it is yours to use.")
-    if runway and safe.safe_cents:
+        fallback.append(f"Next up: {bills[0]}. It's already set aside.")
+    if runway and safe.safe_cents > 0:
         fallback.append(
             f"That's about {facts['per_day']} a day for {runway.days_left} "
             f"day{'' if runway.days_left == 1 else 's'}."
@@ -1274,9 +1300,10 @@ async def safe_to_spend_read(settings: Settings, store: DashboardStore, user_id:
         settings,
         f,
         "Explain this person's Safe to spend in exactly 3 bullets (at most 28 words each): "
-        "1) what it's made of (spending money minus what's held back), 2) the bill or risk to "
-        "watch with its date (or the shortfall, or an over-budget category), 3) one practical "
-        "step for the days left. Use only the facts given.",
+        "1) what it is (monthly budget minus spent, minus bills still due this month if any), "
+        "2) the bill "
+        "to watch with its date, or how far over budget they are and which category, 3) one "
+        "practical step for the rest of the month. Use only the facts given.",
         f"FACTS: {facts}",
         fallback,
         3,

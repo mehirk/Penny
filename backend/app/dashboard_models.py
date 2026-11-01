@@ -267,8 +267,7 @@ class RecurringSummary(DashboardModel):
     subscriptions_monthly_cents: int = Field(ge=0)
     due_next_7_days_cents: int = Field(ge=0)
     due_before_payday_cents: int = Field(ge=0)
-    # Unpaid bills (including overdue) through month end or payday, whichever is later; Safe to
-    # spend holds this back.
+    # Unpaid bills (including overdue) through the end of this month; Safe to spend holds this back.
     unpaid_bills_cents: int = Field(ge=0)
     # The due dates behind unpaid_bills_cents, soonest (or most overdue) first.
     unpaid: list[UpcomingPayment] = Field(default_factory=list)
@@ -375,22 +374,19 @@ class SpendingRunway(DashboardModel):
     until_payday: bool
     days_left: int = Field(ge=1)
     per_day_cents: int = Field(ge=0)
-    status: Literal["on_track", "tight", "empty"]
+    status: Literal["on_track", "tight", "empty", "over"]
 
 
 class SafeToSpendBreakdown(DashboardModel):
     """Each step of Safe to spend (app.domain.runway.safe_to_spend), so the app can show it."""
 
-    spending_from: Literal["chequing", "chequing_and_savings"]
-    spending_money_cents: int
-    set_aside_cents: int = Field(ge=0)
-    owed_on_cards_cents: int = Field(ge=0)
+    budget_cents: int = Field(ge=0)
+    spent_cents: int = Field(ge=0)
     unpaid_bills_cents: int = Field(ge=0)
-    spent_outside_cents: int = Field(ge=0)
-    safe_cents: int = Field(ge=0)
-    short_cents: int = Field(ge=0)
-    # Held back until this date: the day before payday, or month end if that's later.
-    holds_until: date
+    safe_cents: int  # negative when over budget
+    over_cents: int = Field(ge=0)
+    # No budget yet: Safe to spend has nothing to come from, so the app asks for one.
+    has_budget: bool
 
 
 class DashboardTotals(Summary):
@@ -426,7 +422,8 @@ class DashboardResponse(DashboardModel):
     net_worth: NetWorthSnapshot
     accounts_overview: AccountsOverview
     previous_month_cash_flow_cents: int | None
-    spending_power_cents: int = Field(ge=0)
+    # Safe to spend: negative when spending has passed the budget.
+    spending_power_cents: int
     safe_to_spend: SafeToSpendBreakdown | None = None
     # A real (non-demo) account with no budget, bills, or pay schedule yet: offer the setup.
     needs_onboarding: bool = False

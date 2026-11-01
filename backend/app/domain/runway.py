@@ -1,10 +1,14 @@
-"""How long "Safe to spend" has to last, and what that means per day.
+"""Safe to spend, and how long it has to last.
 
-Safe to spend is the user's spending money minus what's already spoken for (see
-`safe_to_spend_cents`). This turns it into the days it has to cover (through the day before the
-next payday, or the end of the month when there's no pay schedule), a daily amount, and a status:
+Safe to spend is the month's budget minus what's been spent this month, minus bills still to be
+paid this month (their budget room is already spoken for). Account balances don't change it: the
+budget is the plan. It goes negative once spending passes the budget, so people can see by how
+much they're over.
 
-- empty: nothing is safe to spend;
+The runway spreads it over the days left in the month as a daily amount, with a status:
+
+- over: spending has passed the budget (Safe to spend is below zero);
+- empty: exactly nothing left;
 - tight: the daily amount is under half the usual daily flexible allowance;
 - on_track: otherwise.
 
@@ -15,7 +19,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
 
-Status = Literal["on_track", "tight", "empty"]
+Status = Literal["on_track", "tight", "empty", "over"]
 TIGHT_BASIS_POINTS = 5_000
 
 
@@ -23,76 +27,29 @@ TIGHT_BASIS_POINTS = 5_000
 class SafeToSpend:
     """Every step of the Safe to spend sum, so the app can show its working."""
 
-    spending_money_cents: int
-    set_aside_cents: int
-    owed_on_cards_cents: int
+    budget_cents: int
+    spent_cents: int
     unpaid_bills_cents: int
-    spent_outside_cents: int
-    safe_cents: int
-    # How far what's spoken for goes past the spending money (0 when it all fits).
-    short_cents: int
+    safe_cents: int  # negative when over budget
+    over_cents: int  # how far over budget (0 when not)
 
 
-def safe_to_spend(
-    spending_money_cents: int,
-    unpaid_bills_cents: int,
-    set_aside_cents: int = 0,
-    owed_on_cards_cents: int = 0,
-    spent_outside_cents: int = 0,
-) -> SafeToSpend:
-    """Money that's safe to spend now, never negative, with each step of the sum.
+def safe_to_spend(budget_cents: int, spent_cents: int, unpaid_bills_cents: int) -> SafeToSpend:
+    """Budget − spent this month − bills still due this month. May be negative.
 
-    Start from the accounts the user spends from (chequing and cash, plus savings if they said
-    so), then take out what's already spoken for: goal money set aside in those accounts, what's
-    owed on credit cards (card purchases are money already spent), recurring bills not yet
-    paid (a paid bill is already out of the balance, so it's never taken out twice), and
-    this period's spending paid from accounts outside their spending money (it's still spending,
-    so it comes back out of spending money).
-
-    Budgets don't cap it. A bill that's already been paid is already out of the balance, so
-    capping by "budget left" would count it twice (a $100 rent paid from $500 left $0 instead of
-    $400). Budgets stay a separate guide.
+    A paid bill is part of what's spent, and an unpaid one is held back, so each bill counts once.
     """
-    for value in (
-        unpaid_bills_cents,
-        set_aside_cents,
-        owed_on_cards_cents,
-        spent_outside_cents,
-    ):
+    for value in (budget_cents, spent_cents, unpaid_bills_cents):
         if value < 0:
-            raise ValueError("amounts taken out of spending money must not be negative")
-    after = (
-        spending_money_cents
-        - set_aside_cents
-        - owed_on_cards_cents
-        - unpaid_bills_cents
-        - spent_outside_cents
-    )
+            raise ValueError("amounts must not be negative")
+    safe = budget_cents - spent_cents - unpaid_bills_cents
     return SafeToSpend(
-        spending_money_cents=spending_money_cents,
-        set_aside_cents=set_aside_cents,
-        owed_on_cards_cents=owed_on_cards_cents,
+        budget_cents=budget_cents,
+        spent_cents=spent_cents,
         unpaid_bills_cents=unpaid_bills_cents,
-        spent_outside_cents=spent_outside_cents,
-        safe_cents=max(0, after),
-        short_cents=max(0, -after),
+        safe_cents=safe,
+        over_cents=max(0, -safe),
     )
-
-
-def safe_to_spend_cents(
-    spending_money_cents: int,
-    unpaid_bills_cents: int,
-    set_aside_cents: int = 0,
-    owed_on_cards_cents: int = 0,
-    spent_outside_cents: int = 0,
-) -> int:
-    return safe_to_spend(
-        spending_money_cents,
-        unpaid_bills_cents,
-        set_aside_cents,
-        owed_on_cards_cents,
-        spent_outside_cents,
-    ).safe_cents
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,8 +68,6 @@ def runway(
     month_end: date,
     daily_allowance_cents: int,
 ) -> Runway:
-    if safe_cents < 0:
-        raise ValueError("safe_cents must not be negative")
     if daily_allowance_cents < 0:
         raise ValueError("daily_allowance_cents must not be negative")
     if month_end < today:
@@ -120,9 +75,11 @@ def runway(
     until_payday = next_payday is not None and next_payday > today
     until = next_payday - timedelta(days=1) if next_payday and until_payday else month_end
     days_left = (until - today).days + 1
-    per_day = safe_cents // days_left
-    if safe_cents == 0:
-        status: Status = "empty"
+    per_day = max(0, safe_cents) // days_left
+    if safe_cents < 0:
+        status: Status = "over"
+    elif safe_cents == 0:
+        status = "empty"
     elif per_day * 10_000 < daily_allowance_cents * TIGHT_BASIS_POINTS:
         status = "tight"
     else:

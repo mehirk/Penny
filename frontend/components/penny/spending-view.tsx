@@ -12,7 +12,9 @@ import { CashFlowChart, CategoryBars, categoryColours } from "./charts";
 import { type RecurringActions, RecurringView } from "./recurring-view";
 import { cad, EmptyState, SectionHeading } from "./shared";
 import { BudgetSuggestionsDialog, RebalanceCard, SpendingTake } from "./smart-cards";
-import { TransactionsPanel } from "./transactions-panel";
+import { useSubpage } from "./subpage";
+import { TransactionDetail } from "./transaction-detail";
+import { RecentTransactions, TransactionsPanel } from "./transactions-panel";
 import { useHistory } from "./use-history";
 
 export type SpendingTab = "transactions" | "recurring";
@@ -49,6 +51,14 @@ const TABS: { id: SpendingTab; label: string; icon: typeof ReceiptText }[] = [
 
 export function SpendingView(props: Props) {
   const { dashboard, tab } = props;
+  // Full pages inside Spending: every transaction ("#spending/activity") and one transaction ("#spending/tx:<id>").
+  const [pageId, openPage, back] = useSubpage("spending");
+  if (pageId === "activity") {
+    return <TransactionsPanel dashboard={dashboard} onChangePeriod={props.onChangePeriod} onAdd={props.onAddTransaction} onOpen={(item) => openPage(`tx:${item.id}`)} onDelete={props.onDeleteTransaction} onBack={back} />;
+  }
+  if (pageId?.startsWith("tx:")) {
+    return <TransactionDetail dashboard={dashboard} id={pageId.slice(3)} backLabel="Back" onBack={back} onEdit={props.onEditTransaction} onDelete={props.onDeleteTransaction} />;
+  }
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div role="tablist" aria-label="Spending sections" className="inline-flex rounded-xl bg-sage-soft p-1">
@@ -62,7 +72,7 @@ export function SpendingView(props: Props) {
       {tab === "transactions" ? (
         // On a phone, budgets ("Food $30 over") come before Penny's take.
         <div id="spending-panel-transactions" role="tabpanel" aria-labelledby="spending-tab-transactions" className="flex flex-col gap-8">
-          <TransactionsPanel dashboard={dashboard} onChangePeriod={props.onChangePeriod} onAdd={props.onAddTransaction} onEdit={props.onEditTransaction} onDelete={props.onDeleteTransaction} />
+          <RecentTransactions dashboard={dashboard} onAdd={props.onAddTransaction} onOpen={(item) => openPage(`tx:${item.id}`)} onDelete={props.onDeleteTransaction} onSeeAll={() => openPage("activity")} />
           <div className="max-sm:order-1"><SpendingTake dashboard={dashboard} version={props.historyVersion} onAsk={props.onAsk} /></div>
           <Budgets {...props} />
           <div className="max-sm:order-2"><Trends dashboard={dashboard} historyVersion={props.historyVersion} onSelectMonth={props.onSelectMonth} /></div>

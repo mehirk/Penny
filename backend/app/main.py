@@ -638,6 +638,14 @@ async def onboarding_plan(
     )
 
 
+@app.post("/api/v1/onboarding/check", response_model=assist.StarterCheck, tags=["onboarding"])
+def onboarding_check(
+    answers: OnboardingAnswers, current_user: AuthenticatedUser
+) -> assist.StarterCheck:
+    """Does the budget so far fit the income? Used to warn, never to block. Nothing is saved."""
+    return assist.starter_check(_store(current_user), current_user.id, answers)
+
+
 @app.post("/api/v1/onboarding/apply", response_model=DashboardResponse, tags=["onboarding"])
 def onboarding_apply(
     request: OnboardingApply, current_user: AuthenticatedUser

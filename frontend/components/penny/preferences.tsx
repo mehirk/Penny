@@ -37,6 +37,9 @@ export const SURFACE_OPTIONS: { value: SurfaceSetting; label: string; descriptio
   { value: "halo", label: "Halo", description: "A fine gilded edge with a soft glow." },
 ];
 const SURFACE_VALUES = SURFACE_OPTIONS.map((option) => option.value);
+// What someone sees before choosing: the Graphite style on the Clay surface.
+const DEFAULT_PALETTE: PaletteSetting = "graphite";
+const DEFAULT_SURFACE: SurfaceSetting = "clay";
 
 export const THEME_OPTIONS: { value: ThemeSetting; label: string }[] = [
   { value: "light", label: "Light" },
@@ -51,8 +54,8 @@ export const THEME_OPTIONS: { value: ThemeSetting; label: string }[] = [
 export const PREFERENCES_BOOT_SCRIPT = `(() => {
   const root = document.documentElement;
   let theme = "system";
-  let palette = "original";
-  let surface = "classic";
+  let palette = "${DEFAULT_PALETTE}";
+  let surface = "${DEFAULT_SURFACE}";
   try {
     theme = localStorage.getItem("${THEME_KEY}") || theme;
     palette = localStorage.getItem("${PALETTE_KEY}") || palette;
@@ -113,8 +116,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [theme, setThemeState] = useState<ThemeSetting>(() => (typeof window === "undefined" ? "system" : read(THEME_KEY, ["light", "dark", "system"] as const, "system")));
   const systemDark = useSyncExternalStore(subscribeToSystemTheme, () => window.matchMedia(DARK_QUERY).matches, () => false);
 
-  const [palette, setPaletteState] = useState<PaletteSetting>(() => (typeof window === "undefined" ? "original" : read(PALETTE_KEY, PALETTE_VALUES, "original")));
-  const [surface, setSurfaceState] = useState<SurfaceSetting>(() => (typeof window === "undefined" ? "classic" : read(SURFACE_KEY, SURFACE_VALUES, "classic")));
+  const [palette, setPaletteState] = useState<PaletteSetting>(() => (typeof window === "undefined" ? DEFAULT_PALETTE : read(PALETTE_KEY, PALETTE_VALUES, DEFAULT_PALETTE)));
+  const [surface, setSurfaceState] = useState<SurfaceSetting>(() => (typeof window === "undefined" ? DEFAULT_SURFACE : read(SURFACE_KEY, SURFACE_VALUES, DEFAULT_SURFACE)));
   const [hideAmounts, setHideAmountsState] = useState(() => {
     if (typeof window === "undefined") return false;
     try { return window.localStorage.getItem(HIDE_AMOUNTS_KEY) === "1"; } catch { return false; }

@@ -2,7 +2,6 @@ from datetime import date
 
 import pytest
 
-from app.domain.runway import safe_to_spend
 from app.domain.statement import (
     RawRow,
     amount_cents,
@@ -73,8 +72,3 @@ def test_on_a_card_purchases_raise_what_is_owed() -> None:
 
 def test_no_printed_balances_means_no_check() -> None:
     assert balance_difference_cents("chequing", None, 1_000, []) is None
-
-
-def test_shortfall_when_bills_exceed_money() -> None:
-    result = safe_to_spend(30_000, 50_000, set_aside_cents=5_000)
-    assert (result.safe_cents, result.short_cents) == (0, 25_000)

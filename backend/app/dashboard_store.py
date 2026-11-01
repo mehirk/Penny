@@ -1009,20 +1009,12 @@ class DashboardStore:
             recurring = self._recurring()
             calendar_view = self._money_calendar(month, recurring.items)
             learning = build_learning(self._learner, self._mission_xp(), self.today())
-            pool = self._spending_pool()
+            # Bills due later this month only matter while this month is the one on screen.
+            current = month_start(self.today()) == month
             safe = safe_to_spend(
-                sum(a.balance_cents for a in self._accounts.values() if a.id in pool),
-                recurring.unpaid_bills_cents,
-                set_aside_cents=sum(g.current_cents for g in goals if g.account_id in pool),
-                owed_on_cards_cents=liabilities,
-                spent_outside_cents=sum(
-                    t.amount_cents
-                    for t in monthly
-                    if t.kind == "spending"
-                    and t.account_id not in pool
-                    and (acct := self._accounts.get(t.account_id)) is not None
-                    and acct.account_type != "credit"
-                ),
+                total_budget,
+                summary.spending_cents,
+                recurring.unpaid_bills_cents if current else 0,
             )
             safe_cents = safe.safe_cents
             today = self.today()
@@ -1032,7 +1024,7 @@ class DashboardStore:
                         runway(
                             safe_cents,
                             today,
-                            self._next_payday(),
+                            None,  # a monthly budget lasts until month end, not payday
                             month_end(month),
                             calendar_view.daily_allowance_cents,
                         )
@@ -1110,11 +1102,7 @@ class DashboardStore:
                 ),
                 previous_month_cash_flow_cents=previous_cash_flow,
                 spending_power_cents=safe_cents,
-                safe_to_spend=SafeToSpendBreakdown(
-                    **asdict(safe),
-                    spending_from=self._profile.spending_from,
-                    holds_until=recurring.unpaid_until or month_end(month),
-                ),
+                safe_to_spend=SafeToSpendBreakdown(**asdict(safe), has_budget=total_budget > 0),
                 needs_onboarding=self._needs_onboarding(),
                 spending_runway=spending_runway,
                 totals=DashboardTotals(
@@ -2212,13 +2200,6 @@ class DashboardStore:
             )
 
     # ------------------------------------------------------------------ onboarding
-
-    def _spending_pool(self) -> set[str]:
-        """Accounts the user spends from: chequing and cash, plus savings if they chose that."""
-        types = {*SPENDABLE_TYPES}
-        if self._profile.spending_from == "chequing_and_savings":
-            types.add("savings")
-        return {a.id for a in self._accounts.values() if a.account_type in types}
 
     def set_spending_from(self, user_id: str, value: str) -> DashboardResponse:
         with self._lock:
