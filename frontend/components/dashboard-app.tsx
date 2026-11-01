@@ -420,7 +420,7 @@ function PennyApp() {
             {view === "budgets" && <BudgetsView dashboard={dashboard} onNavigate={navigate} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} onApplyBudgetChanges={applyBudgetChanges} />}
             {view === "learn" && <LearnView dashboard={dashboard} onCompleteMission={completeMission} onProgress={applyChange} onNavigate={navigate} onAsk={askPenny} />}
             {view === "ai" && <CoachView chat={coachChat} dashboard={dashboard} onDashboardChange={applyChange} onApproved={(message) => toast({ title: "Change applied", description: message })} />}
-            {view === "settings" && <SettingsView dashboard={dashboard} save={mutate} />}
+            {view === "settings" && <SettingsView dashboard={dashboard} save={mutate} onReset={() => { navigate("today"); setSetupOpen(true); }} />}
           </div>
         </main>
       </div>

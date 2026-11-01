@@ -537,6 +537,12 @@ class BudgetLimitChange(DashboardModel):
     limit_cents: int = Field(ge=0)
 
 
+class ResetRequest(DashboardModel):
+    """Erasing everything needs the word typed back, so a stray request can't do it."""
+
+    confirm: Literal["reset"]
+
+
 class BudgetChangesRequest(DashboardModel):
     """Budget limits the user approved together, such as a suggested rebalance."""
 

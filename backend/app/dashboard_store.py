@@ -2357,6 +2357,20 @@ class DashboardStore:
             self._goals[goal_id].update(request.model_dump(exclude_unset=True))
             return self._snapshot()
 
+    def reset(self, user_id: str) -> DashboardResponse:
+        """Erases this person's data: transactions, budgets, bills, goals, accounts (back to one
+        $0 chequing account), custom categories, pay, and Learn progress. The name stays, and
+        first-run setup shows again. The fictional demo goes back to its starting data instead."""
+        with self._lock:
+            self.require_owner(user_id)
+            owners = self._owner_user_ids
+            if self._profile.is_fictional:
+                self.__init__(owners)  # type: ignore[misc]  # the demo's starting state
+            else:
+                self._start_empty(self._profile)
+                self._owner_user_ids = owners
+            return self._snapshot()
+
     def delete_goal(self, user_id: str, goal_id: str) -> DashboardResponse:
         with self._lock:
             self.require_owner(user_id)

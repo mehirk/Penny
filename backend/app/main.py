@@ -62,6 +62,7 @@ from app.dashboard_models import (
     OnboardingAnswers,
     OnboardingApply,
     PaySchedule,
+    ResetRequest,
     SpendingFromWrite,
     SplitTransactionWrite,
     TransactionPatch,
@@ -303,6 +304,16 @@ def delete_goal(
     goal_id: str, current_user: AuthenticatedUser, month: ViewMonth = None
 ) -> DashboardResponse:
     return _in_view(_store(current_user).delete_goal(current_user.id, goal_id), current_user, month)
+
+
+@app.post("/api/v1/account/reset", response_model=DashboardResponse, tags=["account"])
+def reset_account(request: ResetRequest, current_user: AuthenticatedUser) -> DashboardResponse:
+    """Erase all of this person's data and Penny AI chats (Settings › Reset data). Asks for
+    "reset" in the body; the app confirms with the user first."""
+    del request  # validated: confirm == "reset"
+    result = _store(current_user).reset(current_user.id)
+    chat_store.delete_all(stores.data_owner(current_user.id))
+    return result
 
 
 @app.post("/api/v1/budgets/copy", response_model=DashboardResponse, tags=["budgets"])

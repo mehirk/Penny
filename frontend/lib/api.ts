@@ -216,6 +216,8 @@ export const dashboardApi = {
   copyBudgets: (fromMonth: string, toMonth: string) => request("/api/v1/budgets/copy", { method: "POST", body: JSON.stringify({ from_month: fromMonth, to_month: toMonth }) }),
   createGoal: (body: GoalWrite, month?: string) => request(inMonth("/api/v1/savings-goals", month), { method: "POST", body: JSON.stringify(body) }),
   updateGoal: (id: string, body: Partial<GoalWrite> & { status?: SavingsGoal["status"] }, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
+  /** Erases all of the user's data and Penny AI chats; setup shows again. */
+  resetData: () => request("/api/v1/account/reset", { method: "POST", body: JSON.stringify({ confirm: "reset" }) }),
   deleteGoal: (id: string, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}`, month), { method: "DELETE" }),
   contributeToGoal: (id: string, amount_cents: number, fromAccountId: string, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}/contributions`, month), { method: "POST", body: JSON.stringify({ amount_cents, from_account_id: fromAccountId }) }),
   completeMission: (id: string, month?: string) => request(inMonth(`/api/v1/missions/${id}/complete`, month), { method: "POST" }),

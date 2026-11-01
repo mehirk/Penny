@@ -324,3 +324,45 @@ def test_card_payment_due_day_shows_next_payment() -> None:
             USER, AccountWrite(name="Savings 2", account_type="savings", payment_due_day=5)
         )
     assert error.value.status_code == 422
+
+
+def test_reset_erases_everything_and_shows_setup_again() -> None:
+    store, ids = _setup()
+    _add_rent(store, ids["chequing"], store.today())
+    _spend(store, ids["chequing"], 4_800)
+    result = store.reset(USER)
+    assert result.needs_onboarding
+    assert (result.transactions, result.budgets, result.bills, result.savings_goals) == (
+        [],
+        [],
+        [],
+        [],
+    )
+    assert [(a.name, a.balance_cents) for a in result.accounts] == [("Chequing", 0)]
+    assert result.pay_schedule is None
+    # Still theirs: only the owner can use it, and setup can run again.
+    store.apply_onboarding(USER, OnboardingApply(answers=_answers()))
+    with pytest.raises(HTTPException):
+        store.reset("someone-else")
+
+
+def test_reset_request_needs_the_word() -> None:
+    from pydantic import ValidationError
+
+    from app.dashboard_models import ResetRequest
+
+    assert ResetRequest(confirm="reset").confirm == "reset"
+    with pytest.raises(ValidationError):
+        ResetRequest.model_validate({"confirm": "yes"})
+
+
+def test_demo_reset_restores_the_demo_data() -> None:
+    from app.dashboard_store import DashboardStore
+
+    demo = DashboardStore()
+    owner = demo.snapshot().profile.id
+    before = {g.id for g in demo.dashboard_for_user(owner).savings_goals}
+    demo.delete_goal(owner, "goal-laptop")
+    restored = demo.reset(owner)
+    assert {g.id for g in restored.savings_goals} == before
+    assert not restored.needs_onboarding

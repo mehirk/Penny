@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Banknote, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, ScanFace, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
+import { Banknote, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, RotateCcw, ScanFace, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -73,6 +73,56 @@ function TrustSection() {
   );
 }
 
+/**
+ * Settings, very end: erase everything and start again. Typing "reset" confirms it, since it
+ * can't be undone; afterwards first-run setup opens.
+ */
+function ResetDataRow({ save, onReset }: { save: SaveChange; onReset: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const confirmed = typed.trim().toLowerCase() === "reset";
+
+  async function reset() {
+    setBusy(true);
+    setError("");
+    // Setup opens again after a reset, even on a device where it was once skipped.
+    try { window.localStorage.removeItem("penny-setup-skipped"); } catch { /* storage blocked */ }
+    const failed = await save(() => dashboardApi.resetData(), "Your data was reset");
+    setBusy(false);
+    if (failed) { setError(failed); return; }
+    setOpen(false);
+    setTyped("");
+    // Straight into setup, like a brand-new account (Home is underneath when it's done).
+    onReset();
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-[var(--radius-card)] font-semibold text-ink-subtle hover:bg-danger-soft hover:text-danger">
+        <RotateCcw className="size-4" aria-hidden="true" />Reset data
+      </button>
+      <Dialog open={open} onOpenChange={(next) => { if (!busy) { setOpen(next); setTyped(""); setError(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset all your data?</DialogTitle>
+            <DialogDescription>This erases your transactions, budgets, bills, goals, accounts, categories you made, pay schedule, Learn progress, and Penny AI chats. You’ll start again from setup. This can’t be undone.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); if (confirmed) void reset(); }} className="space-y-4">
+            <Field label="Type reset to confirm">{(props) => <Input {...props} autoComplete="off" autoCapitalize="none" value={typed} onChange={(event) => setTyped(event.target.value)} disabled={busy} className="min-h-11 text-base" />}</Field>
+            {error && <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+              <Button type="submit" variant="destructive" disabled={!confirmed || busy}>{busy ? "Resetting…" : "Reset everything"}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 /** Turns sign-in with Face ID on (it needs the password once, to keep it behind Face ID) or off. */
 function FaceIdSection({ status, onChange }: { status: FaceIdStatus; onChange: (status: FaceIdStatus) => void }) {
   const name = biometryName(status);
@@ -135,7 +185,7 @@ type SettingsPage = { id: string; labelId: string; group: string; icon: LucideIc
  * Settings as an iPhone-style list: grouped rows with a one-line summary. A row opens its own
  * page, with "‹ Settings" (or the device's Back) to return.
  */
-export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
+export function SettingsView({ dashboard, save, onReset }: { dashboard: Dashboard; save: SaveChange; onReset: () => void }) {
   const { theme, palette } = usePreferences();
   const [pageId, openPage, back] = useSubpage("settings");
   const pay = dashboard.pay_schedule;
@@ -188,6 +238,7 @@ export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: 
         </section>
       ))}
       <SignOutRow />
+      <ResetDataRow save={save} onReset={onReset} />
     </div>
   );
 
