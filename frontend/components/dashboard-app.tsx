@@ -25,7 +25,8 @@ import { cad, describeError, MENU, NAVIGATION, type View } from "@/components/pe
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { type Bill, type Budget, type BudgetSuggestion, type Dashboard, dashboardApi, type Mission, type SavingsGoal, type Transaction } from "@/lib/api";
-import { setAppSignedIn } from "@/lib/face-id";
+import { onPasswordRequired, setAppSignedIn } from "@/lib/face-id";
+import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 import { addMonths, formatMonth } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -139,6 +140,12 @@ function PennyApp() {
   // Signed in and the dashboard is showing: with Face ID on, the iPhone app now locks when it leaves the screen.
   const loaded = dashboard !== null;
   useEffect(() => { if (loaded) setAppSignedIn(true); }, [loaded]);
+  // The app lock gave up on Face ID (two failures): sign out and ask for the password. The lock
+  // stays over the app until the sign-in page shows, so no balances flash in between.
+  useEffect(() => onPasswordRequired(() => {
+    const signOut = isSupabaseConfigured() ? createSupabaseBrowserClient().auth.signOut() : Promise.resolve();
+    void signOut.catch(() => undefined).finally(() => { window.location.replace("/login/?faceid=failed"); });
+  }), []);
 
   const remember = useCallback((data: Dashboard) => { cache.current.set(periodKey(data.period), data); return data; }, []);
 

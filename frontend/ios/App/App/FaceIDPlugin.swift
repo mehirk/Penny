@@ -19,12 +19,22 @@ public class FaceIDPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setSignedIn", returnType: CAPPluginReturnPromise),
     ]
 
+    /// Face ID that hasn't recognised anyone after this long counts as a failed try (it would
+    /// otherwise wait on "Try Again" indefinitely).
+    static let timeout: TimeInterval = 5
+    /// The loaded plugin, so the app lock can tell the web app to ask for the password.
+    static weak var current: FaceIDPlugin?
+
     private static let service = (Bundle.main.bundleIdentifier ?? "penny") + ".face-id"
     private static let account = "sign-in"
 
     private var baseQuery: [String: Any] { Self.baseQuery }
     private static var baseQuery: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+    }
+
+    override public func load() {
+        Self.current = self
     }
 
     /// Whether Face ID can be used, which kind the device has, and whether a sign-in is saved.
@@ -66,15 +76,34 @@ public class FaceIDPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// Shows Face ID and returns the saved sign-in.
+    /// Shows Face ID and returns the saved sign-in. Rejects with "timeout" if no face is
+    /// recognised within `timeout` seconds, "password" if the user picks Use Password,
+    /// "cancelled" if they cancel, and "failed" otherwise.
     @objc func load(_ call: CAPPluginCall) {
+        // Face ID first, on its own prompt (which offers "Use Password"); the Keychain then
+        // accepts the same, already-confirmed context without asking again.
         let context = LAContext()
-        context.localizedReason = call.getString("reason") ?? "Sign in to Penny"
-        var query = baseQuery
-        query[kSecReturnData as String] = true
-        query[kSecUseAuthenticationContext as String] = context
-        // The Keychain shows Face ID and waits for it, so stay off the main thread.
-        DispatchQueue.global(qos: .userInitiated).async {
+        context.localizedFallbackTitle = "Use Password"
+        let attempt = Attempt()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.timeout) {
+            if attempt.expire() { context.invalidate() }
+        }
+        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: call.getString("reason") ?? "Sign in to Penny") { ok, error in
+            guard attempt.finish() else {
+                call.reject("Face ID didn't recognise you in time", "timeout")
+                return
+            }
+            guard ok else {
+                switch (error as? LAError)?.code {
+                case .userFallback?: call.reject("Use password", "password")
+                case .userCancel?, .systemCancel?, .appCancel?: call.reject("Cancelled", "cancelled")
+                default: call.reject(error?.localizedDescription ?? "Face ID didn't work", "failed")
+                }
+                return
+            }
+            var query = self.baseQuery
+            query[kSecReturnData as String] = true
+            query[kSecUseAuthenticationContext as String] = context
             var result: AnyObject?
             let status = SecItemCopyMatching(query as CFDictionary, &result)
             switch status {
@@ -104,8 +133,16 @@ public class FaceIDPlugin: CAPPlugin, CAPBridgedPlugin {
     /// The web app reports signing in (the dashboard loaded) and signing out, so the app lock only
     /// covers Penny while someone is signed in; the sign-in page asks for Face ID itself.
     @objc func setSignedIn(_ call: CAPPluginCall) {
-        AppLock.signedIn = call.getBool("signedIn") ?? false
+        let signedIn = call.getBool("signedIn") ?? false
+        AppLock.signedIn = signedIn
+        // Signed out (for example after Face ID failed twice): the sign-in page takes over.
+        if !signedIn { DispatchQueue.main.async { AppLock.shared.signedOut() } }
         call.resolve()
+    }
+
+    /// Asks the web app to sign out and show the password form (Face ID failed twice).
+    func requestPassword() {
+        notifyListeners("passwordRequired", data: [:])
     }
 
     /// Checks for a saved sign-in without showing Face ID.
@@ -128,13 +165,39 @@ public class FaceIDPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
+/// One Face ID try that either finishes or times out, whichever happens first (thread-safe).
+final class Attempt {
+    private let lock = NSLock()
+    private var settled = false
+    private var timedOut = false
+
+    /// Called by the timer: true if the try was still running (so it should be cancelled).
+    func expire() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !settled else { return false }
+        settled = true
+        timedOut = true
+        return true
+    }
+
+    /// Called when Face ID returns: false if the timer had already ended the try.
+    func finish() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        settled = true
+        return !timedOut
+    }
+}
+
 /// Wealthsimple-style app lock. With Face ID on and someone signed in, Penny is covered whenever it
 /// leaves the screen (so the app switcher shows no balances either) and when it launches, and asks
-/// for Face ID when it comes back. The device passcode works as a fallback; cancelling leaves an
-/// "Unlock" button rather than asking again in a loop.
+/// for Face ID when it comes back. A try fails if Face ID doesn't recognise the user within
+/// `FaceIDPlugin.timeout` seconds; after one failure it tries again by itself, and after a second
+/// (or "Use Password", or Face ID locked out) it signs out and asks for the password instead.
+/// Cancelling leaves an "Unlock" button rather than asking again in a loop.
 final class AppLock {
     static let shared = AppLock()
     private static let signedInKey = "penny.signedIn"
+    private static let triesBeforePassword = 2
 
     static var signedIn: Bool {
         get { UserDefaults.standard.bool(forKey: signedInKey) }
@@ -143,6 +206,8 @@ final class AppLock {
 
     private var cover: LockView?
     private var authenticating = false
+    private var failures = 0
+    private var needsPassword = false
     // Face ID is asked for once each time Penny comes back; after that, the button asks again.
     private var askedThisTime = false
 
@@ -152,7 +217,15 @@ final class AppLock {
     func lock(in window: UIWindow?) {
         askedThisTime = false
         guard cover == nil, enabled, let window else { return }
-        let view = LockView(frame: window.bounds, biometry: Self.biometryName()) { [weak self] in self?.unlock() }
+        failures = 0
+        needsPassword = false
+        let view = LockView(frame: window.bounds, biometry: Self.biometryName(), onUnlock: { [weak self] in
+            self?.failures = 0
+            self?.unlock()
+        }, onPassword: { [weak self] in
+            guard let self, let cover = self.cover, !self.authenticating else { return }
+            self.askForPassword(cover, message: "Sign in with your password.")
+        })
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         window.addSubview(view)
         cover = view
@@ -160,23 +233,67 @@ final class AppLock {
 
     /// When Penny is back on screen: ask for Face ID once if it's covered.
     func appBecameActive() {
-        guard cover != nil, !askedThisTime else { return }
+        guard cover != nil, !askedThisTime, !needsPassword else { return }
         askedThisTime = true
         unlock()
     }
 
+    /// The web app signed out and is showing the sign-in page: uncover it.
+    func signedOut() {
+        needsPassword = false
+        if let cover { remove(cover) }
+    }
+
     private func unlock() {
-        guard let cover, !authenticating else { return }
+        guard let cover, !authenticating, !needsPassword else { return }
         // Turned off (or the saved sign-in removed) while covered: nothing to protect any more.
         guard enabled else { remove(cover); return }
         authenticating = true
         let context = LAContext()
-        context.localizedFallbackTitle = "Use Passcode"
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Penny") { ok, _ in
+        context.localizedFallbackTitle = "Use Password"
+        let attempt = Attempt()
+        DispatchQueue.main.asyncAfter(deadline: .now() + FaceIDPlugin.timeout) {
+            if attempt.expire() { context.invalidate() }
+        }
+        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Unlock Penny") { ok, error in
+            let inTime = attempt.finish()
             DispatchQueue.main.async {
                 self.authenticating = false
-                if ok { self.remove(cover) }
+                if ok && inTime {
+                    self.failures = 0
+                    self.remove(cover)
+                    return
+                }
+                switch inTime ? (error as? LAError)?.code : nil {
+                case .userCancel?, .systemCancel?:
+                    cover.show(message: nil)
+                case .userFallback?, .biometryLockout?, .biometryNotAvailable?, .biometryNotEnrolled?:
+                    self.askForPassword(cover)
+                default:
+                    // Not recognised, or timed out.
+                    self.failures += 1
+                    if self.failures >= Self.triesBeforePassword {
+                        self.askForPassword(cover)
+                    } else {
+                        cover.show(message: "Face ID didn't recognise you. Trying again…")
+                        // Give the Face ID sheet a moment to close before asking again.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.unlock() }
+                    }
+                }
             }
+        }
+    }
+
+    /// Face ID failed twice: the web app signs out and shows the password form (it then calls
+    /// `setSignedIn(false)`, which removes the cover). Balances stay covered until then.
+    private func askForPassword(_ cover: LockView, message: String = "Face ID didn't work. Sign in with your password.") {
+        needsPassword = true
+        cover.show(message: message, busy: true)
+        if let plugin = FaceIDPlugin.current {
+            plugin.requestPassword()
+        } else {
+            // No web app to hand over to: forget who was signed in so the next launch asks.
+            Self.signedIn = false
         }
     }
 
@@ -192,12 +309,19 @@ final class AppLock {
     }
 }
 
-/// What shows while Penny is locked: the app's canvas colour, a lock, and an Unlock button.
-private final class LockView: UIView {
+/// What shows while Penny is locked: the app's canvas colour, a lock, a status line, and an
+/// Unlock button (swapped for a spinner while handing over to the password form).
+fileprivate final class LockView: UIView {
     private let onUnlock: () -> Void
+    private let onPassword: () -> Void
+    private let message = UILabel()
+    private var button: UIButton!
+    private var passwordButton: UIButton!
+    private let spinner = UIActivityIndicatorView(style: .medium)
 
-    init(frame: CGRect, biometry: String, onUnlock: @escaping () -> Void) {
+    init(frame: CGRect, biometry: String, onUnlock: @escaping () -> Void, onPassword: @escaping () -> Void) {
         self.onUnlock = onUnlock
+        self.onPassword = onPassword
         super.init(frame: frame)
         backgroundColor = UIColor { traits in
             traits.userInterfaceStyle == .dark
@@ -223,24 +347,50 @@ private final class LockView: UIView {
         config.baseBackgroundColor = .label
         config.baseForegroundColor = .systemBackground
         config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28)
-        let button = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in self?.onUnlock() })
+        button = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in self?.onUnlock() })
 
-        let stack = UIStackView(arrangedSubviews: [icon, title, button])
+        var plain = UIButton.Configuration.plain()
+        plain.title = "Use password instead"
+        plain.baseForegroundColor = .secondaryLabel
+        plain.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
+        passwordButton = UIButton(configuration: plain, primaryAction: UIAction { [weak self] _ in self?.onPassword() })
+
+        message.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        message.adjustsFontForContentSizeCategory = true
+        message.textColor = .secondaryLabel
+        message.textAlignment = .center
+        message.numberOfLines = 0
+        message.isHidden = true
+        spinner.hidesWhenStopped = true
+
+        let stack = UIStackView(arrangedSubviews: [icon, title, message, button, passwordButton, spinner])
         stack.axis = .vertical
         stack.alignment = .center
         stack.spacing = 20
         stack.setCustomSpacing(36, after: title)
+        stack.setCustomSpacing(4, after: button)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -24),
         ])
         accessibilityViewIsModal = true
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// A status line under the title (nil hides it); `busy` swaps the button for a spinner.
+    func show(message text: String?, busy: Bool = false) {
+        message.text = text
+        message.isHidden = text == nil
+        button.isHidden = busy
+        passwordButton.isHidden = busy
+        busy ? spinner.startAnimating() : spinner.stopAnimating()
+        if let text { UIAccessibility.post(notification: .announcement, argument: text) }
+    }
 }
 
 private extension UIFont {

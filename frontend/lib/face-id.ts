@@ -1,4 +1,4 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor, type PluginListenerHandle, registerPlugin } from "@capacitor/core";
 
 /**
  * Sign in with Face ID, in the iOS app only. The native side (ios/App/App/FaceIDPlugin.swift)
@@ -15,6 +15,7 @@ type FaceIdPlugin = {
   load(options: { reason: string }): Promise<SavedSignIn>;
   clear(): Promise<void>;
   setSignedIn(options: { signedIn: boolean }): Promise<void>;
+  addListener(event: "passwordRequired", handler: () => void): Promise<PluginListenerHandle>;
 };
 
 const plugin = registerPlugin<FaceIdPlugin>("PennyFaceID");
@@ -34,9 +35,32 @@ export const biometryName = (status: FaceIdStatus) => (status.biometry === "touc
 /** Shows Face ID once to confirm, then saves the sign-in behind it. */
 export const saveSignIn = (email: string, password: string) => plugin.save({ email, password });
 
-/** Shows Face ID and returns the saved sign-in, or null if cancelled or none is saved. */
-export async function loadSignIn(): Promise<SavedSignIn | null> {
-  try { return await plugin.load({ reason: "Sign in to Penny" }); } catch { return null; }
+/** Face ID tries before Penny asks for the password instead (matches AppLock in Swift). */
+export const FACE_ID_TRIES = 2;
+
+/**
+ * Shows Face ID and returns the saved sign-in. "failed" covers not recognised and no face
+ * recognised within 5 seconds (the native timeout); "cancelled" needs no message; "password"
+ * means the user chose Use Password.
+ */
+export async function loadSignIn(): Promise<SavedSignIn | "cancelled" | "failed" | "none" | "password"> {
+  try {
+    return await plugin.load({ reason: "Sign in to Penny" });
+  } catch (reason) {
+    const code = typeof reason === "object" && reason !== null && "code" in reason ? (reason as { code?: string }).code : undefined;
+    // "password": the user tapped Use Password on the Face ID prompt.
+    return code === "cancelled" ? "cancelled" : code === "not_found" ? "none" : code === "password" ? "password" : "failed";
+  }
+}
+
+/**
+ * The app lock gave up on Face ID (it failed twice): sign out and show the password form.
+ * Returns a cleanup function.
+ */
+export function onPasswordRequired(handler: () => void): () => void {
+  if (!Capacitor.isNativePlatform()) return () => undefined;
+  const handle = plugin.addListener("passwordRequired", handler);
+  return () => { void handle.then((h) => h.remove()); };
 }
 
 export async function clearSignIn(): Promise<void> {

@@ -8,7 +8,7 @@ import { BrandMark } from "@/components/penny/app-shell";
 import { Field } from "@/components/penny/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { biometryName, clearSignIn, faceIdDeclined, faceIdStatus, type FaceIdStatus, isCancelled, loadSignIn, saveSignIn, setAppSignedIn, setFaceIdDeclined } from "@/lib/face-id";
+import { biometryName, clearSignIn, FACE_ID_TRIES, faceIdDeclined, faceIdStatus, type FaceIdStatus, isCancelled, loadSignIn, saveSignIn, setAppSignedIn, setFaceIdDeclined } from "@/lib/face-id";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 
 function friendlyAuthError(message: string): string {
@@ -28,12 +28,17 @@ export default function LoginPage() {
   // After a password sign-in, the offer to turn Face ID on (it needs the password to save it).
   const [offer, setOffer] = useState<{ email: string; password: string } | null>(null);
   const prompted = useRef(false);
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     // Signed out: no app lock on top of this page (it asks for Face ID itself).
     setAppSignedIn(false);
+    // Sent here by the app lock after Face ID failed twice: go straight to the password.
+    const lockGaveUp = new URLSearchParams(window.location.search).get("faceid") === "failed";
     void faceIdStatus().then((status) => {
       setFaceId(status);
+      if (lockGaveUp && status.saved) { setError(`${biometryName(status)} didn’t work. Sign in with your password.`); return; }
       // Opening the app with Face ID on goes straight to the Face ID prompt.
       if (configured && status.available && status.saved && !prompted.current) {
         prompted.current = true;
@@ -67,11 +72,33 @@ export default function LoginPage() {
     router.replace("/");
   }
 
+  /**
+   * Face ID, tried again once by itself if it fails or recognises no one within 5 seconds; after
+   * the second failure Penny asks for the password, like the app lock.
+   */
   async function signInWithFaceId() {
     setError("");
+    setNotice("");
     setBusy(true);
-    const saved = await loadSignIn();
-    if (!saved) { setBusy(false); return; }
+    let saved: Awaited<ReturnType<typeof loadSignIn>> = "failed";
+    for (let attempt = 1; attempt <= FACE_ID_TRIES; attempt += 1) {
+      saved = await loadSignIn();
+      if (saved !== "failed") break;
+      if (attempt < FACE_ID_TRIES) {
+        setNotice("Face ID didn’t recognise you. Trying again…");
+        // Let the Face ID sheet close before asking again.
+        await new Promise((resolve) => window.setTimeout(resolve, 600));
+      }
+    }
+    setNotice("");
+    if (saved === "failed") {
+      setError("Face ID didn’t work. Sign in with your password.");
+      setBusy(false);
+      window.setTimeout(() => passwordInput.current?.focus(), 0);
+      return;
+    }
+    if (saved === "password") { setBusy(false); window.setTimeout(() => passwordInput.current?.focus(), 0); return; }
+    if (typeof saved === "string") { setBusy(false); return; }
     const failed = await passwordSignIn(saved.email, saved.password);
     if (!failed) { router.replace("/"); return; }
     if (/invalid login credentials/i.test(failed)) {
@@ -130,7 +157,8 @@ export default function LoginPage() {
               )}
               <form onSubmit={signIn} className={faceId?.saved ? "mt-3 space-y-4" : "mt-6 space-y-4"}>
                 <Field label="Email">{(props) => <Input {...props} name="email" type="email" autoComplete="email" required disabled={!configured || busy} />}</Field>
-                <Field label="Password">{(props) => <Input {...props} name="password" type="password" autoComplete="current-password" required disabled={!configured || busy} />}</Field>
+                {notice && <p role="status" className="rounded-xl bg-sage-soft px-3 py-2.5 text-sm text-ink-muted">{notice}</p>}
+                <Field label="Password">{(props) => <Input {...props} ref={passwordInput} name="password" type="password" autoComplete="current-password" required disabled={!configured || busy} />}</Field>
                 {error && <p role="alert" className="rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">{error}</p>}
                 <Button type="submit" disabled={!configured || busy} className="w-full">
                   {busy ? <><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Signing in…</> : "Sign in"}

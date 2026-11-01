@@ -146,7 +146,7 @@ export function MobileNavigation({ active, onNavigate, onAdd }: { active: View; 
   const tabs = [...primary.map((item) => ({ ...item, selected: current(item.id), onClick: () => { if (active !== item.id) haptic("selection"); onNavigate(item.id); } })), { id: "more" as const, label: "More", icon: Menu, selected: moreActive, onClick: () => { haptic("selection"); setMoreOpen(true); } }];
   return (
     <nav aria-label="Primary" className="mobile-tab-bar pointer-events-none fixed inset-x-0 bottom-0 z-30 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:hidden">
-      <div className="mx-auto flex max-w-md items-center justify-center gap-2 px-4">
+      <div className="mx-auto flex max-w-md items-center justify-center gap-1.5 px-2">
         <ul className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-line bg-surface/85 p-1 shadow-[var(--shadow-raised)] backdrop-blur-xl">
           {tabs.map(({ id, label, icon: Icon, selected, onClick }) => (
             <li key={id}>
@@ -157,8 +157,9 @@ export function MobileNavigation({ active, onNavigate, onAdd }: { active: View; 
           ))}
         </ul>
         {onAdd && (
-          <button type="button" onClick={onAdd} aria-label="Add transaction" className="pointer-events-auto grid size-14 shrink-0 place-items-center rounded-full bg-primary text-on-primary shadow-[var(--shadow-raised)] transition-transform active:scale-95">
-            <Plus className="size-6" aria-hidden="true" />
+          <button type="button" onClick={onAdd} aria-label="Add transaction" className="pointer-events-auto grid size-[44px] shrink-0 place-items-center rounded-full bg-primary text-on-primary shadow-[var(--shadow-raised)] transition-transform active:scale-95">
+            {/* Fixed at 44pt (the minimum tap size) so larger text never pushes the tab bar off screen. */}
+            <Plus className="size-5" aria-hidden="true" />
           </button>
         )}
       </div>
