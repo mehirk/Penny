@@ -14,9 +14,9 @@ import { haptic } from "@/lib/native";
 import { cn } from "@/lib/utils";
 import { PALETTE_OPTIONS, type PaletteSetting, SURFACE_OPTIONS, type SurfaceSetting, THEME_OPTIONS, type ThemeSetting, usePreferences } from "./preferences";
 import { type PeriodRange, PeriodPicker } from "./period-picker";
-import { cad, NAVIGATION, type View } from "./shared";
+import { cad, MENU, NAVIGATION, type View } from "./shared";
 
-const MONTH_VIEWS: View[] = ["today", "spending"];
+const MONTH_VIEWS: View[] = ["today", "spending", "budgets"];
 export const THEME_ICONS: Record<ThemeSetting, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
 
 export const SHORTCUTS: { keys: string; action: string }[] = [
@@ -112,14 +112,13 @@ export function Sidebar({ active, dashboard, collapsed, onToggle, onNavigate }: 
       </div>
       <nav aria-label="Primary" className="mt-8">
         <ul className="space-y-1">
-          {/* Settings opens from the header's gear menu (All settings), not the sidebar. */}
-          {NAVIGATION.map(({ id, label, icon: Icon }) => (
+          {MENU.map(({ id, label, icon: Icon }) => { const here = active === id || (id === "today" && active === "accounts"); return (
             <li key={id}>
-              <button type="button" title={collapsed ? label : undefined} onClick={() => onNavigate(id)} aria-current={active === id ? "page" : undefined} className={cn("relative flex min-h-11 w-full items-center rounded-xl text-sm font-medium transition-colors duration-150", collapsed ? "justify-center px-0" : "gap-3 px-3", active === id ? "bg-sage text-primary before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-full before:bg-accent" : "text-ink-muted hover:bg-sage-soft hover:text-ink")}>
+              <button type="button" title={collapsed ? label : undefined} onClick={() => onNavigate(id)} aria-current={here ? "page" : undefined} className={cn("relative flex min-h-11 w-full items-center rounded-xl text-sm font-medium transition-colors duration-150", collapsed ? "justify-center px-0" : "gap-3 px-3", here ? "bg-sage text-primary before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-full before:bg-accent" : "text-ink-muted hover:bg-sage-soft hover:text-ink")}>
                 <Icon className="size-5 shrink-0" aria-hidden="true" />{!collapsed && label}
               </button>
             </li>
-          ))}
+          ); })}
         </ul>
       </nav>
       <div className="mt-auto space-y-3 pt-6">
@@ -139,12 +138,11 @@ export function Sidebar({ active, dashboard, collapsed, onToggle, onNavigate }: 
  */
 export function MobileNavigation({ active, onNavigate, onAdd }: { active: View; onNavigate: (view: View) => void; onAdd?: () => void }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const primary = NAVIGATION.filter((item) => item.primary);
-  // Accounts are listed on Home (with Net worth one tap away), so More doesn't repeat them.
-  const secondary = NAVIGATION.filter((item) => !item.primary && item.id !== "accounts");
+  const primary = MENU.filter((item) => item.primary);
+  const secondary = MENU.filter((item) => !item.primary);
   const moreActive = secondary.some((item) => item.id === active);
   const current = (id: View) => active === id || (id === "today" && active === "accounts");
-  const tab = (selected: boolean) => cn("grid h-12 w-12 place-items-center rounded-full transition-colors duration-200 motion-reduce:transition-none", selected ? "bg-sage text-ink" : "text-ink-subtle hover:text-ink");
+  const tab = (selected: boolean) => cn("grid h-12 w-11 place-items-center min-[400px]:w-12 rounded-full transition-colors duration-200 motion-reduce:transition-none", selected ? "bg-sage text-ink" : "text-ink-subtle hover:text-ink");
   const tabs = [...primary.map((item) => ({ ...item, selected: current(item.id), onClick: () => { if (active !== item.id) haptic("selection"); onNavigate(item.id); } })), { id: "more" as const, label: "More", icon: Menu, selected: moreActive, onClick: () => { haptic("selection"); setMoreOpen(true); } }];
   return (
     <nav aria-label="Primary" className="mobile-tab-bar pointer-events-none fixed inset-x-0 bottom-0 z-30 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:hidden">

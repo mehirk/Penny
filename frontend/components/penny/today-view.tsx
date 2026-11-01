@@ -132,7 +132,7 @@ function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp
       </div>
 
       <div className="space-y-6">
-      <PhoneBills dashboard={dashboard} onOpen={() => onNavigate("recurring")} />
+      <PhoneBills dashboard={dashboard} onOpen={() => onNavigate("recurring")} onOpenCard={onOpenPage} />
       <PhoneRecent dashboard={dashboard} onOpen={() => onNavigate("spending", "transactions")} onEdit={onEditTransaction} />
       <div className="lg:hidden">
         <AskPenny dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} />
@@ -233,27 +233,38 @@ function dueIn(days: number): string {
   return days === 1 ? "Tomorrow" : `In ${days} days`;
 }
 
-function PhoneBills({ dashboard, onOpen }: { dashboard: Dashboard; onOpen: () => void }) {
+/** Bills and card payments due next, soonest first. A card payment opens the card's page. */
+function PhoneBills({ dashboard, onOpen, onOpenCard }: { dashboard: Dashboard; onOpen: () => void; onOpenCard: (accountId: string) => void }) {
   const byId = new Map(dashboard.categories.map((category) => [category.id, category]));
   const bills = new Map(dashboard.bills.map((bill) => [bill.id, bill]));
-  const items = dashboard.recurring.items.slice(0, 3);
+  type Row = { key: string; name: string; due: string; days: number; cents: number; icon: React.ComponentType<{ className?: string }>; open: () => void; note?: string };
+  const rows: Row[] = [
+    ...dashboard.recurring.items.map((item): Row => {
+      const bill = bills.get(item.id);
+      return { key: item.id, name: item.name, due: item.next_due, days: item.days_until_due, cents: item.amount_cents, icon: categoryIcon(bill?.category_id ? byId.get(bill.category_id) : undefined), open: onOpen };
+    }),
+    // Card purchases already count as spending, so the payment is shown, not taken off Safe to spend again.
+    ...dashboard.card_payments.filter((card) => card.owed_cents > 0).map((card): Row => ({ key: `card-${card.account_id}`, name: `${card.account_name} payment`, due: card.due_on, days: card.days_until_due, cents: card.owed_cents, icon: CreditCard, open: () => onOpenCard(card.account_id), note: "owed now" })),
+  ].sort((a, b) => a.due.localeCompare(b.due) || a.name.localeCompare(b.name)).slice(0, 4);
   return (
     <PhoneSection title="Coming up" action="All bills" onOpen={onOpen}>
-      {items.length === 0 ? <p className={cn(GROUP, "p-4 text-sm text-ink-subtle")}>No bills set up yet.</p> : (
+      {rows.length === 0 ? <p className={cn(GROUP, "p-4 text-sm text-ink-subtle")}>No bills or card payments due.</p> : (
         <ul className={STACK}>
-          {items.map((item) => {
-            const bill = bills.get(item.id);
-            const Icon = categoryIcon(bill?.category_id ? byId.get(bill.category_id) : undefined);
-            const soon = item.days_until_due <= 1;
+          {rows.map((row) => {
+            const soon = row.days <= 1;
+            const Icon = row.icon;
             return (
-              <li key={item.id} className={CARD}>
-                <button type="button" onClick={onOpen} className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-sage-soft">
+              <li key={row.key} className={CARD}>
+                <button type="button" onClick={row.open} className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-sage-soft">
                   <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-ink-muted" aria-hidden="true"><Icon className="size-4" /></span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-ink">{item.name}</span>
-                    <span className="block text-xs"><span className={soon ? "font-semibold text-danger" : "text-ink-subtle"}>{dueIn(item.days_until_due)}</span><span className="text-ink-subtle"> · {formatShortDate(item.next_due)}</span></span>
+                    <span className="block truncate text-sm font-semibold text-ink">{row.name}</span>
+                    <span className="block text-xs"><span className={soon ? "font-semibold text-danger" : "text-ink-subtle"}>{dueIn(row.days)}</span><span className="text-ink-subtle"> · {formatShortDate(row.due)}</span></span>
                   </span>
-                  <span className="tabular shrink-0 text-sm font-semibold text-ink">{cad(item.amount_cents)}</span>
+                  <span className="shrink-0 text-right">
+                    <span className="tabular block text-sm font-semibold text-ink">{cad(row.cents)}</span>
+                    {row.note && <span className="block text-[11px] text-ink-subtle">{row.note}</span>}
+                  </span>
                 </button>
               </li>
             );

@@ -43,6 +43,8 @@ class Account(StrictModel):
     account_type: Literal["chequing", "savings", "credit", "cash", "investment", "other"]
     balance_cents: int = Field(ge=0)
     credit_limit_cents: int | None = Field(default=None, ge=0)
+    # Credit cards: the day of the month the payment is due.
+    payment_due_day: int | None = Field(default=None, ge=1, le=31)
 
 
 class Transaction(StrictModel):

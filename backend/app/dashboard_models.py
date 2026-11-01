@@ -377,6 +377,16 @@ class SpendingRunway(DashboardModel):
     status: Literal["on_track", "tight", "empty", "over"]
 
 
+class CardPayment(DashboardModel):
+    """A credit card's next payment: when it's due and what's owed on it now."""
+
+    account_id: str
+    account_name: str
+    due_on: date
+    days_until_due: int = Field(ge=0)
+    owed_cents: int = Field(ge=0)
+
+
 class SafeToSpendBreakdown(DashboardModel):
     """Each step of Safe to spend (app.domain.runway.safe_to_spend), so the app can show it."""
 
@@ -425,6 +435,8 @@ class DashboardResponse(DashboardModel):
     # Safe to spend: negative when spending has passed the budget.
     spending_power_cents: int
     safe_to_spend: SafeToSpendBreakdown | None = None
+    # Credit cards with a payment due day, soonest first.
+    card_payments: list[CardPayment] = Field(default_factory=list)
     # A real (non-demo) account with no budget, bills, or pay schedule yet: offer the setup.
     needs_onboarding: bool = False
     # Only while the period shown includes today.
@@ -557,6 +569,54 @@ class HistoryResponse(DashboardModel):
     data_months: list[date]
 
 
+class ChartCategoryAmount(DashboardModel):
+    category_id: str | None
+    spent_cents: int = Field(ge=0)
+
+
+class ChartMonth(DashboardModel):
+    month: date
+    income_cents: int = Field(ge=0)
+    spending_cents: int = Field(ge=0)
+    net_cents: int
+    # Budgets for this month (only the filtered categories' when a category filter is on).
+    budget_cents: int = Field(ge=0)
+    needs_cents: int = Field(ge=0)
+    wants_cents: int = Field(ge=0)
+    categories: list[ChartCategoryAmount]
+
+
+class ChartCategory(DashboardModel):
+    category_id: str | None
+    category_name: str
+    spent_cents: int = Field(ge=0)
+    share_basis_points: int = Field(ge=0, le=10_000)
+
+
+class ChartAccount(DashboardModel):
+    account_id: str
+    account_name: str
+    account_type: str
+    income_cents: int = Field(ge=0)
+    spending_cents: int = Field(ge=0)
+
+
+class ChartsResponse(DashboardModel):
+    """Everything the Charts tab draws, for one range and one set of filters."""
+
+    start: date
+    end: date
+    months: list[ChartMonth]
+    categories: list[ChartCategory]
+    accounts: list[ChartAccount]
+    income_cents: int = Field(ge=0)
+    spending_cents: int = Field(ge=0)
+    net_cents: int
+    budget_cents: int = Field(ge=0)
+    average_spending_cents: int = Field(ge=0)
+    data_months: list[date]
+
+
 class CreditUtilizationRequest(DashboardModel):
     balance_cents: int = Field(ge=0)
     credit_limit_cents: int = Field(gt=0)
@@ -631,6 +691,7 @@ class AccountWrite(DashboardModel):
     account_type: AccountType
     balance_cents: int = Field(default=0, ge=0)
     credit_limit_cents: int | None = Field(default=None, gt=0)
+    payment_due_day: int | None = Field(default=None, ge=1, le=31)
 
 
 class AccountPatch(DashboardModel):
@@ -640,6 +701,7 @@ class AccountPatch(DashboardModel):
     # For a credit card: what's owed on it.
     balance_cents: int | None = Field(default=None, ge=0)
     credit_limit_cents: int | None = Field(default=None, gt=0)
+    payment_due_day: int | None = Field(default=None, ge=1, le=31)
 
 
 class ForecastEvent(DashboardModel):
@@ -741,6 +803,7 @@ class OnboardingAccount(DashboardModel):
     # For a credit card: what's owed on it now.
     balance_cents: int = Field(default=0, ge=0)
     credit_limit_cents: int | None = Field(default=None, gt=0)
+    payment_due_day: int | None = Field(default=None, ge=1, le=31)
 
 
 class OnboardingIncome(DashboardModel):

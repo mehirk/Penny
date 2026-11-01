@@ -48,7 +48,7 @@ class Question:
 @dataclass(frozen=True)
 class Task:
     label: str
-    view: Literal["spending", "goals", "invest", "ai", "settings"]
+    view: Literal["spending", "budgets", "goals", "ai", "settings"]
     prompt: str | None = None  # for Penny AI tasks: the question to ask on the learner's behalf
 
 
@@ -1684,7 +1684,11 @@ INVESTING_SHARED = (
                 "Market investments can fall. Insured deposits within limits don’t lose value.",
             ),
         ),
-        Task("Try the growth explorer in Invest", "invest"),
+        Task(
+            "Ask Penny AI how compound growth works",
+            "ai",
+            "Explain compound growth with a simple made-up example. Educational only.",
+        ),
     ),
     LessonContent(
         "investing-hard",
@@ -1746,7 +1750,11 @@ INVESTING_SHARED = (
                 "Same dollars, lower price, more units.",
             ),
         ),
-        Task("Compare fees in the growth explorer in Invest", "invest"),
+        Task(
+            "Ask Penny AI how fees affect growth",
+            "ai",
+            "How do investment fees affect growth? Use made-up numbers. Educational only.",
+        ),
     ),
 )
 
@@ -1805,7 +1813,11 @@ INVESTING_CA = LessonContent(
             "Growth depends on what you hold inside it.",
         ),
     ),
-    Task("Read about registered accounts in Invest", "invest"),
+    Task(
+        "Ask Penny AI about registered accounts",
+        "ai",
+        "What are TFSAs and RRSPs, and how are they different? Educational only, not advice.",
+    ),
 )
 
 INVESTING_US = LessonContent(
@@ -1861,7 +1873,11 @@ INVESTING_US = LessonContent(
             "529 plans are education savings accounts.",
         ),
     ),
-    Task("Try the growth explorer in Invest", "invest"),
+    Task(
+        "Ask Penny AI how compound growth works",
+        "ai",
+        "Explain compound growth with a simple made-up example. Educational only.",
+    ),
 )
 
 # ------------------------------------------------------------------ catalog

@@ -82,7 +82,7 @@ def build_demo_dashboard() -> DemoDashboardResponse:
         Transaction(
             id="tx-fun",
             description="Movie night",
-            category="Fun",
+            category="Entertainment",
             amount_cents=2_600,
             kind="spending",
             occurred_on=date(2026, 10, 17),
@@ -161,7 +161,9 @@ def build_demo_dashboard() -> DemoDashboardResponse:
         ),
         Budget(category="Phone", limit_cents=5_000, spent_cents=4_500, remaining_cents=500),
         Budget(category="School", limit_cents=10_000, spent_cents=3_299, remaining_cents=6_701),
-        Budget(category="Fun", limit_cents=8_000, spent_cents=2_600, remaining_cents=5_400),
+        Budget(
+            category="Entertainment", limit_cents=8_000, spent_cents=2_600, remaining_cents=5_400
+        ),
     ]
     return DemoDashboardResponse(
         profile=DemoUser(

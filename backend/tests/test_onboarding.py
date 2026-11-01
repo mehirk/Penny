@@ -254,3 +254,34 @@ def test_check_warns_when_budget_is_above_income_but_still_applies() -> None:
     )
     result = store.apply_onboarding(USER, OnboardingApply(answers=answers))
     assert {b.category_id: b.limit_cents for b in result.budgets} == {"cat-groceries": 150_000}
+
+
+def test_charts_endpoint_data_filters_and_budgets() -> None:
+    store, ids = _setup()
+    _spend(store, ids["chequing"], 4_800)
+    _spend(store, ids["credit"], 1_200)
+    month = store.today().replace(day=1)
+    everything = store.charts_for_user(USER, month, month)
+    assert everything.spending_cents == 6_000
+    assert everything.months[0].budget_cents == 50_000
+    card = store.charts_for_user(USER, month, month, account_ids=frozenset({ids["credit"]}))
+    assert card.spending_cents == 1_200
+    fun = store.charts_for_user(USER, month, month, category_ids=frozenset({"cat-fun"}))
+    assert (fun.spending_cents, fun.months[0].budget_cents) == (0, 0)
+
+
+def test_card_payment_due_day_shows_next_payment() -> None:
+    from app.dashboard_models import AccountPatch, AccountWrite
+
+    store, ids = _setup()
+    result = store.update_account(USER, ids["credit"], AccountPatch(payment_due_day=31))
+    (payment,) = result.card_payments
+    assert payment.account_id == ids["credit"]
+    assert payment.due_on >= store.today() and payment.days_until_due >= 0
+    _spend(store, ids["credit"], 4_800)
+    assert store.dashboard_for_user(USER).card_payments[0].owed_cents == 4_800
+    with pytest.raises(HTTPException) as error:
+        store.create_account(
+            USER, AccountWrite(name="Savings 2", account_type="savings", payment_due_day=5)
+        )
+    assert error.value.status_code == 422

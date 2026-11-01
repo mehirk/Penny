@@ -10,7 +10,7 @@ import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
 import { accountEmoji } from "./emoji";
-import { cad, describeError, Field } from "./shared";
+import { cad, describeError, DueDaySelect, Field } from "./shared";
 
 /** Starting suggestions only; every amount is the user's to change. */
 const BILL_PRESETS = [
@@ -25,7 +25,7 @@ const EVERYDAY_PRESETS = [
   { category: "cat-groceries", label: "Groceries", emoji: "🛒", amount: "250" },
   { category: "cat-eating-out", label: "Eating out & coffee", emoji: "☕", amount: "100" },
   { category: "cat-transport", label: "Getting around", emoji: "🚌", amount: "40" },
-  { category: "cat-fun", label: "Fun & going out", emoji: "🎉", amount: "80" },
+  { category: "cat-fun", label: "Entertainment", emoji: "🎬", amount: "80" },
   { category: "cat-health", label: "Health & personal care", emoji: "🧴", amount: "30" },
   { category: "cat-school", label: "School supplies", emoji: "📚", amount: "20" },
 ];
@@ -39,7 +39,7 @@ const PAY_OPTIONS: { value: PayFrequency; label: string }[] = [
 const STEPS = ["Accounts", "Income", "Bills", "Everyday", "Savings", "Your plan"];
 
 type Bill = { key: string; on: boolean; name: string; category: string; amount: string; day: string };
-type NewAccount = { name: string; type: AccountType; balance: string; limit: string };
+type NewAccount = { name: string; type: AccountType; balance: string; limit: string; dueDay: string };
 
 const isoDay = (date: Date) => date.toISOString().slice(0, 10);
 /** The next date with this day of the month, on or after `today` (day capped at 28). */
@@ -95,7 +95,8 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
       if (!item.name.trim()) return "Give each new account a name.";
       if (balance === null) return `Enter the balance for ${item.name} (0.00 if it's empty).`;
       if (item.type === "credit" && !limit) return `Enter the credit limit for ${item.name}.`;
-      accounts.push({ name: item.name.trim(), account_type: item.type, balance_cents: balance, credit_limit_cents: item.type === "credit" ? limit : null });
+      if (item.type === "credit" && !item.dueDay) return `Pick the day ${item.name}'s payment is due.`;
+      accounts.push({ name: item.name.trim(), account_type: item.type, balance_cents: balance, credit_limit_cents: item.type === "credit" ? limit : null, payment_due_day: item.type === "credit" ? Number(item.dueDay) : null });
     }
     let income: OnboardingAnswers["income"] = null;
     let monthlyMoney: number | null = null;
@@ -220,11 +221,16 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
                       </Select>
                       {money(item.balance, (v) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, balance: v } : a))), item.type === "credit" ? "Owed now" : "Balance now")}
                     </div>
-                    {item.type === "credit" && <Field label="Credit limit">{(props) => <Input {...props} inputMode="decimal" placeholder="1000.00" value={item.limit} onChange={(e) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, limit: e.target.value } : a)))} className="min-h-11 text-base" />}</Field>}
+                    {item.type === "credit" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <Field label="Credit limit">{(props) => <Input {...props} inputMode="decimal" placeholder="1000.00" value={item.limit} onChange={(e) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, limit: e.target.value } : a)))} className="min-h-11 text-base" />}</Field>
+                        <Field label="Payment due">{(props) => <DueDaySelect {...props} value={item.dueDay} onChange={(v) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, dueDay: v } : a)))} />}</Field>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
-              {newAccounts.length < 4 && <Button variant="outline" className="mt-3 w-full" onClick={() => setNewAccounts([...newAccounts, { name: "", type: "savings", balance: "0.00", limit: "" }])}><Plus className="size-4" aria-hidden="true" />Add a savings account or card</Button>}
+              {newAccounts.length < 4 && <Button variant="outline" className="mt-3 w-full" onClick={() => setNewAccounts([...newAccounts, { name: "", type: "savings", balance: "0.00", limit: "", dueDay: "" }])}><Plus className="size-4" aria-hidden="true" />Add a savings account or card</Button>}
 
             </section>
           )}

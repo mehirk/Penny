@@ -11,7 +11,7 @@ def test_covers_overspend_from_the_budget_with_most_room() -> None:
             BudgetLine("transport", 8_000, 7_000),
         ]
     )
-    # $42 over, rounded up to $45, taken from Fun ($80 of room).
+    # $42 over, rounded up to $45, taken from Entertainment ($80 of room).
     assert plan.over_cents == 4_500
     assert (plan.covered_cents, plan.uncovered_cents) == (4_500, 0)
     assert plan.changes == (Change("groceries", 30_000, 34_500), Change("fun", 10_000, 5_500))
@@ -34,7 +34,8 @@ def test_never_below_spent_or_scheduled_bills() -> None:
             BudgetLine("coffee", 3_000, 2_800),
         ]
     )
-    # Fun needs $70. Housing can give only $50 (its bills need $850); Coffee's $2 isn't a $5 step.
+    # Entertainment needs $70. Housing can give only $50 (its bills need $850);
+    # Coffee's $2 isn't a $5 step.
     lowered = {c.category_id: c.to_cents for c in plan.changes if c.to_cents < c.from_cents}
     assert lowered == {"housing": 85_000}
     assert (plan.covered_cents, plan.uncovered_cents) == (5_000, 2_000)

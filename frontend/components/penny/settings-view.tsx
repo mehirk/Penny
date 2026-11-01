@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { Banknote, BellRing, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
+import { Banknote, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
 import { type Dashboard, dashboardApi, type PayFrequency, type PaySchedule } from "@/lib/api";
@@ -13,8 +14,7 @@ import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, THEME_ICONS } fr
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
 import { accountEmoji } from "./emoji";
 import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
-import { EmailReminders } from "./email-reminders";
-import { cad, Field } from "./shared";
+import { cad, DueDaySelect, Field } from "./shared";
 import { BackBar } from "./back-bar";
 import { StatementImport } from "./statement-import";
 import { useSubpage } from "./subpage";
@@ -92,7 +92,6 @@ export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: 
     { id: "categories", labelId: "categories-title", group: "Money", icon: Tags, title: "Categories", summary: custom ? `${custom} of your own` : "Penny’s defaults", body: <CategoriesSection dashboard={dashboard} save={save} /> },
     { id: "import", labelId: "import-title", group: "Money", icon: FileUp, title: "Import a statement", summary: "PDF, Excel, or CSV · read by Penny AI", body: <StatementImport dashboard={dashboard} save={save} /> },
     { id: "appearance", labelId: "appearance-title", group: "App", icon: Palette, title: "Appearance", summary: `${styleName} · ${themeName}`, body: <AppearanceSection /> },
-    { id: "reminders", labelId: "reminders-title", group: "App", icon: BellRing, title: "Email reminders", summary: "Bills, budgets, and streaks", body: <EmailReminders /> },
     { id: "security", labelId: "trust-title", group: "Privacy", icon: ShieldCheck, title: "Security and trust", summary: "How your data is protected", body: <TrustSection /> },
   ];
   const page = pages.find((item) => item.id === pageId);
@@ -214,6 +213,7 @@ function PayScheduleSection({ dashboard, save }: { dashboard: Dashboard; save: S
 
 function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
   const [error, setError] = useState("");
+  const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   async function run(action: () => Promise<Dashboard>, success: string): Promise<boolean> {
     const result = await save(action, success);
@@ -222,7 +222,10 @@ function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: Save
   }
   return (
     <section className={SECTION} aria-labelledby="accounts-title">
-      <h3 className="text-base font-semibold text-ink">Your accounts</h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-base font-semibold text-ink">Your accounts</h3>
+        <Button size="sm" onClick={() => { setError(""); setAdding(true); }}><Plus className="size-4" aria-hidden="true" />New account</Button>
+      </div>
       <ul className="mt-2 space-y-2.5">
         {dashboard.accounts.map((account) => (
           <li key={account.id} className="rounded-[var(--radius-card)] border border-line bg-surface">
@@ -242,26 +245,37 @@ function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: Save
           </li>
         ))}
       </ul>
-      {error && <p role="alert" className="mt-3 rounded-xl bg-danger-soft p-3 text-sm text-danger">{error}</p>}
+      {error && !adding && <p role="alert" className="mt-3 rounded-xl bg-danger-soft p-3 text-sm text-danger">{error}</p>}
 
-      <AddAccount onAdd={(body, success) => run(() => dashboardApi.createAccount(body), success)} />
+      <Dialog open={adding} onOpenChange={(open) => { setAdding(open); setError(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New account</DialogTitle>
+            <DialogDescription>Add a chequing, savings, cash, or card account. Use fictional amounts.</DialogDescription>
+          </DialogHeader>
+          {adding && error && <p role="alert" className="rounded-xl bg-danger-soft p-3 text-sm text-danger">{error}</p>}
+          {adding && <AddAccount onAdd={async (body, success) => { const ok = await run(() => dashboardApi.createAccount(body), success); if (ok) setAdding(false); return ok; }} />}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
 
-function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboard["accounts"][number]; onSave: (body: { name: string; balance_cents: number; credit_limit_cents?: number }) => Promise<void>; onCancel: () => void; onDelete: () => Promise<void> }) {
+function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboard["accounts"][number]; onSave: (body: { name: string; balance_cents: number; credit_limit_cents?: number; payment_due_day?: number }) => Promise<void>; onCancel: () => void; onDelete: () => Promise<void> }) {
   const credit = account.account_type === "credit";
   const [name, setName] = useState(account.name);
   const [balance, setBalance] = useState(centsToInput(String(account.balance_cents)));
   const [limit, setLimit] = useState(account.credit_limit_cents ? centsToInput(String(account.credit_limit_cents)) : "");
+  const [dueDay, setDueDay] = useState(account.payment_due_day ? String(account.payment_due_day) : "");
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) { setError("Give the account a name"); return; }
+    if (credit && !dueDay) { setError("Pick the day your card payment is due"); return; }
     try {
-      const body: { name: string; balance_cents: number; credit_limit_cents?: number } = { name: name.trim(), balance_cents: parseCadToCents(balance || "0") };
-      if (credit) body.credit_limit_cents = parseCadToCents(limit);
+      const body: { name: string; balance_cents: number; credit_limit_cents?: number; payment_due_day?: number } = { name: name.trim(), balance_cents: parseCadToCents(balance || "0") };
+      if (credit) { body.credit_limit_cents = parseCadToCents(limit); body.payment_due_day = Number(dueDay); }
       setError("");
       await onSave(body);
     } catch { setError(credit ? "Enter the amount owed and the credit limit" : "Enter a valid balance"); }
@@ -273,6 +287,7 @@ function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboa
       <div className={cn("grid gap-3", credit && "sm:grid-cols-2")}>
         <Field label={credit ? "Owed now" : "Balance"} hint="Correct it to match your real account.">{(props) => <Input {...props} inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="min-h-11 text-base tabular" />}</Field>
         {credit && <Field label="Credit limit">{(props) => <Input {...props} inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} className="min-h-11 text-base tabular" />}</Field>}
+        {credit && <Field label="Payment due" hint="The day your card bill is due each month.">{(props) => <DueDaySelect {...props} value={dueDay} onChange={setDueDay} />}</Field>}
       </div>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
       <div className="flex flex-wrap items-center gap-2">
@@ -292,33 +307,35 @@ function AddAccount({ onAdd }: { onAdd: (body: Parameters<typeof dashboardApi.cr
   const [type, setType] = useState<keyof typeof ACCOUNT_TYPE_LABELS>("chequing");
   const [balance, setBalance] = useState("0.00");
   const [limit, setLimit] = useState("");
+  const [dueDay, setDueDay] = useState("");
   const [error, setError] = useState("");
   const credit = type === "credit";
   async function add(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) { setError("Give the account a name"); return; }
     let balanceCents: number;
+    if (credit && !dueDay) { setError("Pick the day your card payment is due"); return; }
     let limitCents: number | null = null;
     try {
       balanceCents = parseCadToCents(balance);
       if (credit) limitCents = parseCadToCents(limit);
     } catch { setError(credit ? "Enter what's owed (0.00 if nothing) and the credit limit" : "Enter the balance (0.00 if empty)"); return; }
     setError("");
-    if (await onAdd({ name: name.trim(), account_type: type, balance_cents: balanceCents, credit_limit_cents: limitCents }, `${name.trim()} added`)) {
-      setName(""); setBalance("0.00"); setLimit("");
+    if (await onAdd({ name: name.trim(), account_type: type, balance_cents: balanceCents, credit_limit_cents: limitCents, payment_due_day: credit ? Number(dueDay) : null }, `${name.trim()} added`)) {
+      setName(""); setBalance("0.00"); setLimit(""); setDueDay("");
     }
   }
   return (
-    <form onSubmit={add} className="mt-6 rounded-[var(--radius-card)] border border-dashed border-line-strong p-4">
-      <h3 className="flex items-center gap-2 text-base font-semibold text-ink"><Plus className="size-4" aria-hidden="true" />New account</h3>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+    <form onSubmit={add}>
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Account name">{(props) => <Input {...props} placeholder="e.g. Rainy day savings" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className="min-h-11 text-base" />}</Field>
         <Field label="Type">{(props) => <Select {...props} value={type} onChange={(e) => setType(e.target.value as keyof typeof ACCOUNT_TYPE_LABELS)} className="min-h-11 text-base">{Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select>}</Field>
         <Field label={credit ? "Owed now" : "Balance"} hint={credit ? "0.00 if the card is paid off." : "Required. 0.00 if it's empty."}>{(props) => <Input {...props} required inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="min-h-11 text-base tabular" />}</Field>
         {credit && <Field label="Credit limit">{(props) => <Input {...props} required inputMode="decimal" placeholder="1000.00" value={limit} onChange={(e) => setLimit(e.target.value)} className="min-h-11 text-base tabular" />}</Field>}
+        {credit && <Field label="When is the payment due?" hint="The day your card bill is due each month. Penny shows it in Coming up.">{(props) => <DueDaySelect {...props} value={dueDay} onChange={setDueDay} />}</Field>}
       </div>
       {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
-      <Button type="submit" className="mt-4 w-full sm:w-auto"><Plus className="size-4" aria-hidden="true" />Add account</Button>
+      <Button type="submit" className="mt-5 min-h-11 w-full"><Plus className="size-4" aria-hidden="true" />Add account</Button>
     </form>
   );
 }

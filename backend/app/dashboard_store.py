@@ -33,9 +33,15 @@ from app.dashboard_models import (
     BudgetLimitChange,
     BudgetPatch,
     BudgetWrite,
+    CardPayment,
     Category,
     CategorySpending,
     CategoryWrite,
+    ChartAccount,
+    ChartCategory,
+    ChartCategoryAmount,
+    ChartMonth,
+    ChartsResponse,
     CreditSnapshot,
     CycleReview,
     DashboardResponse,
@@ -74,7 +80,10 @@ from app.dashboard_models import (
     TransactionRepeat,
     TransactionWrite,
 )
+from app.domain.card_due import next_card_due
 from app.domain.categorize import categorize, necessity
+from app.domain.chart_series import ChartTransaction, build_series
+from app.domain.chart_series import Filters as ChartFilters
 from app.domain.csv_import import parse_transactions_csv
 from app.domain.finance import (
     TransactionAmount,
@@ -122,6 +131,13 @@ UNUSUAL_MULTIPLE = 3
 UNUSUAL_MINIMUM_CENTS = 4_000
 # Account types whose balance is money you can spend day to day.
 SPENDABLE_TYPES = ("chequing", "cash")
+
+
+def _require_card_for_due_day(account_type: str, due_day: int | None) -> None:
+    if due_day is not None and account_type != "credit":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "Only credit cards have a payment due day"
+        )
 
 
 def _pay_cycle(cycle: Cycle) -> PayCycle:
@@ -189,7 +205,7 @@ def _starter_categories() -> list[Category]:
         spending("cat-transport", "Transportation", "sky"),
         spending("cat-phone", "Phone", "violet"),
         spending("cat-school", "School", "indigo"),
-        spending("cat-fun", "Fun", "pink"),
+        spending("cat-fun", "Entertainment", "pink"),
         spending("cat-health", "Health", "emerald"),
     ]
 # fmt: on
@@ -1103,6 +1119,20 @@ class DashboardStore:
                 previous_month_cash_flow_cents=previous_cash_flow,
                 spending_power_cents=safe_cents,
                 safe_to_spend=SafeToSpendBreakdown(**asdict(safe), has_budget=total_budget > 0),
+                card_payments=sorted(
+                    (
+                        CardPayment(
+                            account_id=account.id,
+                            account_name=account.name,
+                            due_on=(due := next_card_due(today, account.payment_due_day)),
+                            days_until_due=(due - today).days,
+                            owed_cents=account.balance_cents,
+                        )
+                        for account in self._accounts.values()
+                        if account.account_type == "credit" and account.payment_due_day
+                    ),
+                    key=lambda item: (item.due_on, item.account_name),
+                ),
                 needs_onboarding=self._needs_onboarding(),
                 spending_runway=spending_runway,
                 totals=DashboardTotals(
@@ -1115,6 +1145,107 @@ class DashboardStore:
                     if summary.income_cents
                     else 0,
                 ),
+            )
+
+    def charts_for_user(
+        self,
+        user_id: str,
+        start: date,
+        end: date,
+        account_ids: frozenset[str] = frozenset(),
+        category_ids: frozenset[str] = frozenset(),
+    ) -> ChartsResponse:
+        """Month-by-month figures for the Charts tab (app.domain.chart_series), filtered."""
+        self.require_owner(user_id)
+        start, end = month_start(start), month_start(end)
+        if start > end:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, "start must not be after end"
+            )
+        months: list[date] = [start]
+        while months[-1] < end:
+            months.append(_next_month(months[-1]))
+            if len(months) > MAX_HISTORY_MONTHS:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    f"Charts cover up to {MAX_HISTORY_MONTHS} months at a time",
+                )
+        with self._lock:
+            series = build_series(
+                (
+                    ChartTransaction(
+                        occurred_on=item.occurred_on,
+                        amount_cents=item.amount_cents,
+                        kind=item.kind,  # type: ignore[arg-type]
+                        account_id=item.account_id,
+                        category_id=self._top_level(item.category_id),
+                        necessity=self._with_necessity(item).necessity,
+                    )
+                    for item in self._transactions.values()
+                    if start <= month_start(item.occurred_on) <= end
+                ),
+                months,
+                ChartFilters(account_ids=account_ids, category_ids=category_ids),
+            )
+
+            def budget(month: date) -> int:
+                return sum(
+                    item["limit_cents"]
+                    for item in self._monthly_budgets(month)
+                    if not category_ids or self._top_level(item["category_id"]) in category_ids
+                )
+
+            names = {c.id: c.name for c in self._categories.values()}
+            total = series.spending_cents
+            chart_months = [
+                ChartMonth(
+                    month=row.month,
+                    income_cents=row.income_cents,
+                    spending_cents=row.spending_cents,
+                    net_cents=row.net_cents,
+                    budget_cents=budget(row.month),
+                    needs_cents=row.needs_cents,
+                    wants_cents=row.wants_cents,
+                    categories=[
+                        ChartCategoryAmount(category_id=key, spent_cents=cents)
+                        for key, cents in row.by_category.items()
+                    ],
+                )
+                for row in series.months
+            ]
+            return ChartsResponse(
+                start=start,
+                end=end,
+                months=chart_months,
+                categories=[
+                    ChartCategory(
+                        category_id=key,
+                        category_name=names.get(key, "Uncategorized") if key else "Uncategorized",
+                        spent_cents=cents,
+                        share_basis_points=cents * 10_000 // total if total else 0,
+                    )
+                    for key, cents in series.categories
+                ],
+                accounts=[
+                    ChartAccount(
+                        account_id=item.account_id,
+                        account_name=self._accounts[item.account_id].name
+                        if item.account_id in self._accounts
+                        else "Removed account",
+                        account_type=self._accounts[item.account_id].account_type
+                        if item.account_id in self._accounts
+                        else "other",
+                        income_cents=item.income_cents,
+                        spending_cents=item.spending_cents,
+                    )
+                    for item in series.accounts
+                ],
+                income_cents=series.income_cents,
+                spending_cents=series.spending_cents,
+                net_cents=series.income_cents - series.spending_cents,
+                budget_cents=sum(m.budget_cents for m in chart_months),
+                average_spending_cents=series.average_spending_cents,
+                data_months=self._data_months(),
             )
 
     def history_for_user(self, user_id: str, start: date, end: date) -> HistoryResponse:
@@ -1579,6 +1710,7 @@ class DashboardStore:
                     status.HTTP_422_UNPROCESSABLE_CONTENT,
                     "Credit accounts need a credit limit; other accounts can't have one",
                 )
+            _require_card_for_due_day(request.account_type, request.payment_due_day)
             account = Account(id=f"acct-{uuid4().hex[:10]}", **request.model_dump())
             self._accounts[account.id] = account
             return self._snapshot()
@@ -1598,6 +1730,7 @@ class DashboardStore:
                 raise HTTPException(
                     status.HTTP_422_UNPROCESSABLE_CONTENT, "Only credit cards have a limit"
                 )
+            _require_card_for_due_day(account.account_type, changes.get("payment_due_day"))
             self._accounts[account_id] = account.model_copy(update=changes)
             return self._snapshot()
 
@@ -2279,6 +2412,7 @@ class DashboardStore:
                         status.HTTP_422_UNPROCESSABLE_CONTENT,
                         "Credit cards need a limit; other accounts can't have one",
                     )
+                _require_card_for_due_day(new.account_type, new.payment_due_day)
             income = answers.income
             if income and (income.frequency == "custom") != (income.interval_days is not None):
                 raise HTTPException(
