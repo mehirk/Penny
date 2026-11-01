@@ -133,7 +133,7 @@ class Bill(DashboardModel):
     last_paid_on: date | None = None
 
 
-class PaySchedule(DashboardModel):
+class PayScheduleWrite(DashboardModel):
     name: str = Field(min_length=1, max_length=80)
     amount_cents: int = Field(gt=0)
     account_id: str
@@ -141,6 +141,32 @@ class PaySchedule(DashboardModel):
     next_payday: date
     # Only for "custom": days between paydays.
     interval_days: int | None = Field(default=None, ge=7, le=62)
+
+
+class PaySchedule(PayScheduleWrite):
+    """One source of pay (a job, a scholarship, an allowance). People can have several."""
+
+    id: str = Field(min_length=1, max_length=80)
+
+
+class PaySource(PaySchedule):
+    monthly_cents: int = Field(ge=0)  # average per month (app.domain.starter_budget)
+    upcoming: list[date]  # the next few paydays
+
+
+class UpcomingPay(DashboardModel):
+    pay_id: str
+    name: str
+    on: date
+    amount_cents: int = Field(gt=0)
+
+
+class PayOverview(DashboardModel):
+    """Every source of pay, what they add up to a month, and the paydays coming up."""
+
+    monthly_cents: int = Field(ge=0)
+    sources: list[PaySource]
+    upcoming: list[UpcomingPay]  # every payday in the next 35 days, soonest first
 
 
 class NetWorthSnapshot(DashboardModel):
@@ -454,7 +480,9 @@ class DashboardResponse(DashboardModel):
     investing_foundations: list[FoundationCheck]
     spending_classification: SpendingClassification
     bills: list[Bill]
+    # The main pay (the largest a month): it sets the pay cycles. `pay` has every source.
     pay_schedule: PaySchedule | None
+    pay: PayOverview | None = None
     home: HomeSummary
     net_worth: NetWorthSnapshot
     accounts_overview: AccountsOverview

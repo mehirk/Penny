@@ -61,7 +61,7 @@ from app.dashboard_models import (
     ImportRowsRequest,
     OnboardingAnswers,
     OnboardingApply,
-    PaySchedule,
+    PayScheduleWrite,
     ResetRequest,
     SpendingFromWrite,
     SplitTransactionWrite,
@@ -394,9 +394,24 @@ def mark_bill_paid(
     )
 
 
-@app.put("/api/v1/pay-schedule", response_model=DashboardResponse, tags=["pay cycle"])
-def set_pay_schedule(request: PaySchedule, current_user: AuthenticatedUser) -> DashboardResponse:
-    return _store(current_user).set_pay_schedule(current_user.id, request)
+@app.post("/api/v1/pay-schedules", response_model=DashboardResponse, tags=["pay cycle"])
+def add_pay_schedule(
+    request: PayScheduleWrite, current_user: AuthenticatedUser
+) -> DashboardResponse:
+    """Add a source of pay (a job, a scholarship, an allowance); people can have several."""
+    return _store(current_user).add_pay_schedule(current_user.id, request)
+
+
+@app.put("/api/v1/pay-schedules/{pay_id}", response_model=DashboardResponse, tags=["pay cycle"])
+def update_pay_schedule(
+    pay_id: str, request: PayScheduleWrite, current_user: AuthenticatedUser
+) -> DashboardResponse:
+    return _store(current_user).update_pay_schedule(current_user.id, pay_id, request)
+
+
+@app.delete("/api/v1/pay-schedules/{pay_id}", response_model=DashboardResponse, tags=["pay cycle"])
+def delete_pay_schedule(pay_id: str, current_user: AuthenticatedUser) -> DashboardResponse:
+    return _store(current_user).delete_pay_schedule(current_user.id, pay_id)
 
 
 @app.post("/api/v1/categories", response_model=DashboardResponse, tags=["categories"])

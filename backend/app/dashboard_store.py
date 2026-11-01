@@ -69,7 +69,10 @@ from app.dashboard_models import (
     OnboardingAnswers,
     OnboardingApply,
     PayCycle,
+    PayOverview,
     PaySchedule,
+    PayScheduleWrite,
+    PaySource,
     Period,
     RecurringExpense,
     RecurringSummary,
@@ -80,6 +83,7 @@ from app.dashboard_models import (
     TransactionPatch,
     TransactionRepeat,
     TransactionWrite,
+    UpcomingPay,
 )
 from app.domain.card_due import next_card_due
 from app.domain.categorize import categorize, necessity
@@ -266,8 +270,11 @@ class StoreSnapshot:
     contributions: list[GoalContribution]
     missions: list[Mission]
     bills: list[Bill]
-    pay_schedule: PaySchedule | None
+    pay_schedules: list[PaySchedule]
     learner: Learner
+
+
+MAX_PAY_SCHEDULES = 8
 
 
 class DashboardStore:
@@ -409,13 +416,16 @@ class DashboardStore:
             )
             if match:
                 self._transactions[item_id] = item.model_copy(update={"bill_id": match.id})
-        self._pay_schedule: PaySchedule | None = PaySchedule(
-            name="Harbour Books pay",
-            amount_cents=126_400,
-            account_id="acct-chequing",
-            frequency="monthly",
-            next_payday=date(2026, 11, 25),
-        )
+        self._pay_schedules: dict[str, PaySchedule] = {
+            "pay-main": PaySchedule(
+                id="pay-main",
+                name="Harbour Books pay",
+                amount_cents=126_400,
+                account_id="acct-chequing",
+                frequency="monthly",
+                next_payday=date(2026, 11, 25),
+            )
+        }
         self._contributions: list[GoalContribution] = []
         # Fictional learning history so the demo opens with a streak in progress. The learner
         # still chooses a country and topics the first time they open Learn.
@@ -447,7 +457,7 @@ class DashboardStore:
         self._goals = {}
         self._missions = _starter_missions()
         self._bills = {}
-        self._pay_schedule = None
+        self._pay_schedules = {}
         self._contributions = []
         self._learner = Learner()
         self._lock = RLock()
@@ -465,7 +475,7 @@ class DashboardStore:
                 contributions=list(self._contributions),
                 missions=list(self._missions),
                 bills=list(self._bills.values()),
-                pay_schedule=self._pay_schedule,
+                pay_schedules=list(self._pay_schedules.values()),
                 learner=copy.deepcopy(self._learner),
             )
 
@@ -488,7 +498,7 @@ class DashboardStore:
         store._contributions = list(snapshot.contributions)
         store._missions = list(snapshot.missions)
         store._bills = {item.id: item for item in snapshot.bills}
-        store._pay_schedule = snapshot.pay_schedule
+        store._pay_schedules = {item.id: item for item in snapshot.pay_schedules}
         store._learner = copy.deepcopy(snapshot.learner)
         store._lock = RLock()
         return store
@@ -751,19 +761,70 @@ class DashboardStore:
         """Money available for day-to-day spending: chequing and cash accounts."""
         return sum(item.balance_cents for item in self._accounts_of(*SPENDABLE_TYPES))
 
+    def _upcoming_paydays(self, schedule: PaySchedule, start: date, end: date) -> list[date]:
+        return paydays(schedule.frequency, schedule.next_payday, start, end, schedule.interval_days)
+
+    @staticmethod
+    def _monthly_pay(schedule: PaySchedule) -> int:
+        return monthly_income_cents(
+            schedule.amount_cents, schedule.frequency, schedule.interval_days
+        )
+
+    def _main_pay(self) -> PaySchedule | None:
+        """The largest pay a month (earliest payday on a tie): it sets the pay cycles."""
+        return min(
+            self._pay_schedules.values(),
+            key=lambda item: (-self._monthly_pay(item), item.next_payday, item.id),
+            default=None,
+        )
+
     def _next_payday(self) -> date | None:
-        schedule = self._pay_schedule
-        if not schedule:
+        """The soonest payday after today, from any source of pay."""
+        today = self.today()
+        upcoming = [
+            day
+            for schedule in self._pay_schedules.values()
+            for day in self._upcoming_paydays(
+                schedule, today + timedelta(days=1), today + timedelta(days=400)
+            )[:1]
+        ]
+        return min(upcoming, default=None)
+
+    def _pay_overview(self) -> PayOverview | None:
+        if not self._pay_schedules:
             return None
         today = self.today()
-        upcoming = paydays(
-            schedule.frequency,
-            schedule.next_payday,
-            today + timedelta(days=1),
-            today + timedelta(days=400),
-            schedule.interval_days,
+        main = self._main_pay()
+        ordered = sorted(
+            self._pay_schedules.values(),
+            key=lambda item: (item.id != (main.id if main else None), item.name, item.id),
         )
-        return upcoming[0] if upcoming else None
+        sources = [
+            PaySource(
+                **schedule.model_dump(),
+                monthly_cents=self._monthly_pay(schedule),
+                upcoming=self._upcoming_paydays(schedule, today, today + timedelta(days=400))[:3],
+            )
+            for schedule in ordered
+        ]
+        upcoming = sorted(
+            (
+                UpcomingPay(
+                    pay_id=schedule.id,
+                    name=schedule.name,
+                    on=day,
+                    amount_cents=schedule.amount_cents,
+                )
+                for schedule in ordered
+                for day in self._upcoming_paydays(schedule, today, today + timedelta(days=34))
+            ),
+            key=lambda item: (item.on, item.name),
+        )
+        return PayOverview(
+            monthly_cents=sum(source.monthly_cents for source in sources),
+            sources=sources,
+            upcoming=upcoming,
+        )
 
     def _recurring(self) -> RecurringSummary:
         return build_recurring(
@@ -1157,7 +1218,8 @@ class DashboardStore:
                     wants_basis_points=share_basis_points(wants, spending_total),
                 ),
                 bills=sorted(self._bills.values(), key=lambda item: item.next_due),
-                pay_schedule=self._pay_schedule,
+                pay_schedule=self._main_pay(),
+                pay=self._pay_overview(),
                 home=self._home(
                     summary.cash_flow_cents, goals, calendar_view.daily_allowance_cents
                 ),
@@ -1586,17 +1648,44 @@ class DashboardStore:
 
     # ------------------------------------------------------------------ pay schedule
 
-    def set_pay_schedule(self, user_id: str, request: PaySchedule) -> DashboardResponse:
+    def _check_pay(self, request: PayScheduleWrite) -> None:
+        if request.account_id not in self._accounts:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown account")
+        if (request.frequency == "custom") != (request.interval_days is not None):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "Set interval_days only for a custom pay schedule",
+            )
+
+    def add_pay_schedule(self, user_id: str, request: PayScheduleWrite) -> DashboardResponse:
         with self._lock:
             self.require_owner(user_id)
-            if request.account_id not in self._accounts:
-                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown account")
-            if (request.frequency == "custom") != (request.interval_days is not None):
+            self._check_pay(request)
+            if len(self._pay_schedules) >= MAX_PAY_SCHEDULES:
                 raise HTTPException(
                     status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    "Set interval_days only for a custom pay schedule",
+                    f"You can add up to {MAX_PAY_SCHEDULES} sources of pay",
                 )
-            self._pay_schedule = request
+            schedule = PaySchedule(id=f"pay-{uuid4().hex[:10]}", **request.model_dump())
+            self._pay_schedules[schedule.id] = schedule
+            return self._snapshot()
+
+    def update_pay_schedule(
+        self, user_id: str, pay_id: str, request: PayScheduleWrite
+    ) -> DashboardResponse:
+        with self._lock:
+            self.require_owner(user_id)
+            if pay_id not in self._pay_schedules:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Pay not found")
+            self._check_pay(request)
+            self._pay_schedules[pay_id] = PaySchedule(id=pay_id, **request.model_dump())
+            return self._snapshot()
+
+    def delete_pay_schedule(self, user_id: str, pay_id: str) -> DashboardResponse:
+        with self._lock:
+            self.require_owner(user_id)
+            if self._pay_schedules.pop(pay_id, None) is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Pay not found")
             return self._snapshot()
 
     def forecast(
@@ -1609,7 +1698,8 @@ class DashboardStore:
         """`plan` is an unsaved what-if purchase (name, cents, day) added to the projection."""
         with self._lock:
             self.require_owner(user_id)
-            schedule = self._pay_schedule
+            # Cycles follow the main pay; every source's paydays are projected.
+            schedule = self._main_pay()
             if not schedule:
                 raise HTTPException(status.HTTP_409_CONFLICT, "Set up your pay schedule first")
             today = self.today()
@@ -1634,14 +1724,9 @@ class DashboardStore:
             horizon = cycles[-1].end
             recorded_today = any(e.day == today and e.kind == "income" for e in actual)
             projected = [
-                CycleEvent(day, schedule.name, schedule.amount_cents, "income", True)
-                for day in paydays(
-                    schedule.frequency,
-                    schedule.next_payday,
-                    today,
-                    horizon,
-                    schedule.interval_days,
-                )
+                CycleEvent(day, source.name, source.amount_cents, "income", True)
+                for source in self._pay_schedules.values()
+                for day in self._upcoming_paydays(source, today, horizon)
                 if day > today or not recorded_today
             ]
             for bill in self._bills.values():
@@ -1658,15 +1743,11 @@ class DashboardStore:
                     )
                 projected.append(CycleEvent(day, f"Planned: {name}", -cents, "planned", True))
             daily = self._snapshot().money_calendar.daily_allowance_cents if mode == "budget" else 0
-            all_paydays = set(
-                paydays(
-                    schedule.frequency,
-                    schedule.next_payday,
-                    cycle.start,
-                    cycle.end,
-                    schedule.interval_days,
-                )
-            )
+            all_paydays = {
+                day
+                for source in self._pay_schedules.values()
+                for day in self._upcoming_paydays(source, cycle.start, cycle.end)
+            }
             days = forecast(
                 cycle, today, self._spendable_cents(), actual, projected, all_paydays, daily
             )
@@ -1802,7 +1883,8 @@ class DashboardStore:
             in_use = any(t.account_id == account_id for t in self._transactions.values()) or any(
                 b.account_id == account_id for b in self._bills.values()
             )
-            if in_use or (self._pay_schedule and self._pay_schedule.account_id == account_id):
+            pays_here = any(p.account_id == account_id for p in self._pay_schedules.values())
+            if in_use or pays_here:
                 raise HTTPException(
                     status.HTTP_409_CONFLICT,
                     "This account has transactions, bills, or your paycheque. Move them first.",
@@ -2395,7 +2477,7 @@ class DashboardStore:
             not self._profile.is_fictional
             and not self._budgets
             and not self._bills
-            and self._pay_schedule is None
+            and not self._pay_schedules
         )
 
     def _spending_category(self, category_id: str) -> Category:
@@ -2495,7 +2577,8 @@ class DashboardStore:
                     "Add a chequing or cash account for your pay and bills",
                 )
             if income and home:
-                self._pay_schedule = PaySchedule(
+                self._pay_schedules["pay-main"] = PaySchedule(
+                    id="pay-main",
                     name="Paycheque",
                     amount_cents=income.amount_cents,
                     account_id=home.id,

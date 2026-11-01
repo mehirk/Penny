@@ -34,7 +34,12 @@ export type MoneyCalendar = {
 export type BillFrequency = "weekly" | "biweekly" | "monthly" | "yearly";
 export type Bill = { id: string; name: string; amount_cents: number; category_id: string | null; account_id: string; frequency: BillFrequency; next_due: string; auto_record: boolean; last_paid_on: string | null };
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly" | "custom";
-export type PaySchedule = { name: string; amount_cents: number; account_id: string; frequency: PayFrequency; next_payday: string; interval_days: number | null };
+export type PayScheduleWrite = { name: string; amount_cents: number; account_id: string; frequency: PayFrequency; next_payday: string; interval_days: number | null };
+/** One source of pay (a job, a scholarship, an allowance); people can have several. */
+export type PaySchedule = PayScheduleWrite & { id: string };
+export type PaySource = PaySchedule & { monthly_cents: number; upcoming: string[] };
+/** Every source of pay, their monthly total, and every payday in the next 35 days. */
+export type PayOverview = { monthly_cents: number; sources: PaySource[]; upcoming: { pay_id: string; name: string; on: string; amount_cents: number }[] };
 export type RecurringExpense = { id: string; name: string; category_name: string | null; amount_cents: number; monthly_cents: number; frequency: BillFrequency; next_due: string; days_until_due: number; kind: "bill" | "subscription"; auto_record: boolean; last_paid_on: string | null; payment_count: number; last_paid_cents: number | null; total_paid_cents: number; paid_this_month: boolean; status: "overdue" | "due_soon" | "later" };
 export type RecurringPayment = { bill_id: string; name: string; occurred_on: string; amount_cents: number; paid_automatically: boolean | null };
 export type UpcomingPayment = { bill_id: string; name: string; due_on: string; days_until_due: number; amount_cents: number; auto_record: boolean; kind: "bill" | "subscription" };
@@ -71,7 +76,9 @@ export type Dashboard = {
   investing_foundations: FoundationCheck[];
   spending_classification: { needs_cents: number; wants_cents: number; needs_basis_points: number; wants_basis_points: number };
   bills: Bill[];
+  /** The main pay (largest a month); it sets the pay cycles. */
   pay_schedule: PaySchedule | null;
+  pay: PayOverview | null;
   home: { available_cents: number; cash_cents: number; cash_history: MonthPoint[]; cash_change_basis_points: number | null; savings_cents: number; savings_history: MonthPoint[]; monthly_saved_cents: number; monthly_goal_cents: number; spending_change_basis_points: number | null; weekly_flexible_cents: number };
   net_worth: { cash_cents: number; savings_cents: number; investments_cents: number | null; liabilities_cents: number; net_worth_cents: number };
   accounts_overview: AccountsOverview;
@@ -226,7 +233,9 @@ export const dashboardApi = {
   createBill: (body: Omit<Bill, "id" | "last_paid_on">, month?: string) => request(inMonth("/api/v1/bills", month), { method: "POST", body: JSON.stringify(body) }),
   updateBill: (id: string, body: Partial<Omit<Bill, "id" | "last_paid_on">>, month?: string) => request(inMonth(`/api/v1/bills/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
   deleteBill: (id: string, month?: string) => request(inMonth(`/api/v1/bills/${id}`, month), { method: "DELETE" }),
-  setPaySchedule: (body: PaySchedule) => request("/api/v1/pay-schedule", { method: "PUT", body: JSON.stringify(body) }),
+  addPay: (body: PayScheduleWrite) => request("/api/v1/pay-schedules", { method: "POST", body: JSON.stringify(body) }),
+  updatePay: (id: string, body: PayScheduleWrite) => request(`/api/v1/pay-schedules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deletePay: (id: string) => request(`/api/v1/pay-schedules/${id}`, { method: "DELETE" }),
   createCategory: (body: { name: string; kind: Category["kind"]; parent_id: string | null }) => request("/api/v1/categories", { method: "POST", body: JSON.stringify(body) }),
   deleteCategory: (id: string) => request(`/api/v1/categories/${id}`, { method: "DELETE" }),
   createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day?: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
