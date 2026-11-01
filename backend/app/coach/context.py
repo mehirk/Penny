@@ -46,8 +46,8 @@ class CoachContext:
 
     @property
     def unpaid_bills_cents(self) -> int:
-        """Scheduled bills due between today and the next payday."""
-        return self.dashboard.recurring.due_before_payday_cents
+        """Scheduled bills not yet paid (overdue included) through month end or payday."""
+        return self.dashboard.recurring.unpaid_bills_cents
 
     @property
     def typical_surplus_cents(self) -> int:
@@ -278,9 +278,7 @@ def build_snapshot(ctx: CoachContext) -> dict[str, object]:
             }
             for bill in d.bills
         ],
-        "bills_due_before_next_payday": f.money(
-            "Bills due before payday", ctx.unpaid_bills_cents, "bills"
-        ),
+        "bills_due_before_next_payday": f.money("Unpaid bills", ctx.unpaid_bills_cents, "bills"),
         "pay_cycle": pay_cycle_snapshot(ctx),
         "savings_goals": goals,
         "credit_card": (
@@ -422,7 +420,7 @@ def build_signals(ctx: CoachContext) -> list[Signal]:
             )
 
     if ctx.unpaid_bills_cents:
-        bills = f.money("Bills due before payday", ctx.unpaid_bills_cents, "bills")
+        bills = f.money("Unpaid bills", ctx.unpaid_bills_cents, "bills")
         after_cents = ctx.account_total("chequing") - ctx.unpaid_bills_cents
         after = f.money("Chequing after bills", after_cents, "accounts")
         if after_cents < 0:

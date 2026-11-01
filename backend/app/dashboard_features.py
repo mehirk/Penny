@@ -155,6 +155,10 @@ def build_recurring(
     subscriptions = sum(item.monthly_cents for item in items if item.kind == "subscription")
     week_end = today + timedelta(days=7)
     payday_end = (next_payday - timedelta(days=1)) if next_payday else max(week_end, month_end)
+    # Unpaid bills (overdue ones too) through the end of this month, or the day before payday if
+    # that's later. A paid bill has moved on to its next due date, so it isn't counted again.
+    this_month_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+    reserve_end = max(this_month_end, payday_end)
     return RecurringSummary(
         items=items,
         bill_count=sum(1 for item in items if item.kind == "bill"),
@@ -186,6 +190,10 @@ def build_recurring(
         ),
         due_before_payday_cents=sum(
             bill.amount_cents * len(bill_due_dates(bill, today, payday_end)) for bill in bills
+        ),
+        unpaid_bills_cents=sum(
+            bill.amount_cents * len(bill_due_dates(bill, bill.next_due, reserve_end))
+            for bill in bills
         ),
         share_of_income_basis_points=(
             fixed * 10_000 // typical_income_cents if typical_income_cents > 0 else None

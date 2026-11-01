@@ -6,29 +6,23 @@ from app.domain.starter_budget import monthly_income_cents, starter_plan
 # ------------------------------------------------------------------ safe to spend
 
 
-def test_no_budget_uses_cash_after_bills() -> None:
-    assert safe_to_spend_cents(250_000, 82_500, 0, 0) == 167_500
+def test_cash_after_unpaid_bills() -> None:
+    assert safe_to_spend_cents(250_000, 82_500) == 167_500
 
 
-def test_no_budget_and_bills_exceed_cash_is_zero() -> None:
-    assert safe_to_spend_cents(50_000, 82_500, 0, 0) == 0
+def test_bills_above_cash_is_zero() -> None:
+    assert safe_to_spend_cents(50_000, 82_500) == 0
 
 
-def test_budget_caps_safe_to_spend() -> None:
-    assert safe_to_spend_cents(250_000, 82_500, 100_000, 30_000) == 30_000
-
-
-def test_cash_caps_safe_to_spend_when_budget_is_larger() -> None:
-    assert safe_to_spend_cents(40_000, 10_000, 100_000, 90_000) == 30_000
-
-
-def test_over_budget_is_zero() -> None:
-    assert safe_to_spend_cents(250_000, 0, 100_000, -5_000) == 0
+def test_paid_bill_is_not_counted_twice() -> None:
+    # $500 chequing, $100 rent already paid: the balance is $400 and all of it is safe to spend,
+    # even though the $100 Housing budget is fully used.
+    assert safe_to_spend_cents(40_000, 0) == 40_000
 
 
 def test_safe_to_spend_rejects_negative_inputs() -> None:
     with pytest.raises(ValueError):
-        safe_to_spend_cents(0, -1, 0, 0)
+        safe_to_spend_cents(0, -1)
 
 
 # ------------------------------------------------------------------ income
@@ -113,9 +107,9 @@ def test_plan_rejects_invalid_input(
 
 def test_set_aside_cards_and_outside_spending_come_off() -> None:
     # $1,000 spending money − $200 goal − $50 card − $300 bills − $40 spent from savings.
-    assert safe_to_spend_cents(100_000, 30_000, 0, 0, 20_000, 5_000, 4_000) == 41_000
+    assert safe_to_spend_cents(100_000, 30_000, 20_000, 5_000, 4_000) == 41_000
 
 
 def test_safe_to_spend_rejects_negative_deductions() -> None:
     with pytest.raises(ValueError):
-        safe_to_spend_cents(0, 0, 0, 0, set_aside_cents=-1)
+        safe_to_spend_cents(0, 0, set_aside_cents=-1)

@@ -1161,16 +1161,14 @@ async def accounts_read(settings: Settings, store: DashboardStore, user_id: str)
         "savings": f.money("Savings", o.savings_cents, "accounts"),
         "set_aside_for_goals": f.money("Goal money", o.goal_cents, "goals"),
         "owed_on_cards": f.money("Owed on cards", o.owed_cents, "accounts"),
-        "bills_due_before_payday": f.money(
-            "Bills before payday", d.recurring.due_before_payday_cents, "bills"
-        ),
+        "unpaid_bills": f.money("Unpaid bills", d.recurring.unpaid_bills_cents, "bills"),
     }
-    after_bills = o.spending_cents - d.recurring.due_before_payday_cents
+    after_bills = o.spending_cents - d.recurring.unpaid_bills_cents
     facts["spending_money_after_those_bills"] = f.money("After bills", after_bills, "accounts")
     fallback = [
         f"Your total balance is {facts['net_worth']}: {facts['spending_money']} to spend, "
         f"{facts['savings']} in savings, minus {facts['owed_on_cards']} owed on cards.",
-        f"Bills due before payday come to {facts['bills_due_before_payday']}, leaving "
+        f"Bills not yet paid come to {facts['unpaid_bills']}, leaving "
         f"{facts['spending_money_after_those_bills']} of spending money after them.",
     ]
     if d.credit:
