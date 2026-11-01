@@ -109,3 +109,13 @@ def test_plan_rejects_invalid_input(
 ) -> None:
     with pytest.raises(ValueError):
         starter_plan(income, fixed, everyday, savings)
+
+
+def test_set_aside_cards_and_outside_spending_come_off() -> None:
+    # $1,000 spending money − $200 goal − $50 card − $300 bills − $40 spent from savings.
+    assert safe_to_spend_cents(100_000, 30_000, 0, 0, 20_000, 5_000, 4_000) == 41_000
+
+
+def test_safe_to_spend_rejects_negative_deductions() -> None:
+    with pytest.raises(ValueError):
+        safe_to_spend_cents(0, 0, 0, 0, set_aside_cents=-1)

@@ -5,7 +5,7 @@ import { ArrowLeft, Check, Lock, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
-import { type AccountType, type Dashboard, onboardingApi, type OnboardingAnswers, type PayFrequency, type StarterPlan } from "@/lib/api";
+import { type AccountType, type Dashboard, onboardingApi, type OnboardingAnswers, type PayFrequency, type SpendingFrom, type StarterPlan } from "@/lib/api";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
@@ -50,8 +50,8 @@ function nextOnDay(today: string, day: number): string {
   if (candidate < base) candidate.setUTCMonth(candidate.getUTCMonth() + 1);
   return isoDay(candidate);
 }
+/** Cents for a typed amount; blank or invalid is null (amounts are required; 0.00 is fine). */
 const toCents = (value: string): number | null => {
-  if (!value.trim()) return 0;
   try { return parseCadToCents(value); } catch { return null; }
 };
 
@@ -67,7 +67,8 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const [balances, setBalances] = useState<Record<string, string>>(() => Object.fromEntries(editable.map((a) => [a.id, a.balance_cents ? centsToInput(String(a.balance_cents)) : ""])));
+  const [balances, setBalances] = useState<Record<string, string>>(() => Object.fromEntries(editable.map((a) => [a.id, centsToInput(String(a.balance_cents))])));
+  const [spendingFrom, setSpendingFrom] = useState<SpendingFrom>(dashboard.profile.spending_from);
   const [newAccounts, setNewAccounts] = useState<NewAccount[]>([]);
   const [incomeMode, setIncomeMode] = useState<"pay" | "monthly">("pay");
   const [pay, setPay] = useState({ amount: "", frequency: "biweekly" as PayFrequency, next: today });
@@ -83,7 +84,7 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
     const opening: Record<string, number> = {};
     for (const account of editable) {
       const cents = toCents(balances[account.id] ?? "");
-      if (cents === null) return `Check the balance for ${account.name}.`;
+      if (cents === null) return `Enter the balance for ${account.name} (0.00 if it's empty).`;
       if (cents !== account.balance_cents) opening[account.id] = cents;
     }
     const accounts: OnboardingAnswers["new_accounts"] = [];
@@ -91,7 +92,8 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
       const balance = toCents(item.balance);
       const limit = item.type === "credit" ? toCents(item.limit) : null;
       if (!item.name.trim()) return "Give each new account a name.";
-      if (balance === null || (item.type === "credit" && !limit)) return `Check the amounts for ${item.name}.`;
+      if (balance === null) return `Enter the balance for ${item.name} (0.00 if it's empty).`;
+      if (item.type === "credit" && !limit) return `Enter the credit limit for ${item.name}.`;
       accounts.push({ name: item.name.trim(), account_type: item.type, balance_cents: balance, credit_limit_cents: item.type === "credit" ? limit : null });
     }
     let income: OnboardingAnswers["income"] = null;
@@ -113,10 +115,10 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
     const spend: Record<string, number> = {};
     for (const [category, value] of Object.entries(everyday)) {
       const cents = toCents(value);
-      if (cents === null) return "Check your everyday amounts.";
+      if (cents === null) return "Enter an amount for each everyday category (0.00 to skip one).";
       if (cents > 0) spend[category] = cents;
     }
-    return { opening_balances: opening, new_accounts: accounts, income, monthly_money_cents: monthlyMoney, bills: billList, everyday: spend, savings_basis_points: savings };
+    return { opening_balances: opening, new_accounts: accounts, income, monthly_money_cents: monthlyMoney, bills: billList, everyday: spend, savings_basis_points: savings, spending_from: spendingFrom };
   }
 
   async function next() {
@@ -205,7 +207,20 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
                   </li>
                 ))}
               </ul>
-              {newAccounts.length < 4 && <Button variant="outline" className="mt-3 w-full" onClick={() => setNewAccounts([...newAccounts, { name: "", type: "savings", balance: "", limit: "" }])}><Plus className="size-4" aria-hidden="true" />Add a savings account or card</Button>}
+              {newAccounts.length < 4 && <Button variant="outline" className="mt-3 w-full" onClick={() => setNewAccounts([...newAccounts, { name: "", type: "savings", balance: "0.00", limit: "" }])}><Plus className="size-4" aria-hidden="true" />Add a savings account or card</Button>}
+
+              <fieldset className="mt-8">
+                <legend className="text-base font-semibold text-ink">Where do you keep your spending money?</legend>
+                <p className="mt-1 text-sm text-ink-subtle">Safe to spend comes from these accounts, after bills, card balances, and money set aside for goals.</p>
+                <div className="mt-3 space-y-2">
+                  {([["chequing", "In chequing", "Savings is off-limits for everyday spending."], ["chequing_and_savings", "In chequing and savings", "I keep chequing low and spend from savings too."]] as const).map(([value, label, detail]) => (
+                    <label key={value} className={cn("flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border p-3", spendingFrom === value ? "border-primary bg-primary-soft" : "border-line")}>
+                      <input type="radio" name="spending-from" checked={spendingFrom === value} onChange={() => setSpendingFrom(value)} className="size-4 accent-[var(--color-primary)]" />
+                      <span><span className="block font-semibold text-ink">{label}</span><span className="block text-xs text-ink-subtle">{detail}</span></span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
             </section>
           )}
 

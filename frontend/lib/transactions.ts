@@ -4,7 +4,7 @@ import { centsToInput } from "./money";
 export type KindFilter = "all" | "income" | "spending";
 /** "all", "uncategorized", or a category id. */
 export type CategoryFilter = string;
-export type TransactionFilters = { query: string; kind: KindFilter; category: CategoryFilter; from: string; to: string; minCents?: number | null; maxCents?: number | null };
+export type TransactionFilters = { query: string; kind: KindFilter; category: CategoryFilter; from: string; to: string; minCents?: number | null; maxCents?: number | null; account?: string };
 
 export const EMPTY_FILTERS: TransactionFilters = { query: "", kind: "all", category: "all", from: "", to: "" };
 
@@ -13,6 +13,7 @@ export function filterTransactions(transactions: readonly Transaction[], filters
   const query = filters.query.trim().toLocaleLowerCase("en-CA");
   return transactions.filter((item) => {
     if (filters.kind !== "all" && item.kind !== filters.kind) return false;
+    if (filters.account && filters.account !== "all" && item.account_id !== filters.account) return false;
     if (filters.category === "uncategorized" && item.category_id !== null) return false;
     // Picking a parent category ("Food") also shows its subcategories ("Groceries").
     if (filters.category !== "all" && filters.category !== "uncategorized" && item.category_id !== filters.category && (!item.category_id || parentOf(item.category_id) !== filters.category)) return false;
@@ -25,7 +26,7 @@ export function filterTransactions(transactions: readonly Transaction[], filters
 }
 
 export function hasActiveFilters(filters: TransactionFilters): boolean {
-  return filters.query.trim() !== "" || filters.kind !== "all" || filters.category !== "all" || filters.from !== "" || filters.to !== "" || Boolean(filters.minCents) || Boolean(filters.maxCents);
+  return filters.query.trim() !== "" || filters.kind !== "all" || filters.category !== "all" || filters.from !== "" || filters.to !== "" || Boolean(filters.minCents) || Boolean(filters.maxCents) || Boolean(filters.account && filters.account !== "all");
 }
 
 export type TransactionSort = "newest" | "oldest" | "largest" | "smallest";

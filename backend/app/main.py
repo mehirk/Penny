@@ -57,6 +57,7 @@ from app.dashboard_models import (
     OnboardingAnswers,
     OnboardingApply,
     PaySchedule,
+    SpendingFromWrite,
     SplitTransactionWrite,
     TransactionPatch,
     TransactionWrite,
@@ -411,10 +412,10 @@ def create_account(request: AccountWrite, current_user: AuthenticatedUser) -> Da
 
 
 @app.patch("/api/v1/accounts/{account_id}", response_model=DashboardResponse, tags=["accounts"])
-def rename_account(
+def update_account(
     account_id: str, request: AccountPatch, current_user: AuthenticatedUser
 ) -> DashboardResponse:
-    return _store(current_user).rename_account(current_user.id, account_id, request.name)
+    return _store(current_user).update_account(current_user.id, account_id, request)
 
 
 @app.delete("/api/v1/accounts/{account_id}", response_model=DashboardResponse, tags=["accounts"])
@@ -584,6 +585,18 @@ async def spending_take(
         else _store(current_user).dashboard_for_user(current_user.id, month)
     )
     return await assist.spending_take(get_settings(), view)
+
+
+@app.put("/api/v1/profile/spending-from", response_model=DashboardResponse, tags=["profile"])
+def set_spending_from(
+    request: SpendingFromWrite, current_user: AuthenticatedUser, month: ViewMonth = None
+) -> DashboardResponse:
+    """Which accounts count as spending money for Safe to spend."""
+    return _in_view(
+        _store(current_user).set_spending_from(current_user.id, request.spending_from),
+        current_user,
+        month,
+    )
 
 
 @app.post("/api/v1/onboarding/plan", response_model=assist.StarterPlanOut, tags=["onboarding"])

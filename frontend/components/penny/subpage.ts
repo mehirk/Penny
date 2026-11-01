@@ -39,7 +39,7 @@ export function enter(kind: "push" | "pop" | "fade") {
  * A page inside a view, kept in the address ("#settings/appearance", "#today/acct-1") so the
  * device's Back returns to the list and a link can open the page directly.
  */
-export function useSubpage(view: string): [string | null, (id: string) => void, () => void] {
+export function useSubpage(view: string): [string | null, (id: string, animate?: boolean) => void, () => void] {
   const [page, setPage] = useState<string | null>(null);
   const shown = useRef<string | null>(null);
   const show = useCallback((next: string | null) => { shown.current = next; setPage(next); }, []);
@@ -60,7 +60,13 @@ export function useSubpage(view: string): [string | null, (id: string) => void, 
     return () => { for (const name of events) window.removeEventListener(name, sync); };
   }, [view, show]);
 
-  const open = useCallback((id: string) => {
+  /** Opens a page; `animate` false switches in place (e.g. a side-by-side pane on a laptop). */
+  const open = useCallback((id: string, animate = true) => {
+    if (!animate) {
+      window.history.replaceState(null, "", `#${view}/${encodeURIComponent(id)}`);
+      show(id);
+      return;
+    }
     window.history.pushState({ pennySubpage: true }, "", `#${view}/${encodeURIComponent(id)}`);
     slide("push", () => { show(id); window.scrollTo(0, 0); });
   }, [view, show]);

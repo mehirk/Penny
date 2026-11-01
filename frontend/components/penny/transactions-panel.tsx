@@ -13,6 +13,7 @@ import { EMPTY_FILTERS, filterTransactions, hasActiveFilters, type KindFilter, s
 import { cn } from "@/lib/utils";
 import { categoryOptions } from "./dialogs";
 import { cad, EmptyState } from "./shared";
+import { SwipeRow } from "./swipe-row";
 import { categoryIcon } from "./category-icons";
 
 type Props = {
@@ -141,6 +142,11 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
                 </button>
               ))}
             </div>
+            <label className="sr-only" htmlFor={`${searchId}-account`}>Account</label>
+            <Select id={`${searchId}-account`} value={filters.account ?? "all"} onChange={(event) => setFilters({ ...filters, account: event.target.value })} className={cn(CONTROL, "w-auto max-w-[12rem]", filters.account && filters.account !== "all" && "border-accent")}>
+              <option value="all">All accounts</option>
+              {dashboard.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+            </Select>
             <label className="sr-only" htmlFor={`${searchId}-category`}>Category</label>
             <Select id={`${searchId}-category`} value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })} className={cn(CONTROL, "w-auto max-w-[12rem]", filters.category !== "all" && "border-accent")}>
               <option value="all">All categories</option>
@@ -193,11 +199,13 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
                 return (
                   <tr key={item.id} className="group transition-colors hover:bg-sage-soft/60">
                     <td className="border-b border-line/70 p-0 group-last:border-b-0 md:py-3 md:pl-5 md:pr-3">
-                      <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left md:hidden" aria-expanded={expanded === item.id} aria-label={`${item.description}, ${income ? "money in" : "money out"} ${cad(item.amount_cents)}, ${item.category}, ${formatShortDate(item.occurred_on)}. Show details`}>
+                      <SwipeRow label={item.description} onDelete={() => onDelete(item)} className="md:hidden">
+                        <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left md:hidden" aria-expanded={expanded === item.id} aria-label={`${item.description}, ${income ? "money in" : "money out"} ${cad(item.amount_cents)}, ${item.category}, ${formatShortDate(item.occurred_on)}. Show details`}>
                         <TransactionIdentity item={item} category={item.category_id ? categories.get(item.category_id) : undefined} />
                         <span className={cn("tabular whitespace-nowrap shrink-0 font-semibold", income ? "text-money-in" : "text-ink")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</span>
                         <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
                       </button>
+                      </SwipeRow>
                       <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id} className="hidden min-w-0 items-center gap-3 text-left md:flex"><TransactionIdentity item={item} category={item.category_id ? categories.get(item.category_id) : undefined} /></button>
                       {expanded === item.id && <div className="mx-4 mb-3 rounded-xl bg-sage-soft p-3 text-xs text-ink-muted md:mx-0 md:mb-0 md:mt-2"><p>{income ? "Income" : "Expense"} · {accounts.get(item.account_id) ?? "Unknown account"}{item.bill_id ? ` · ${item.paid_automatically === true ? "paid automatically" : item.paid_automatically === false ? "you marked it paid" : "recurring payment"}` : ""}</p><div className="mt-2 flex gap-2 md:hidden"><Button size="sm" variant="outline" onClick={() => onEdit(item)}>Edit</Button><Button size="sm" variant="destructive-soft" onClick={() => onDelete(item)}>Delete</Button></div></div>}
                     </td>

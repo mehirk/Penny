@@ -604,7 +604,12 @@ class AccountWrite(DashboardModel):
 
 
 class AccountPatch(DashboardModel):
-    name: str = Field(min_length=1, max_length=60)
+    """Edit an account. A new balance is the user correcting it to match their real account."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    # For a credit card: what's owed on it.
+    balance_cents: int | None = Field(default=None, ge=0)
+    credit_limit_cents: int | None = Field(default=None, gt=0)
 
 
 class ForecastEvent(DashboardModel):
@@ -721,6 +726,8 @@ class OnboardingAnswers(DashboardModel):
     # Expected everyday spending per category per month (category id → cents).
     everyday: dict[str, int] = Field(default_factory=dict, max_length=12)
     savings_basis_points: int = Field(default=0, ge=0, le=5_000)
+    # Which accounts count as spending money.
+    spending_from: Literal["chequing", "chequing_and_savings"] = "chequing"
 
     @model_validator(mode="after")
     def _amounts(self) -> "OnboardingAnswers":
@@ -739,3 +746,7 @@ class OnboardingApply(DashboardModel):
         if any(value < 0 for value in self.everyday_limits.values()):
             raise ValueError("Amounts can't be negative")
         return self
+
+
+class SpendingFromWrite(DashboardModel):
+    spending_from: Literal["chequing", "chequing_and_savings"]
