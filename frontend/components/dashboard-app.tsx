@@ -513,20 +513,25 @@ function PageSkeleton() {
   );
 }
 
+/** First load: the shape of Home (headline, then cards in one column, or two on wide screens). */
 function DashboardSkeleton() {
-  const tiles = ["tile-in", "tile-out", "tile-left"];
-  const panels = ["panel-1", "panel-2", "panel-3"];
+  const card = "h-[4.5rem] rounded-[var(--radius-card)] border border-line bg-surface";
   return (
     <div className="min-h-dvh lg:pl-64" aria-busy="true">
       <div className="fixed inset-y-0 left-0 hidden w-64 border-r border-line lg:block" />
-      <div className="mx-auto max-w-7xl animate-pulse px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-        <div className="h-4 w-32 rounded-full bg-sage" />
-        <div className="mt-3 h-8 w-64 max-w-full rounded-xl bg-sage" />
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="h-40 rounded-[var(--radius-card)] bg-hero/20" />
-          {tiles.map((key) => <div key={key} className="h-40 rounded-[var(--radius-card)] border border-line bg-surface" />)}
+      <div className="mx-auto max-w-6xl animate-pulse px-4 pb-10 pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-6 lg:px-10 lg:pt-8">
+        <div className="h-5 w-32 rounded-full bg-sage" />
+        <div className="mx-auto mt-12 h-16 w-60 rounded-2xl bg-sage" />
+        <div className="mx-auto mt-4 h-4 w-44 rounded-full bg-sage" />
+        <div className="mx-auto mt-6 h-1.5 w-60 rounded-full bg-sage" />
+        <div className="mt-12 grid gap-6 lg:grid-cols-2 lg:gap-8">
+          {["left", "right"].map((column) => (
+            <div key={column} className="space-y-2.5">
+              <div className="mb-3 h-4 w-24 rounded-full bg-sage" />
+              {[1, 2, 3].map((row) => <div key={row} className={card} />)}
+            </div>
+          ))}
         </div>
-        <div className="mt-6 grid gap-6 lg:grid-cols-3">{panels.map((key) => <div key={key} className="h-80 rounded-[var(--radius-card)] border border-line bg-surface" />)}</div>
         <output className="sr-only">Loading your Penny dashboard</output>
       </div>
     </div>

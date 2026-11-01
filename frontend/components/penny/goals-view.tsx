@@ -36,7 +36,7 @@ export function GoalsView({ dashboard, onAdd, onEdit, onAddMoney, onComplete, on
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <div className="sm:hidden"><FinancialHealthRow dashboard={dashboard} /></div>
+      <FinancialHealthRow dashboard={dashboard} />
       <section className="grid gap-4 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6 md:grid-cols-[1fr_1.4fr_auto] md:items-center">
         <div>
           <p className="text-sm text-ink-subtle">Saved across {goals.length} goal{goals.length === 1 ? "" : "s"}</p>
