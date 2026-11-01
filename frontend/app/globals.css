@@ -729,6 +729,14 @@
 
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
+/*
+ * A grid's implicit column (phones, before any sm:/md: grid-cols) may shrink below its content,
+ * like grid-cols-1. Otherwise a nowrap line such as a truncated account name widens the column
+ * past the screen and the whole page pans sideways.
+ */
+@layer base {
+  .grid { grid-auto-columns: minmax(0, 1fr); }
+}
 html { background: var(--color-canvas); -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
