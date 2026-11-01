@@ -162,7 +162,7 @@ function SafeToSpendHero({ dashboard, onNavigate }: Pick<Props, "dashboard" | "o
     )}
     <div className="mx-auto mt-5 max-w-60">
       <Progress value={used} className="h-1.5" indicatorClassName={runway ? RUNWAY_STYLE[runway.status].bar : "bg-ink-subtle"} aria-label={`${Math.round(used)}% of the budget used ${period.phrase}`} />
-      <p className="mt-2 text-xs text-ink-subtle">{Math.round(used)}% of your budget used · bills before payday already taken out</p>
+      <p className="mt-2 text-xs text-ink-subtle">{Math.round(used)}% of your budget used · unpaid bills already set aside</p>
     </div>
   </section>
   );

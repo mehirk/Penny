@@ -129,3 +129,55 @@ def test_any_purchase_lowers_safe_to_spend(account_type: str) -> None:
 def test_savings_counts_as_spending_money_when_chosen() -> None:
     store, _ = _setup("chequing_and_savings")
     assert store.dashboard_for_user(USER).spending_power_cents == 350_000
+
+
+def test_a_used_up_budget_does_not_zero_safe_to_spend() -> None:
+    # Paying a bill fills its budget, but the money already left the balance; the rest is safe.
+    from app.dashboard_models import BudgetWrite
+
+    store, ids = _setup()
+    store.create_budget(
+        USER,
+        BudgetWrite(
+            category_id="cat-groceries",
+            month_start=store.today().replace(day=1),
+            limit_cents=4_800,
+        ),
+    )
+    assert _spend(store, ids["chequing"], 4_800) == 250_000 - 4_800
+
+
+def _add_rent(store, account_id: str, due: date) -> str:  # type: ignore[no-untyped-def]
+    from app.dashboard_models import BillWrite
+
+    result = store.create_bill(
+        USER,
+        BillWrite(
+            name="Rent",
+            amount_cents=10_000,
+            category_id="cat-housing",
+            account_id=account_id,
+            next_due=due,
+            auto_record=False,
+        ),
+    )
+    return next(b.id for b in result.bills if b.name == "Rent")
+
+
+def test_unpaid_bill_is_held_back_and_paying_it_changes_nothing() -> None:
+    # $2,500 in chequing and $100 rent not yet paid: $2,400 is safe. Paying the rent takes the
+    # balance to $2,400 and Safe to spend stays $2,400, since the bill isn't counted twice.
+    store, ids = _setup()
+    rent = _add_rent(store, ids["chequing"], store.today())
+    assert store.dashboard_for_user(USER).spending_power_cents == 240_000
+    paid = store.mark_bill_paid(USER, rent)
+    assert paid.spending_power_cents == 240_000
+
+
+def test_overdue_bill_is_held_back() -> None:
+    from datetime import timedelta
+
+    store, ids = _setup()
+    _add_rent(store, ids["chequing"], store.today() - timedelta(days=40))
+    # Two missed months still unpaid, plus this month's if it's still to come.
+    assert store.dashboard_for_user(USER).spending_power_cents <= 250_000 - 20_000

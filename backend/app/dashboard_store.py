@@ -1009,9 +1009,7 @@ class DashboardStore:
             pool = self._spending_pool()
             safe_cents = safe_to_spend_cents(
                 sum(a.balance_cents for a in self._accounts.values() if a.id in pool),
-                recurring.due_before_payday_cents,
-                total_budget,
-                summary.budget_remaining_cents,
+                recurring.unpaid_bills_cents,
                 set_aside_cents=sum(g.current_cents for g in goals if g.account_id in pool),
                 owed_on_cards_cents=liabilities,
                 spent_outside_cents=sum(

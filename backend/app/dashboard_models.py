@@ -267,6 +267,9 @@ class RecurringSummary(DashboardModel):
     subscriptions_monthly_cents: int = Field(ge=0)
     due_next_7_days_cents: int = Field(ge=0)
     due_before_payday_cents: int = Field(ge=0)
+    # Unpaid bills (including overdue) through month end or payday, whichever is later; Safe to
+    # spend holds this back.
+    unpaid_bills_cents: int = Field(ge=0)
     share_of_income_basis_points: int | None
     methodology: str
 

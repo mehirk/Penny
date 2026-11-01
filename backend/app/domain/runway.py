@@ -1,7 +1,7 @@
 """How long "Safe to spend" has to last, and what that means per day.
 
-Safe to spend itself is computed by the dashboard: the smaller of the budget left and cash after
-bills due before payday. This turns it into the days it has to cover (through the day before the
+Safe to spend is the user's spending money minus what's already spoken for (see
+`safe_to_spend_cents`). This turns it into the days it has to cover (through the day before the
 next payday, or the end of the month when there's no pay schedule), a daily amount, and a status:
 
 - empty: nothing is safe to spend;
@@ -21,9 +21,7 @@ TIGHT_BASIS_POINTS = 5_000
 
 def safe_to_spend_cents(
     spending_money_cents: int,
-    due_before_payday_cents: int,
-    budget_total_cents: int,
-    budget_remaining_cents: int,
+    unpaid_bills_cents: int,
     set_aside_cents: int = 0,
     owed_on_cards_cents: int = 0,
     spent_outside_cents: int = 0,
@@ -32,30 +30,31 @@ def safe_to_spend_cents(
 
     Start from the accounts the user spends from (chequing and cash, plus savings if they said
     so), then take out what's already spoken for: goal money set aside in those accounts, what's
-    owed on credit cards (card purchases are money already spent), bills due before payday, and
+    owed on credit cards (card purchases are money already spent), recurring bills not yet
+    paid (a paid bill is already out of the balance, so it's never taken out twice), and
     this period's spending paid from accounts outside their spending money (it's still spending,
-    so it comes back out of spending money). Once any budget is set, it's also capped by what's
-    left in it. A missing budget never means nothing is safe.
+    so it comes back out of spending money).
+
+    Budgets don't cap it. A bill that's already been paid is already out of the balance, so
+    capping by "budget left" would count it twice (a $100 rent paid from $500 left $0 instead of
+    $400). Budgets stay a separate guide.
     """
     for value in (
-        due_before_payday_cents,
-        budget_total_cents,
+        unpaid_bills_cents,
         set_aside_cents,
         owed_on_cards_cents,
         spent_outside_cents,
     ):
         if value < 0:
             raise ValueError("amounts taken out of spending money must not be negative")
-    after = (
+    return max(
+        0,
         spending_money_cents
         - set_aside_cents
         - owed_on_cards_cents
-        - due_before_payday_cents
-        - spent_outside_cents
+        - unpaid_bills_cents
+        - spent_outside_cents,
     )
-    if budget_total_cents == 0:
-        return max(0, after)
-    return max(0, min(budget_remaining_cents, after))
 
 
 @dataclass(frozen=True, slots=True)
