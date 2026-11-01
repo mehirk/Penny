@@ -13,6 +13,7 @@ from app.auth import CurrentUser, get_current_user
 from app.coach import assist
 from app.coach.assist import (
     AssistText,
+    BudgetRebalance,
     BudgetSuggestions,
     ParsedTransaction,
     ParsedTransactions,
@@ -30,6 +31,7 @@ from app.coach.models import (
     ChatRequest,
     ChatResponse,
 )
+from app.coach.statements import StatementDraft, StatementUpload, read_statement
 from app.config import get_settings
 from app.dashboard_models import (
     AccountPatch,
@@ -37,6 +39,7 @@ from app.dashboard_models import (
     BillHistory,
     BillPatch,
     BillWrite,
+    BudgetChangesRequest,
     BudgetCopyRequest,
     BudgetPatch,
     BudgetWrite,
@@ -54,6 +57,7 @@ from app.dashboard_models import (
     HistoryResponse,
     ImportRequest,
     ImportResult,
+    ImportRowsRequest,
     OnboardingAnswers,
     OnboardingApply,
     PaySchedule,
@@ -280,6 +284,18 @@ def delete_budget(
     )
 
 
+@app.post("/api/v1/budgets/changes", response_model=DashboardResponse, tags=["budgets"])
+def apply_budget_changes(
+    request: BudgetChangesRequest, current_user: AuthenticatedUser, month: ViewMonth = None
+) -> DashboardResponse:
+    """Set several limits together once the user approves them (e.g. a suggested rebalance)."""
+    return _in_view(
+        _store(current_user).apply_budget_changes(current_user.id, request.changes),
+        current_user,
+        month,
+    )
+
+
 @app.post("/api/v1/savings-goals", response_model=DashboardResponse, tags=["goals"])
 def create_goal(
     request: GoalWrite, current_user: AuthenticatedUser, month: ViewMonth = None
@@ -459,6 +475,19 @@ async def import_transactions(
     )
 
 
+@app.post("/api/v1/transactions/import-rows", response_model=ImportResult, tags=["transactions"])
+def import_rows(request: ImportRowsRequest, current_user: AuthenticatedUser) -> ImportResult:
+    """Add statement rows the user reviewed. Like CSV import, balances don't change."""
+    store = _store(current_user)
+    imported, errors = store.import_rows(current_user.id, request.rows, request.account_id)
+    return ImportResult(
+        imported=imported,
+        skipped=len(errors),
+        errors=errors[:20],
+        dashboard=store.dashboard_for_user(current_user.id),
+    )
+
+
 @app.get("/api/v1/history", response_model=HistoryResponse, tags=["history"])
 def history(
     current_user: AuthenticatedUser,
@@ -622,6 +651,33 @@ async def budget_suggestions(current_user: AuthenticatedUser) -> BudgetSuggestio
     """Suggested limits from recent spending. Applying any of them is a separate user action."""
     _store(current_user).require_owner(current_user.id)
     return await assist.budget_suggestions(get_settings(), _store(current_user), current_user.id)
+
+
+@app.get("/api/v1/assist/budget-rebalance", response_model=BudgetRebalance, tags=["assist"])
+async def budget_rebalance(current_user: AuthenticatedUser) -> BudgetRebalance:
+    """Ways to cover overspent budgets from ones with room. Applying is a separate approval."""
+    _store(current_user).require_owner(current_user.id)
+    return await assist.budget_rebalance(get_settings(), _store(current_user), current_user.id)
+
+
+@app.get("/api/v1/assist/safe-to-spend", response_model=AssistText, tags=["assist"])
+async def safe_to_spend_read(current_user: AuthenticatedUser) -> AssistText:
+    """Why Safe to spend is what it is. The figures come from the dashboard's own sum."""
+    _store(current_user).require_owner(current_user.id)
+    return await assist.safe_to_spend_read(get_settings(), _store(current_user), current_user.id)
+
+
+@app.post("/api/v1/assist/read-statement", response_model=StatementDraft, tags=["assist"])
+async def read_statement_upload(
+    upload: StatementUpload, current_user: AuthenticatedUser
+) -> StatementDraft:
+    """Read a PDF, Excel, or CSV statement into rows to review. Nothing is saved."""
+    store = _store(current_user)
+    store.require_owner(current_user.id)
+    dashboard = store.dashboard_for_user(current_user.id)
+    return await read_statement(
+        get_settings(), upload, store.today(), dashboard.categories, dashboard.accounts
+    )
 
 
 @app.get("/api/v1/assist/lesson-example/{lesson_id}", response_model=AssistText, tags=["assist"])

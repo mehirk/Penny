@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { CashFlowChart, CategoryBars, categoryColours } from "./charts";
 import { type RecurringActions, RecurringView } from "./recurring-view";
 import { cad, EmptyState, SectionHeading } from "./shared";
-import { BudgetSuggestionsDialog, SpendingTake } from "./smart-cards";
+import { BudgetSuggestionsDialog, RebalanceCard, SpendingTake } from "./smart-cards";
 import { TransactionsPanel } from "./transactions-panel";
 import { useHistory } from "./use-history";
 
@@ -33,6 +33,7 @@ type Props = {
   onEditBudget: (item: Budget) => void;
   onCopyBudgets: (fromMonth: string) => void;
   onApplyBudgets: (month: string, picked: BudgetSuggestion[]) => Promise<string | null>;
+  onApplyBudgetChanges: (changes: { budget_id: string; limit_cents: number }[]) => Promise<string | null>;
 };
 
 export function budgetStatus(budget: Budget): { label: string; tone: "danger" | "gold" | "accent"; bar: string } {
@@ -75,7 +76,7 @@ export function SpendingView(props: Props) {
   );
 }
 
-function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyBudgets }: Props) {
+function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyBudgets, onApplyBudgetChanges }: Props) {
   const [suggesting, setSuggesting] = useState(false);
   const { totals, period } = dashboard;
   const previousMonth = addMonths(dashboard.active_month, -1);
@@ -85,6 +86,9 @@ function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyB
   const canSuggest = editable && dashboard.active_month === dashboard.current_month;
   const carried = dashboard.budgets.some((budget) => budget.carried_over);
   const over = totals.budget_remaining_cents < 0;
+  // Any single budget over (even when the total isn't) gets suggested moves; refetched whenever a limit or spend changes.
+  const overspent = canSuggest && dashboard.budgets.some((budget) => !budget.carried_over && budget.remaining_cents < 0);
+  const budgetsKey = dashboard.budgets.map((budget) => `${budget.id}:${budget.limit_cents}:${budget.spent_cents}`).join("|");
   return (
     <Card id="budgets" className="scroll-mt-28 p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -110,6 +114,7 @@ function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyB
           <Button size="sm" onClick={() => onCopyBudgets(previousMonth)}>Keep these budgets</Button>
         </div>
       )}
+      {overspent && <RebalanceCard version={budgetsKey} onApply={onApplyBudgetChanges} />}
       {dashboard.budgets.length === 0 ? (
         <EmptyState className="mt-4" icon={Target} title="No budgets yet" description="Set a monthly limit for a category to track it here." />
       ) : (

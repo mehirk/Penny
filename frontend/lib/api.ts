@@ -38,7 +38,7 @@ export type RecurringPayment = { bill_id: string; name: string; occurred_on: str
 export type UpcomingPayment = { bill_id: string; name: string; due_on: string; days_until_due: number; amount_cents: number; auto_record: boolean; kind: "bill" | "subscription" };
 export type RecurringMonth = { paid_count: number; paid_cents: number; left_count: number; left_cents: number; overdue_count: number; overdue_cents: number };
 export type RecurringSuggestion = { name: string; category_id: string | null; amount_cents: number; next_due: string };
-export type RecurringSummary = { items: RecurringExpense[]; bill_count: number; subscription_count: number; this_month: RecurringMonth | null; upcoming: UpcomingPayment[]; recent_payments: RecurringPayment[]; suggestions: RecurringSuggestion[]; fixed_monthly_cents: number; subscriptions_monthly_cents: number; due_next_7_days_cents: number; due_before_payday_cents: number; unpaid_bills_cents: number; share_of_income_basis_points: number | null; methodology: string };
+export type RecurringSummary = { items: RecurringExpense[]; bill_count: number; subscription_count: number; this_month: RecurringMonth | null; upcoming: UpcomingPayment[]; recent_payments: RecurringPayment[]; suggestions: RecurringSuggestion[]; fixed_monthly_cents: number; subscriptions_monthly_cents: number; due_next_7_days_cents: number; due_before_payday_cents: number; unpaid_bills_cents: number; unpaid: UpcomingPayment[]; unpaid_until: string | null; share_of_income_basis_points: number | null; methodology: string };
 export type BillHistory = { bill: Bill; payments: Transaction[]; payment_count: number; total_paid_cents: number; paid_this_year_cents: number; average_cents: number; auto_paid_count: number };
 export type LessonTrack = "budgeting" | "saving" | "tax" | "credit" | "rules" | "investing";
 export type LessonTier = "easy" | "medium" | "hard";
@@ -75,6 +75,7 @@ export type Dashboard = {
   accounts_overview: AccountsOverview;
   previous_month_cash_flow_cents: number | null;
   spending_power_cents: number;
+  safe_to_spend: SafeToSpendBreakdown | null;
   /** A real account with no budget, bills, or pay schedule yet: offer the setup. */
   needs_onboarding: boolean;
   /** How long Safe to spend has to last; null when the period shown doesn't include today. */
@@ -82,6 +83,8 @@ export type Dashboard = {
   totals: { available_balance_cents: number; income_cents: number; spending_cents: number; cash_flow_cents: number; total_budget_cents: number; budget_remaining_cents: number; savings_contributions_cents: number; savings_rate_basis_points: number };
 };
 
+/** Each step of Safe to spend, as the API computed it. */
+export type SafeToSpendBreakdown = { spending_from: SpendingFrom; spending_money_cents: number; set_aside_cents: number; owed_on_cards_cents: number; unpaid_bills_cents: number; spent_outside_cents: number; safe_cents: number; short_cents: number; holds_until: string };
 export type SpendingRunway = { until: string; until_payday: boolean; days_left: number; per_day_cents: number; status: "on_track" | "tight" | "empty" };
 
 export type HistoryMonth = { month: string; income_cents: number; spending_cents: number; cash_flow_cents: number; budget_cents: number; transaction_count: number };
@@ -220,6 +223,8 @@ export const dashboardApi = {
   updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   setSpendingFrom: (spendingFrom: SpendingFrom) => request("/api/v1/profile/spending-from", { method: "PUT", body: JSON.stringify({ spending_from: spendingFrom }) }),
   deleteAccount: (id: string) => request(`/api/v1/accounts/${id}`, { method: "DELETE" }),
+  importRows: (account_id: string, rows: ImportRow[]) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; ai_categorized: number; dashboard: Dashboard }>("/api/v1/transactions/import-rows", { method: "POST", body: JSON.stringify({ account_id, rows }) }),
+  applyBudgetChanges: (changes: { budget_id: string; limit_cents: number }[], month?: string) => request(inMonth("/api/v1/budgets/changes", month), { method: "POST", body: JSON.stringify({ changes }) }),
   importCsv: (csv: string, account_id: string) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; ai_categorized: number; dashboard: Dashboard }>("/api/v1/transactions/import", { method: "POST", body: JSON.stringify({ csv, account_id }) }),
   suggestCategory: (description: string, kind: Transaction["kind"]) => authorizedRequest<CategorySuggestion>(`/api/v1/categorize?description=${encodeURIComponent(description)}&kind=${kind}`),
 };
@@ -229,6 +234,19 @@ export type ParsedTransaction = { description: string; amount_cents: number | nu
 export type SearchFilters = { query: string; kind: "all" | "income" | "spending"; category_id: string | null; min_cents: number | null; max_cents: number | null; start: string | null; end: string | null; summary: string; source: AssistSource };
 export type AssistText = { items: string[]; source: AssistSource; model: string | null };
 export type BudgetSuggestion = { category_id: string; budget_id: string | null; category_name: string; current_limit_cents: number | null; suggested_cents: number; average_cents: number; reason: string };
+export type BudgetChange = { budget_id: string; category_id: string; category_name: string; from_cents: number; to_cents: number; spent_cents: number };
+export type BudgetRebalance = { month: string; over_cents: number; covered_cents: number; uncovered_cents: number; changes: BudgetChange[]; summary: AssistText };
+export type ImportRow = { occurred_on: string; description: string; amount_cents: number; kind: Transaction["kind"]; category_id: string | null };
+export type StatementRow = ImportRow & { transfer: boolean };
+export type StatementDraft = {
+  source: AssistSource; model: string | null; file_kind: "pdf" | "xlsx" | "csv";
+  institution: string | null; account_name: string | null; account_type: "chequing" | "savings" | "credit" | null; account_id: string | null;
+  period_start: string | null; period_end: string | null;
+  opening_balance_cents: number | null; closing_balance_cents: number | null;
+  /** Closing balance the rows add up to minus the printed one; 0 means every amount checks out. */
+  balance_difference_cents: number | null;
+  rows: StatementRow[]; problems: string[];
+};
 export type BudgetSuggestions = { month: string; suggestions: BudgetSuggestion[]; summary: AssistText };
 
 export type OnboardingAnswers = {
@@ -258,6 +276,10 @@ export const assistApi = {
   spendingTake: (start: string, end: string) => authorizedRequest<AssistText>(`/api/v1/assist/spending-take?start=${start}&end=${end}`),
   budgetSuggestions: () => authorizedRequest<BudgetSuggestions>("/api/v1/assist/budget-suggestions"),
   goalPlan: (id: string) => authorizedRequest<AssistText>(`/api/v1/assist/goal-plan/${encodeURIComponent(id)}`),
+  safeToSpend: () => authorizedRequest<AssistText>("/api/v1/assist/safe-to-spend"),
+  budgetRebalance: () => authorizedRequest<BudgetRebalance>("/api/v1/assist/budget-rebalance"),
+  /** Reads a statement into rows to review; nothing is saved. `data_base64` is the file's bytes. */
+  readStatement: (filename: string, data_base64: string) => authorizedRequest<StatementDraft>("/api/v1/assist/read-statement", { method: "POST", body: JSON.stringify({ filename, data_base64 }) }),
   accountsRead: () => authorizedRequest<AssistText>("/api/v1/assist/accounts-read"),
   lessonExample: (id: string) => authorizedRequest<AssistText>(`/api/v1/assist/lesson-example/${encodeURIComponent(id)}`),
 };

@@ -19,14 +19,28 @@ Status = Literal["on_track", "tight", "empty"]
 TIGHT_BASIS_POINTS = 5_000
 
 
-def safe_to_spend_cents(
+@dataclass(frozen=True, slots=True)
+class SafeToSpend:
+    """Every step of the Safe to spend sum, so the app can show its working."""
+
+    spending_money_cents: int
+    set_aside_cents: int
+    owed_on_cards_cents: int
+    unpaid_bills_cents: int
+    spent_outside_cents: int
+    safe_cents: int
+    # How far what's spoken for goes past the spending money (0 when it all fits).
+    short_cents: int
+
+
+def safe_to_spend(
     spending_money_cents: int,
     unpaid_bills_cents: int,
     set_aside_cents: int = 0,
     owed_on_cards_cents: int = 0,
     spent_outside_cents: int = 0,
-) -> int:
-    """Money that's safe to spend now, never negative.
+) -> SafeToSpend:
+    """Money that's safe to spend now, never negative, with each step of the sum.
 
     Start from the accounts the user spends from (chequing and cash, plus savings if they said
     so), then take out what's already spoken for: goal money set aside in those accounts, what's
@@ -47,14 +61,38 @@ def safe_to_spend_cents(
     ):
         if value < 0:
             raise ValueError("amounts taken out of spending money must not be negative")
-    return max(
-        0,
+    after = (
         spending_money_cents
         - set_aside_cents
         - owed_on_cards_cents
         - unpaid_bills_cents
-        - spent_outside_cents,
+        - spent_outside_cents
     )
+    return SafeToSpend(
+        spending_money_cents=spending_money_cents,
+        set_aside_cents=set_aside_cents,
+        owed_on_cards_cents=owed_on_cards_cents,
+        unpaid_bills_cents=unpaid_bills_cents,
+        spent_outside_cents=spent_outside_cents,
+        safe_cents=max(0, after),
+        short_cents=max(0, -after),
+    )
+
+
+def safe_to_spend_cents(
+    spending_money_cents: int,
+    unpaid_bills_cents: int,
+    set_aside_cents: int = 0,
+    owed_on_cards_cents: int = 0,
+    spent_outside_cents: int = 0,
+) -> int:
+    return safe_to_spend(
+        spending_money_cents,
+        unpaid_bills_cents,
+        set_aside_cents,
+        owed_on_cards_cents,
+        spent_outside_cents,
+    ).safe_cents
 
 
 @dataclass(frozen=True, slots=True)

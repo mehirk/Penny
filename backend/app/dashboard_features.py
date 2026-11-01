@@ -159,6 +159,22 @@ def build_recurring(
     # that's later. A paid bill has moved on to its next due date, so it isn't counted again.
     this_month_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
     reserve_end = max(this_month_end, payday_end)
+    unpaid = sorted(
+        (
+            UpcomingPayment(
+                bill_id=bill.id,
+                name=bill.name,
+                due_on=due,
+                days_until_due=(due - today).days,
+                amount_cents=bill.amount_cents,
+                auto_record=bill.auto_record,
+                kind=kinds[bill.id],
+            )
+            for bill in bills
+            for due in bill_due_dates(bill, bill.next_due, reserve_end)
+        ),
+        key=lambda item: (item.due_on, item.name),
+    )
     return RecurringSummary(
         items=items,
         bill_count=sum(1 for item in items if item.kind == "bill"),
@@ -191,10 +207,9 @@ def build_recurring(
         due_before_payday_cents=sum(
             bill.amount_cents * len(bill_due_dates(bill, today, payday_end)) for bill in bills
         ),
-        unpaid_bills_cents=sum(
-            bill.amount_cents * len(bill_due_dates(bill, bill.next_due, reserve_end))
-            for bill in bills
-        ),
+        unpaid_bills_cents=sum(item.amount_cents for item in unpaid),
+        unpaid=unpaid,
+        unpaid_until=reserve_end,
         share_of_income_basis_points=(
             fixed * 10_000 // typical_income_cents if typical_income_cents > 0 else None
         ),
