@@ -26,6 +26,8 @@ type Props = {
   onAsk: (question: string) => void;
   /** Phones: tapping a recent transaction opens it for editing. */
   onEditTransaction?: (item: Transaction) => void;
+  /** Reopens first-run setup (shown while the account has no plan yet). */
+  onSetUp?: () => void;
 };
 
 /** Questions built from the user's own numbers, most pressing first; generic ones fill the rest. */
@@ -52,13 +54,13 @@ const AI_PROMPTS = [
   { icon: TrendingUp, text: "Should I invest or save?" },
 ];
 
-export function TodayView({ dashboard, onNavigate, onAsk, onEditTransaction }: Props) {
+export function TodayView({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp }: Props) {
   // An account ("#today/<account id>") or the month's spending ("#today/spent") opens as its own page.
   const [pageId, openPage, back] = useSubpage("today");
   const account = dashboard.accounts_overview.accounts.find((item) => item.id === pageId);
   if (account) return <AccountDetail dashboard={dashboard} account={account} backLabel="Home" onBack={back} />;
   if (pageId === "spent") return <SpentDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} />;
-  return <HomeOverview dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} onEditTransaction={onEditTransaction} onOpenPage={openPage} />;
+  return <HomeOverview dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} onEditTransaction={onEditTransaction} onSetUp={onSetUp} onOpenPage={openPage} />;
 }
 
 // ------------------------------------------------------------------ overview
@@ -87,12 +89,19 @@ const CARD = "overflow-hidden rounded-[var(--radius-card)] border border-line bg
  * column on phones; on wide screens the headline spans the top and the rest sits in two columns.
  * The charts and score live on Spending, Goals, and Learn. Every figure comes from the API.
  */
-function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onOpenPage }: Props & { onOpenPage: (id: string) => void }) {
+function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp, onOpenPage }: Props & { onOpenPage: (id: string) => void }) {
   const { home, totals, period, accounts_overview: overview } = dashboard;
   const accounts = [...overview.accounts].sort((a, b) => ACCOUNT_ORDER.indexOf(a.account_type) - ACCOUNT_ORDER.indexOf(b.account_type));
   const change = home.spending_change_basis_points;
   return (
     <div className="mx-auto max-w-6xl space-y-6 lg:space-y-10">
+      {dashboard.needs_onboarding && onSetUp && (
+        <button type="button" onClick={onSetUp} className="flex w-full items-center gap-3 rounded-[var(--radius-card)] border border-primary/40 bg-primary-soft p-4 text-left">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-surface text-lg" aria-hidden="true">✨</span>
+          <span className="min-w-0 flex-1"><span className="block font-semibold text-ink">Set up your plan</span><span className="block text-sm text-ink-muted">A few questions and Penny suggests a budget. About 2 minutes.</span></span>
+          <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
+        </button>
+      )}
       <SafeToSpendHero dashboard={dashboard} onNavigate={onNavigate} />
       <div className="grid gap-6 lg:grid-cols-2 lg:gap-8 [&>*]:min-w-0">
       <div className="space-y-6">

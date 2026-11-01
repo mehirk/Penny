@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Bot, CloudOff, LogIn, RefreshCw } from "lucide-react";
 import { DisplaySettingsDialog, MobileNavigation, PageHeader, Sidebar } from "@/components/penny/app-shell";
 import { SettingsView } from "@/components/penny/settings-view";
+import { Onboarding } from "@/components/penny/onboarding";
 import { slide } from "@/components/penny/subpage";
 import { CoachView, useCoachChat } from "@/components/penny/coach-view";
 import { AddMoneyDialog, BudgetDialog, ConfirmDialog, type ConfirmRequest, GoalDialog, type InlineCreate, TransactionDialog } from "@/components/penny/dialogs";
@@ -116,6 +117,17 @@ function PennyApp() {
   const [historyVersion, setHistoryVersion] = useState(0);
   const [loadError, setLoadError] = useState<ReturnType<typeof describeError> | null>(null);
   const [transactionTarget, setTransactionTarget] = useState<Transaction | "new" | null>(null);
+  // First-run setup for new real accounts; "Skip for now" is remembered on this device.
+  const [setupSkipped, setSetupSkipped] = useState(() => {
+    try { return typeof window !== "undefined" && window.localStorage.getItem("penny-setup-skipped") === "1"; } catch { return false; }
+  });
+  const [setupOpen, setSetupOpen] = useState(false);
+  const skipSetup = () => {
+    try { window.localStorage.setItem("penny-setup-skipped", "1"); } catch { /* storage blocked: skip for this visit */ }
+    setSetupSkipped(true);
+    setSetupOpen(false);
+  };
+
   const [budgetTarget, setBudgetTarget] = useState<Budget | "new" | null>(null);
   const [goalTarget, setGoalTarget] = useState<SavingsGoal | "new" | null>(null);
   const [addMoneyTarget, setAddMoneyTarget] = useState<SavingsGoal | null>(null);
@@ -372,6 +384,10 @@ function PennyApp() {
     navigate("ai");
     void coachChat.send(question);
   };
+  if (dashboard.needs_onboarding && (setupOpen || !setupSkipped)) {
+    return <Onboarding dashboard={dashboard} onSkip={skipSetup} onDone={(data) => { setSetupOpen(false); applyChange(data); toast({ title: "Your plan is ready", description: "Change any budget from Spending › Budgets." }); }} />;
+  }
+
   return (
     <div className="min-h-dvh">
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-xl focus:bg-surface focus:px-4 focus:py-3 focus:font-semibold focus:shadow-[var(--shadow-raised)]">Skip to content</a>
@@ -382,7 +398,7 @@ function PennyApp() {
           {/* A period that isn't cached yet shows a skeleton until its data arrives, never stale numbers. */}
           {monthLoading && <PageSkeleton />}
           <div key={view} className={monthLoading ? "hidden" : "animate-fade"} aria-busy={monthLoading}>
-            {view === "today" && <TodayView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} onEditTransaction={setTransactionTarget} />}
+            {view === "today" && <TodayView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} onEditTransaction={setTransactionTarget} onSetUp={() => setSetupOpen(true)} />}
             {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: markBillPaid, onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} />}
             {view === "accounts" && <AccountsView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
             {view === "goals" && <GoalsView dashboard={dashboard} onAsk={askPenny} onAdd={() => setGoalTarget("new")} onEdit={setGoalTarget} onAddMoney={setAddMoneyTarget} onComplete={(goal) => void mutate(() => dashboardApi.updateGoal(goal.id, { status: "completed" }, month), `${goal.name} reached`)} />}

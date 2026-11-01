@@ -54,6 +54,8 @@ from app.dashboard_models import (
     HistoryResponse,
     ImportRequest,
     ImportResult,
+    OnboardingAnswers,
+    OnboardingApply,
     PaySchedule,
     SplitTransactionWrite,
     TransactionPatch,
@@ -582,6 +584,24 @@ async def spending_take(
         else _store(current_user).dashboard_for_user(current_user.id, month)
     )
     return await assist.spending_take(get_settings(), view)
+
+
+@app.post("/api/v1/onboarding/plan", response_model=assist.StarterPlanOut, tags=["onboarding"])
+async def onboarding_plan(
+    answers: OnboardingAnswers, current_user: AuthenticatedUser
+) -> assist.StarterPlanOut:
+    """A proposed starting budget from the setup answers. Nothing is saved."""
+    return await assist.onboarding_plan(
+        get_settings(), _store(current_user), current_user.id, answers
+    )
+
+
+@app.post("/api/v1/onboarding/apply", response_model=DashboardResponse, tags=["onboarding"])
+def onboarding_apply(
+    request: OnboardingApply, current_user: AuthenticatedUser
+) -> DashboardResponse:
+    """Saves the setup the user approved (accounts, pay, bills, and this month's budgets)."""
+    return _store(current_user).apply_onboarding(current_user.id, request)
 
 
 @app.get("/api/v1/assist/budget-suggestions", response_model=BudgetSuggestions, tags=["assist"])

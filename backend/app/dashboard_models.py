@@ -406,6 +406,8 @@ class DashboardResponse(DashboardModel):
     accounts_overview: AccountsOverview
     previous_month_cash_flow_cents: int | None
     spending_power_cents: int = Field(ge=0)
+    # A real (non-demo) account with no budget, bills, or pay schedule yet: offer the setup.
+    needs_onboarding: bool = False
     # Only while the period shown includes today.
     spending_runway: SpendingRunway | None
     totals: DashboardTotals
@@ -678,3 +680,62 @@ class BillHistory(DashboardModel):
     paid_this_year_cents: int = Field(ge=0)
     average_cents: int = Field(ge=0)
     auto_paid_count: int = Field(ge=0)
+
+
+# ------------------------------------------------------------------ onboarding
+
+
+class OnboardingAccount(DashboardModel):
+    name: str = Field(min_length=1, max_length=60)
+    account_type: AccountType
+    # For a credit card: what's owed on it now.
+    balance_cents: int = Field(default=0, ge=0)
+    credit_limit_cents: int | None = Field(default=None, gt=0)
+
+
+class OnboardingIncome(DashboardModel):
+    amount_cents: int = Field(gt=0)
+    frequency: PayFrequency
+    next_payday: date
+    interval_days: int | None = Field(default=None, ge=7, le=62)
+
+
+class OnboardingBill(DashboardModel):
+    name: str = Field(min_length=1, max_length=80)
+    amount_cents: int = Field(gt=0)
+    category_id: str
+    frequency: BillFrequency = "monthly"
+    next_due: date
+
+
+class OnboardingAnswers(DashboardModel):
+    """A new user's answers; nothing is saved until they approve the plan built from them."""
+
+    # Starting balances for accounts that have no transactions yet (account id → cents).
+    opening_balances: dict[str, int] = Field(default_factory=dict, max_length=10)
+    new_accounts: list[OnboardingAccount] = Field(default_factory=list, max_length=6)
+    income: OnboardingIncome | None = None
+    # Without regular pay: what they can spend each month (from savings, loans, family).
+    monthly_money_cents: int | None = Field(default=None, ge=0)
+    bills: list[OnboardingBill] = Field(default_factory=list, max_length=20)
+    # Expected everyday spending per category per month (category id → cents).
+    everyday: dict[str, int] = Field(default_factory=dict, max_length=12)
+    savings_basis_points: int = Field(default=0, ge=0, le=5_000)
+
+    @model_validator(mode="after")
+    def _amounts(self) -> "OnboardingAnswers":
+        if any(value < 0 for value in [*self.opening_balances.values(), *self.everyday.values()]):
+            raise ValueError("Amounts can't be negative")
+        return self
+
+
+class OnboardingApply(DashboardModel):
+    answers: OnboardingAnswers
+    # The user's edits to the proposed everyday amounts (category id → cents); fixed costs stay.
+    everyday_limits: dict[str, int] = Field(default_factory=dict, max_length=12)
+
+    @model_validator(mode="after")
+    def _limits(self) -> "OnboardingApply":
+        if any(value < 0 for value in self.everyday_limits.values()):
+            raise ValueError("Amounts can't be negative")
+        return self
