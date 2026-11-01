@@ -10,6 +10,7 @@ import type { Dashboard, SavingsGoal } from "@/lib/api";
 import { formatLongDate, formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { cad, EmptyState } from "./shared";
+import { goalEmoji } from "./emoji";
 import { GoalPlan } from "./smart-cards";
 import { FinancialHealthRow } from "./today-view";
 
@@ -48,7 +49,7 @@ export function GoalsView({ dashboard, onAdd, onEdit, onAddMoney, onComplete, on
               <p className="tabular text-sm text-ink-muted"><span className="font-semibold text-ink">{cad(putAside)}</span> of {cad(neededThisMonth)}</p>
             </div>
             <Progress className="mt-2 h-2.5" value={share} indicatorClassName={share >= 100 ? "bg-zone-green" : "bg-accent"} aria-label={`${Math.round(share)}% of this month’s goal saving done`} />
-            <p className="mt-2 text-xs text-ink-muted">{share >= 100 ? "You’ve set aside everything your goals need this month." : `Set aside ${cad(neededThisMonth - putAside)} more this month to keep every goal on schedule.`}</p>
+            <p className="mt-2 text-xs text-ink-muted">{share >= 100 ? "You’ve set aside everything your goals need this month." : <>Set aside <span className="tabular">{cad(neededThisMonth - putAside)}</span> more this month to keep every goal on schedule.</>}</p>
           </div>
         ) : <div />}
         <Button onClick={onAdd}><Plus className="size-4" aria-hidden="true" />New goal</Button>
@@ -81,7 +82,7 @@ function GoalCard({ goal, accounts, onEdit, onAddMoney, onComplete, onAsk }: { g
       <Card className={cn("flex h-full flex-col p-4 sm:p-6", done && "border-accent/40")}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-ink">{goal.name}</h2>
+            <h2 className="truncate text-lg font-semibold text-ink"><span className="mr-1.5" aria-hidden="true">{goalEmoji(goal.name)}</span>{goal.name}</h2>
             <p id={detailsId} className={cn("mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-ink-subtle", extra)}>
               <span className="inline-flex items-center gap-1.5"><CalendarDays className="size-3.5" aria-hidden="true" />{goal.target_date ? `By ${formatLongDate(goal.target_date)}` : "No target date"}</span>
               {goal.account_id && <span className="inline-flex items-center gap-1.5"><Landmark className="size-3.5" aria-hidden="true" />{accounts.get(goal.account_id) ?? "Account"}</span>}

@@ -211,7 +211,8 @@ function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestD
       amount_cents: amount.cents,
       kind,
       occurred_on: date,
-      repeat: canRepeat && repeat.on ? { frequency: repeat.frequency, next_due: repeat.nextDue || null, auto_record: repeat.auto } : null,
+      // Repeating is only offered when adding; the edit endpoint doesn't accept the field.
+      ...(item ? {} : { repeat: canRepeat && repeat.on ? { frequency: repeat.frequency, next_due: repeat.nextDue || null, auto_record: repeat.auto } : null }),
     });
     setBusy(false);
     if (error) setFormError(error);

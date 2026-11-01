@@ -1,7 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronDown, CreditCard, Landmark, LineChart, PiggyBank, Settings, TriangleAlert, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronRight, CreditCard, Landmark, LineChart, Pencil, PiggyBank, TriangleAlert, Wallet, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,10 +9,14 @@ import type { AccountBalance, AccountType, Dashboard } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
-import { cad, EmptyState, type View } from "./shared";
+import { AmountsToggle, cad, EmptyState, type View } from "./shared";
+import { accountEmoji } from "./emoji";
+import { AccountDetail } from "./account-detail";
+import { BackBar } from "./back-bar";
 import { AccountsRead } from "./smart-cards";
+import { useSubpage } from "./subpage";
 
-type Props = { dashboard: Dashboard; onNavigate: (view: View) => void; onAsk: (question: string) => void };
+type Props = { dashboard: Dashboard; onNavigate: (view: View, anchor?: string, motion?: "push" | "pop") => void; onAsk: (question: string) => void };
 
 const TYPE_STYLE: Record<AccountType, { icon: LucideIcon; tone: string }> = {
   chequing: { icon: Wallet, tone: "bg-zone-green-soft text-money-in" },
@@ -30,6 +33,8 @@ const ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "othe
 /** Every account's balance as of today, and the one number they add up to. All figures come from the API. */
 export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
   const overview = dashboard.accounts_overview;
+  // Phones: an account opens as its own page ("#accounts/<id>"); wider screens show every card.
+  const [pageId, openAccount, back] = useSubpage("accounts");
   const accounts = [...overview.accounts].sort((a, b) => ORDER.indexOf(a.account_type) - ORDER.indexOf(b.account_type));
   if (accounts.length === 0) {
     return (
@@ -39,14 +44,21 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
     );
   }
   const negative = overview.net_worth_cents < 0;
+  const detail = accounts.find((account) => account.id === pageId);
+  if (detail) return <AccountDetail dashboard={dashboard} account={detail} backLabel="Accounts" onBack={back} />;
   const goalHomes = accounts.filter((account) => account.goal_cents > 0).map((account) => `${cad(account.goal_cents)} in ${account.name}`).join(" · ");
 
   return (
     // On a phone the AI read moves below the list, so the balances come first.
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      {/* Phones reach Accounts from Home ("Net worth"), so it reads as a page with a way back. */}
+      <div className="-mb-6 lg:hidden"><BackBar label="Home" onBack={() => onNavigate("today", undefined, "pop")} /></div>
       <section id="total-balance" aria-labelledby="total-title" className="scroll-mt-28 grid gap-5 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6 lg:grid-cols-[1fr_1.15fr]">
         <div>
-          <h2 id="total-title" className="text-sm text-ink-subtle">Your total balance (net worth)</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 id="total-title" className="text-sm text-ink-subtle">Your total balance (net worth)</h2>
+            <AmountsToggle className="-my-2 -mr-2" />
+          </div>
           <p className={cn("tabular mt-1 text-4xl font-semibold tracking-tight", negative ? "text-danger" : "text-ink")}>{cad(overview.net_worth_cents)}</p>
           <p className="mt-1 text-sm text-ink-muted">
             <span className="sm:hidden">You have <span className="tabular font-semibold text-ink">{cad(overview.assets_cents)}</span> and owe <span className={cn("tabular font-semibold", overview.owed_cents ? "text-danger" : "text-ink")}>{cad(overview.owed_cents)}</span>.</span>
@@ -94,12 +106,12 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 id="accounts-list-title" className="text-lg font-semibold tracking-tight text-ink">Accounts</h2>
-            <p className="text-sm text-ink-subtle"><span className="sm:hidden">Tap an account for details.</span><span className="hidden sm:inline">Balances today, with money in and out so far this month.</span></p>
+            <p className="text-sm text-ink-subtle"><span className="sm:hidden">Tap an account to see its activity.</span><span className="hidden sm:inline">Balances today, with money in and out so far this month.</span></p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => onNavigate("settings")}><Settings className="size-4" aria-hidden="true" />Add or rename</Button>
+          <Button size="sm" variant="outline" onClick={() => onNavigate("settings")}><Pencil className="size-4" aria-hidden="true" />Add or rename</Button>
         </div>
         <ul className="grid gap-3 sm:gap-4 md:grid-cols-2">
-          {accounts.map((account) => <AccountCard key={account.id} account={account} />)}
+          {accounts.map((account) => <AccountCard key={account.id} account={account} onOpen={() => openAccount(account.id)} />)}
         </ul>
       </section>
       <p className="px-1 text-xs text-ink-subtle max-sm:order-2">{dashboard.profile.is_fictional ? "All accounts and balances are fictional. " : ""}No bank is connected; balances change only when you record money in or out.</p>
@@ -131,29 +143,26 @@ function Tile({ icon: Icon, tone, title, value, detail, onOpen }: { icon: Lucide
   return onOpen ? <button type="button" onClick={onOpen} className={cn(className, "transition-colors hover:border-accent")}>{body}</button> : <div className={className}>{body}</div>;
 }
 
-function AccountCard({ account }: { account: AccountBalance }) {
-  const style = TYPE_STYLE[account.account_type];
-  const Icon = style.icon;
+function AccountCard({ account, onOpen }: { account: AccountBalance; onOpen: () => void }) {
+  const emoji = accountEmoji(account.name, account.account_type);
   const credit = account.account_type === "credit";
   const used = account.utilization_basis_points;
-  const [open, setOpen] = useState(false);
-  const detailsId = useId();
   const balance = <p className={cn("tabular text-lg font-semibold tracking-tight sm:text-xl", credit && account.balance_cents > 0 ? "text-danger" : "text-ink")}>{credit && account.balance_cents > 0 ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)}</p>;
   return (
     <li id={`account-${account.account_type === "credit" ? "credit" : account.id}`} className="scroll-mt-28 rounded-[var(--radius-card)]">
       <Card className="flex h-full flex-col p-4 sm:p-5">
-        {/* Phone: name and balance only; tap to open the details. */}
-        <button type="button" aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen((value) => !value)} className="flex min-h-11 items-center gap-3 text-left sm:hidden">
-          <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", style.tone)} aria-hidden="true"><Icon className="size-5" /></span>
+        {/* Phone: name and balance only; tap to open the account's page. */}
+        <button type="button" onClick={onOpen} className="flex min-h-11 items-center gap-3 text-left sm:hidden">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-xl" aria-hidden="true">{emoji}</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-semibold text-ink">{account.name}</span>
             <span className="block text-xs text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}{credit ? " · owed" : ""}</span>
           </span>
           {balance}
-          <ChevronDown className={cn("size-4 shrink-0 text-ink-muted transition-transform", open && "rotate-180")} aria-hidden="true" />
+          <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
         </button>
         <div className="hidden items-start gap-3 sm:flex">
-          <span className={cn("grid size-11 shrink-0 place-items-center rounded-xl", style.tone)} aria-hidden="true"><Icon className="size-5" /></span>
+          <span className="grid size-11 shrink-0 place-items-center rounded-full bg-sage text-xl" aria-hidden="true">{emoji}</span>
           <div className="min-w-0 flex-1">
             <h3 className="truncate font-semibold text-ink">{account.name}</h3>
             <Badge tone="neutral" className="mt-0.5">{ACCOUNT_TYPE_LABELS[account.account_type]}</Badge>
@@ -164,7 +173,7 @@ function AccountCard({ account }: { account: AccountBalance }) {
           </div>
         </div>
 
-        <div id={detailsId} className={cn("flex-1 flex-col sm:flex", open ? "flex" : "hidden")}>
+        <div className="hidden flex-1 flex-col sm:flex">
           {credit ? (
             account.credit_limit_cents !== null && used !== null && (
               <div className="mt-4">

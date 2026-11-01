@@ -1,21 +1,34 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bus, ChevronRight, Coffee, CreditCard, Dumbbell, Flame, Gamepad2, GraduationCap, HeartPulse, Home, Info, PiggyBank, ShieldCheck, ShoppingCart, Smartphone, Sparkles, Sprout, TrendingDown, TrendingUp, UtensilsCrossed, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, ChevronRight, CreditCard, Flame, Home, Info, PiggyBank, ShoppingCart, Sparkles, Sprout, TrendingDown, TrendingUp, Wallet, type LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import type { Category, Dashboard, MonthPoint, SpendingRunway, Transaction } from "@/lib/api";
+import type { AccountType, Dashboard, MonthPoint, SpendingRunway, Transaction } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { categoryColours } from "./charts";
 import { ZONE_STYLE } from "./money-score";
-import { cad, type View } from "./shared";
+import { categoryIcon } from "./category-icons";
+import { AccountDetail } from "./account-detail";
+import { SpentDetail } from "./spent-detail";
+import { ACCOUNT_TYPE_LABELS } from "./dialogs";
+import { accountEmoji } from "./emoji";
+import { AmountsToggle, BigAmount, cad, type View } from "./shared";
+import { useSubpage } from "./subpage";
+
+// Accounts read like the sum: what you have, then what you owe.
+const ACCOUNT_ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "credit"];
+
+export { categoryIcon };
 
 type Props = {
   dashboard: Dashboard;
-  onNavigate: (view: View, anchor?: string) => void;
+  onNavigate: (view: View, anchor?: string, motion?: "push" | "pop") => void;
   onAsk: (question: string) => void;
+  /** Phones: tapping a recent transaction opens it for editing. */
+  onEditTransaction?: (item: Transaction) => void;
 };
 
 /** Questions built from the user's own numbers, most pressing first; generic ones fill the rest. */
@@ -42,13 +55,21 @@ const AI_PROMPTS = [
   { icon: TrendingUp, text: "Should I invest or save?" },
 ];
 
-export function TodayView({ dashboard, onNavigate, onAsk }: Props) {
+export function TodayView({ dashboard, onNavigate, onAsk, onEditTransaction }: Props) {
   const [scoreInfo, setScoreInfo] = useState(false);
+  // Phones: an account ("#today/<account id>") or the month's spending ("#today/spent") opens as its own page.
+  const [pageId, openPage, back] = useSubpage("today");
+  const account = dashboard.accounts_overview.accounts.find((item) => item.id === pageId);
   return (
     <div className="mx-auto max-w-7xl space-y-5">
-      <PhoneToday dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} />
+      {account
+        ? <div className="sm:hidden"><AccountDetail dashboard={dashboard} account={account} backLabel="Home" onBack={back} /></div>
+        : pageId === "spent"
+          ? <div className="sm:hidden"><SpentDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} /></div>
+          : <PhoneToday dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} onEditTransaction={onEditTransaction} onOpenPage={openPage} />}
       <div className="hidden gap-5 sm:grid xl:grid-cols-[minmax(0,1fr)_24rem] [&>*]:min-w-0">
         <div className="space-y-5">
+          <Card className="py-4"><SafeToSpendHero dashboard={dashboard} onNavigate={onNavigate} /></Card>
           <MetricCards dashboard={dashboard} onNavigate={onNavigate} />
           <SpendingOverview dashboard={dashboard} onNavigate={onNavigate} />
           <div className="grid gap-5 md:grid-cols-[1fr_1.35fr] [&>*]:min-w-0">
@@ -57,7 +78,7 @@ export function TodayView({ dashboard, onNavigate, onAsk }: Props) {
           </div>
         </div>
         <div className="space-y-5">
-          <RecentTransactions dashboard={dashboard} onOpen={() => onNavigate("spending", "transactions")} />
+          <RecentTransactions dashboard={dashboard} onOpen={() => onNavigate("spending", "transactions")} onEdit={onEditTransaction} />
           <UpcomingBills dashboard={dashboard} onOpen={() => onNavigate("recurring")} />
           <LearningStreak dashboard={dashboard} onOpen={() => onNavigate("learn")} />
         </div>
@@ -69,11 +90,14 @@ export function TodayView({ dashboard, onNavigate, onAsk }: Props) {
 
 // ------------------------------------------------------------------ phone
 
-const RUNWAY_STYLE: Record<SpendingRunway["status"], { pill: string; bar: string }> = {
-  on_track: { pill: "bg-zone-green-soft text-money-in", bar: "bg-zone-green" },
-  tight: { pill: "bg-gold-soft text-gold-strong", bar: "bg-gold" },
-  empty: { pill: "bg-danger-soft text-danger", bar: "bg-danger" },
+// Colour only where it carries meaning: a small status dot, and the bar once money is tight.
+const RUNWAY_STYLE: Record<SpendingRunway["status"], { dot: string; bar: string }> = {
+  on_track: { dot: "bg-money-in", bar: "bg-ink-subtle" },
+  tight: { dot: "bg-gold", bar: "bg-gold" },
+  empty: { dot: "bg-danger", bar: "bg-danger" },
 };
+
+
 
 function runwayLabel(runway: SpendingRunway): string {
   if (runway.status === "on_track") return "On track";
@@ -83,50 +107,41 @@ function runwayLabel(runway: SpendingRunway): string {
 
 /** A grouped list on a phone: a bordered panel without the card's shadow, like an iOS inset list. */
 const GROUP = "overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface";
+/** A stack of separate raised cards (accounts, bills), like a bank app's account list. */
+const STACK = "space-y-2.5";
+const CARD = "overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface shadow-[var(--shadow-card)]";
 
 /**
  * Home on a phone: what you can spend (and per day, until payday), three numbers, then what's
  * next. The charts and score live on their own tabs here. Every figure comes from the API.
  */
-function PhoneToday({ dashboard, onNavigate, onAsk }: Props) {
-  const { home, credit, totals, period } = dashboard;
-  const runway = dashboard.spending_runway;
-  const used = totals.total_budget_cents ? Math.min(100, (totals.spending_cents * 100) / totals.total_budget_cents) : 0;
+function PhoneToday({ dashboard, onNavigate, onAsk, onEditTransaction, onOpenPage }: Props & { onOpenPage: (id: string) => void }) {
+  const { home, totals, period, accounts_overview: overview } = dashboard;
+  const accounts = [...overview.accounts].sort((a, b) => ACCOUNT_ORDER.indexOf(a.account_type) - ACCOUNT_ORDER.indexOf(b.account_type));
   const change = home.spending_change_basis_points;
   return (
     <div className="space-y-6 sm:hidden">
-      <Card className="p-5">
-        <button type="button" onClick={() => onNavigate("spending", "budgets")} className="block w-full text-left">
-          <span className="flex items-center justify-between gap-2">
-            <span className="text-sm font-semibold text-ink-muted">Safe to spend</span>
-            {runway && <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", RUNWAY_STYLE[runway.status].pill)}>{runwayLabel(runway)}</span>}
-          </span>
-          <span className="tabular mt-1 block text-4xl font-semibold tracking-tight text-ink">{cad(dashboard.spending_power_cents)}</span>
-          {runway && (
-            <span className="mt-1 block text-sm text-ink-muted">
-              About <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day · {runway.days_left} day{runway.days_left === 1 ? "" : "s"} {runway.until_payday ? "until payday" : "left this month"}
-            </span>
-          )}
-        </button>
-        <div className="mt-4">
-          <Bar value={used} className={runway ? RUNWAY_STYLE[runway.status].bar : "bg-info"} label={`${Math.round(used)}% of the budget used ${period.phrase}`}
-            caption={`${Math.round(used)}% of your budget used ${period.phrase}. Bills due before payday are already taken out.`} />
-        </div>
-      </Card>
+      <SafeToSpendHero dashboard={dashboard} onNavigate={onNavigate} />
 
-      <section aria-label="At a glance">
-        <ul className={cn(GROUP, "divide-y divide-line")}>
-          <Glance icon={Wallet} tone="bg-zone-green-soft text-money-in" label="Total cash" value={cad(home.cash_cents)} onOpen={() => onNavigate("accounts", "total-balance")} />
-          <Glance icon={BarChart3} tone="bg-info-soft text-info" label={`Spent ${period.phrase}`} value={cad(totals.spending_cents)} onOpen={() => onNavigate("spending", "trends")}
-            detail={change === null ? undefined : `${percent(change)} ${change <= 0 ? "less" : "more"} than ${period.phrase === "this month" ? "last month" : "the period before"}`} />
-          {credit
-            ? <Glance icon={CreditCard} tone="bg-[#f2ecff] text-[#7047b7] dark:bg-[#302847] dark:text-[#c1a5ee]" label="Credit used" value={percent(credit.utilization_basis_points)} detail={`${cad(credit.balance_cents)} of ${cad(credit.credit_limit_cents)}`} onOpen={() => onNavigate("accounts", "account-credit")} />
-            : <Glance icon={PiggyBank} tone="bg-gold-soft text-gold-strong" label={period.single_month ? "Saved this month" : "Saved"} value={cad(home.monthly_saved_cents)} onOpen={() => onNavigate("goals")} />}
+      {/* Accounts live on Home, like a bank app; each opens its own page. Net worth is one tap away. */}
+      <PhoneSection title="Accounts" action="Net worth" onOpen={() => onNavigate("accounts", undefined, "push")}>
+        <ul className={STACK}>
+          {accounts.map((account) => {
+            const owed = account.account_type === "credit" && account.balance_cents > 0;
+            const detail = account.account_type === "credit" && account.utilization_basis_points !== null
+              ? `${percent(account.utilization_basis_points)} of limit used`
+              : account.goal_cents > 0 ? <><span className="tabular">{cad(account.goal_cents)}</span> set aside for goals</> : ACCOUNT_TYPE_LABELS[account.account_type];
+            return <Glance key={account.id} emoji={accountEmoji(account.name, account.account_type)} label={account.name} detail={detail} value={owed ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)} tone={owed ? "text-danger" : undefined} onOpen={() => onOpenPage(account.id)} />;
+          })}
         </ul>
-      </section>
+        <ul className={cn(STACK, "mt-2.5")}>
+          <Glance emoji="🧾" label={`Spent ${period.phrase}`} value={cad(totals.spending_cents)} onOpen={() => onOpenPage("spent")}
+            detail={change === null ? undefined : `${percent(change)} ${change <= 0 ? "less" : "more"} than ${period.phrase === "this month" ? "last month" : "the period before"}`} />
+        </ul>
+      </PhoneSection>
 
       <PhoneBills dashboard={dashboard} onOpen={() => onNavigate("recurring")} />
-      <PhoneRecent dashboard={dashboard} onOpen={() => onNavigate("spending", "transactions")} />
+      <PhoneRecent dashboard={dashboard} onOpen={() => onNavigate("spending", "transactions")} onEdit={onEditTransaction} />
 
       <PhoneSection title="Ask Penny">
         <button type="button" onClick={() => onNavigate("ai")} className={cn(GROUP, "flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm text-ink-subtle hover:border-accent")}>
@@ -139,6 +154,34 @@ function PhoneToday({ dashboard, onNavigate, onAsk }: Props) {
         </ul>
       </PhoneSection>
     </div>
+  );
+}
+
+/** The one big number, centred like a bank app's balance: what's safe to spend and per day until payday. */
+function SafeToSpendHero({ dashboard, onNavigate }: Pick<Props, "dashboard" | "onNavigate">) {
+  const { totals, period } = dashboard;
+  const runway = dashboard.spending_runway;
+  const used = totals.total_budget_cents ? Math.min(100, (totals.spending_cents * 100) / totals.total_budget_cents) : 0;
+  return (
+  <section aria-labelledby="safe-title" className="pb-2 pt-4 text-center">
+    <p className="text-[3.5rem] font-semibold leading-none tracking-tight text-ink"><BigAmount cents={dashboard.spending_power_cents} /></p>
+    <div className="mt-3 flex items-center justify-center gap-1">
+      <button type="button" id="safe-title" onClick={() => onNavigate("spending", "budgets")} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-base font-semibold text-ink-muted hover:text-ink">
+        Safe to spend<ChevronRight className="size-4" aria-hidden="true" />
+      </button>
+      <AmountsToggle className="-ml-1" />
+    </div>
+    {runway && (
+      <p className="text-sm text-ink-muted">
+        <span className="inline-flex items-center gap-1.5 font-semibold text-ink"><span className={cn("size-2 rounded-full", RUNWAY_STYLE[runway.status].dot)} aria-hidden="true" />{runwayLabel(runway)}</span>
+        {" · "}about <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} day{runway.days_left === 1 ? "" : "s"}
+      </p>
+    )}
+    <div className="mx-auto mt-5 max-w-60">
+      <Progress value={used} className="h-1.5" indicatorClassName={runway ? RUNWAY_STYLE[runway.status].bar : "bg-ink-subtle"} aria-label={`${Math.round(used)}% of the budget used ${period.phrase}`} />
+      <p className="mt-2 text-xs text-ink-subtle">{Math.round(used)}% of your budget used · bills before payday already taken out</p>
+    </div>
+  </section>
   );
 }
 
@@ -155,16 +198,16 @@ function PhoneSection({ title, action, onOpen, children }: { title: string; acti
   );
 }
 
-function Glance({ icon: Icon, tone, label, value, detail, onOpen }: { icon: LucideIcon; tone: string; label: string; value: string; detail?: string; onOpen: () => void }) {
+function Glance({ emoji, label, value, detail, tone, onOpen, grouped = false }: { emoji: string; label: string; value: string; detail?: React.ReactNode; tone?: string; onOpen: () => void; grouped?: boolean }) {
   return (
-    <li>
-      <button type="button" onClick={onOpen} className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-sage-soft">
-        <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", tone)} aria-hidden="true"><Icon className="size-5" /></span>
+    <li className={grouped ? undefined : CARD}>
+      <button type="button" onClick={onOpen} className={cn("flex w-full items-center gap-3 px-4 text-left hover:bg-sage-soft", grouped ? "min-h-16 py-3" : "min-h-[4.5rem] py-4")}>
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-lg" aria-hidden="true">{emoji}</span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-ink">{label}</span>
           {detail && <span className="block truncate text-xs text-ink-subtle">{detail}</span>}
         </span>
-        <span className="tabular shrink-0 font-semibold text-ink">{value}</span>
+        <span className={cn("tabular shrink-0 font-semibold", tone ?? "text-ink")}>{value}</span>
         <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
       </button>
     </li>
@@ -184,15 +227,15 @@ function PhoneBills({ dashboard, onOpen }: { dashboard: Dashboard; onOpen: () =>
   return (
     <PhoneSection title="Coming up" action="All bills" onOpen={onOpen}>
       {items.length === 0 ? <p className={cn(GROUP, "p-4 text-sm text-ink-subtle")}>No bills set up yet.</p> : (
-        <ul className={cn(GROUP, "divide-y divide-line")}>
+        <ul className={STACK}>
           {items.map((item) => {
             const bill = bills.get(item.id);
             const Icon = categoryIcon(bill?.category_id ? byId.get(bill.category_id) : undefined);
-            const soon = item.days_until_due <= 3;
+            const soon = item.days_until_due <= 1;
             return (
-              <li key={item.id}>
-                <button type="button" onClick={onOpen} className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sage-soft">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-sage text-ink-muted" aria-hidden="true"><Icon className="size-4" /></span>
+              <li key={item.id} className={CARD}>
+                <button type="button" onClick={onOpen} className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-sage-soft">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-ink-muted" aria-hidden="true"><Icon className="size-4" /></span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-ink">{item.name}</span>
                     <span className="block text-xs"><span className={soon ? "font-semibold text-danger" : "text-ink-subtle"}>{dueIn(item.days_until_due)}</span><span className="text-ink-subtle"> · {formatShortDate(item.next_due)}</span></span>
@@ -215,7 +258,7 @@ function shiftDay(value: string, days: number): string {
 }
 
 /** The latest transactions, grouped under Today, Yesterday, or the date, like a bank app's feed. */
-function PhoneRecent({ dashboard, onOpen }: { dashboard: Dashboard; onOpen: () => void }) {
+function PhoneRecent({ dashboard, onOpen, onEdit }: { dashboard: Dashboard; onOpen: () => void; onEdit?: (item: Transaction) => void }) {
   const byId = new Map(dashboard.categories.map((category) => [category.id, category]));
   const today = dashboard.money_calendar.today;
   const dayLabel = (value: string) => value === today ? "Today" : today && value === shiftDay(today, -1) ? "Yesterday" : formatShortDate(value);
@@ -239,7 +282,7 @@ function PhoneRecent({ dashboard, onOpen }: { dashboard: Dashboard; onOpen: () =
                   const income = item.kind === "income";
                   return (
                     <li key={item.id}>
-                      <button type="button" onClick={onOpen} className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left hover:bg-sage-soft">
+                      <button type="button" onClick={() => (onEdit ? onEdit(item) : onOpen())} className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left hover:bg-sage-soft">
                         <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", income ? "bg-money-in-soft text-money-in" : "bg-sage text-ink-muted")} aria-hidden="true"><Icon className="size-4" /></span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-semibold text-ink">{item.description}</span>
@@ -264,8 +307,8 @@ export function FinancialHealthRow({ dashboard }: { dashboard: Dashboard }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <ul className={GROUP}>
-        <Glance icon={HeartPulse} tone="bg-sage text-ink-muted" label="Financial health" value={`${dashboard.financial_health.score}/100`} detail="How it’s scored" onOpen={() => setOpen(true)} />
+      <ul>
+        <Glance emoji="❤️" label="Financial health" value={`${dashboard.financial_health.score}/100`} detail="How it’s scored" onOpen={() => setOpen(true)} />
       </ul>
       <ScoreDialog open={open} onOpenChange={setOpen} dashboard={dashboard} />
     </>
@@ -279,16 +322,11 @@ const percent = (basisPoints: number) => `${Math.abs(basisPoints / 100).toFixed(
 function MetricCards({ dashboard, onNavigate }: { dashboard: Dashboard; onNavigate: (view: View, anchor?: string) => void }) {
   const { home, credit } = dashboard;
   const savedShare = home.monthly_goal_cents > 0 ? Math.min(100, Math.max(0, Math.round((home.monthly_saved_cents * 100) / home.monthly_goal_cents))) : null;
-  const used = dashboard.totals.total_budget_cents ? Math.min(100, (dashboard.totals.spending_cents * 100) / dashboard.totals.total_budget_cents) : 0;
   return (
-    <section aria-label="Key numbers" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+    <section aria-label="Key numbers" className="grid grid-cols-3 gap-3">
       <Metric icon={Wallet} tone="bg-zone-green-soft text-money-in" title="Total cash" value={cad(home.cash_cents)} onOpen={() => onNavigate("accounts", "total-balance")}
         note={home.cash_change_basis_points !== null && <Change basisPoints={home.cash_change_basis_points} suffix="from last month" />}>
         <Sparkline points={home.cash_history} colour="var(--color-zone-green)" label="Cash over the last six months" />
-      </Metric>
-      <Metric icon={ShieldCheck} tone="bg-info-soft text-info" title="Safe to spend" value={cad(dashboard.spending_power_cents)} onOpen={() => onNavigate("spending", "budgets")}
-        note={<span className="text-ink-subtle">after bills due before payday</span>}>
-        <Bar value={used} className="bg-info" label={`${Math.round(used)}% of the budget used ${dashboard.period.phrase}`} caption={`${Math.round(used)}% of budget used`} />
       </Metric>
       <Metric icon={CreditCard} tone="bg-[#f2ecff] text-[#7047b7] dark:bg-[#302847] dark:text-[#c1a5ee]" title="Credit used" value={credit ? percent(credit.utilization_basis_points) : "No card"} onOpen={() => (credit ? onNavigate("accounts", "account-credit") : onNavigate("settings"))}
         note={<span className="text-ink-subtle">{credit ? `${cad(credit.balance_cents)} of ${cad(credit.credit_limit_cents)}` : "Add a card in Settings"}</span>}>
@@ -351,16 +389,6 @@ function Sparkline({ points, colour, label }: { points: MonthPoint[]; colour: st
 }
 
 // ------------------------------------------------------------------ spending overview
-
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  "cat-housing": Home, "cat-food": UtensilsCrossed, "cat-groceries": ShoppingCart, "cat-eating-out": Coffee,
-  "cat-transport": Bus, "cat-phone": Smartphone, "cat-school": GraduationCap, "cat-fun": Gamepad2, "cat-health": HeartPulse,
-};
-
-export function categoryIcon(category: Category | undefined, kind: Transaction["kind"] = "spending"): LucideIcon {
-  if (kind === "income") return Wallet;
-  return (category && (CATEGORY_ICONS[category.id] ?? (category.parent_id ? CATEGORY_ICONS[category.parent_id] : undefined))) ?? Dumbbell;
-}
 
 function SpendingOverview({ dashboard, onNavigate }: { dashboard: Dashboard; onNavigate: (view: View, anchor?: string) => void }) {
   const { period } = dashboard;
@@ -428,7 +456,7 @@ function SideCard({ title, action, onOpen, children }: { title: React.ReactNode;
   );
 }
 
-function RecentTransactions({ dashboard, onOpen }: { dashboard: Dashboard; onOpen: () => void }) {
+function RecentTransactions({ dashboard, onOpen, onEdit }: { dashboard: Dashboard; onOpen: () => void; onEdit?: (item: Transaction) => void }) {
   const byId = new Map(dashboard.categories.map((category) => [category.id, category]));
   const rows = dashboard.transactions.slice(0, 5);
   return (
@@ -446,7 +474,7 @@ function RecentTransactions({ dashboard, onOpen }: { dashboard: Dashboard; onOpe
                 <tr key={item.id} className="border-t border-line">
                   <td className="whitespace-nowrap py-2.5 pr-2 text-ink-subtle">{formatShortDate(item.occurred_on)}</td>
                   <td className="max-w-0 py-2.5 pr-2">
-                    <span className="flex items-center gap-2"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full", income ? "bg-money-in-soft text-money-in" : "bg-sage text-ink-muted")} aria-hidden="true"><Icon className="size-4" /></span><span className="truncate font-medium text-ink">{item.description}</span></span>
+                    <span className="flex items-center gap-2"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full", income ? "bg-money-in-soft text-money-in" : "bg-sage text-ink-muted")} aria-hidden="true"><Icon className="size-4" /></span>{onEdit ? <button type="button" onClick={() => onEdit(item)} className="truncate text-left font-medium text-ink hover:underline" title={`Edit ${item.description}`}>{item.description}</button> : <span className="truncate font-medium text-ink">{item.description}</span>}</span>
                   </td>
                   <td className="hidden truncate py-2.5 pr-2 text-ink-muted sm:table-cell xl:hidden">{item.category}</td>
                   <td className={cn("tabular whitespace-nowrap py-2.5 text-right font-semibold", income ? "text-money-in" : "text-money-out")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</td>

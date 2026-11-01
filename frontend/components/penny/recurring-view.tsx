@@ -113,7 +113,7 @@ export function RecurringView({ dashboard, onAsk, onMarkPaid, onSave, onDelete }
           <ul className="mt-3 divide-y divide-line">
             {summary.suggestions.map((item) => (
               <li key={item.name} className="flex items-center justify-between gap-3 py-2.5">
-                <span className="min-w-0"><span className="block truncate text-sm font-semibold text-ink">{item.name}</span><span className="text-xs text-ink-subtle">{cad(item.amount_cents)} · next around {formatShortDate(item.next_due)}</span></span>
+                <span className="min-w-0"><span className="block truncate text-sm font-semibold text-ink">{item.name}</span><span className="text-xs text-ink-subtle"><span className="tabular">{cad(item.amount_cents)}</span> · next around {formatShortDate(item.next_due)}</span></span>
                 <Button size="sm" variant="secondary" onClick={() => setEditing({ name: item.name, amount_cents: item.amount_cents, category_id: item.category_id, account_id: defaultAccount(dashboard), frequency: "monthly", next_due: item.next_due, auto_record: true })}>Add</Button>
               </li>
             ))}

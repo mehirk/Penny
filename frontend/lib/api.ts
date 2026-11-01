@@ -117,6 +117,21 @@ export type CoachBrief = { greeting: string; month_label: string; signals: Coach
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
+/**
+ * FastAPI sends `detail` as a string for app errors, but as a list of {loc, msg} objects when a
+ * request fails validation. Either way, turn it into a readable sentence.
+ */
+export function errorText(detail: unknown): string | null {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => (item && typeof item === "object" && "msg" in item ? String(item.msg).replace(/^Value error, /, "") : null))
+      .filter((message): message is string => Boolean(message));
+    return messages.length ? `Penny couldn’t save that: ${messages.join("; ")}.` : null;
+  }
+  return null;
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -162,8 +177,8 @@ async function authorizedRequest<T>(path: string, init?: RequestInit): Promise<T
     },
   });
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
-    throw new ApiError(payload?.detail ?? `Request failed with status ${response.status}`, response.status);
+    const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
+    throw new ApiError(errorText(payload?.detail) ?? `Request failed with status ${response.status}`, response.status);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

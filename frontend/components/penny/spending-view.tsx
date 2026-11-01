@@ -121,7 +121,7 @@ function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyB
                 <div className="flex items-center justify-between gap-3">
                   <span className="truncate text-sm font-semibold text-ink">{budget.category_name}</span>
                   <span className="flex items-center gap-1">
-                    <span className={cn("text-sm font-medium", status.tone === "danger" ? "text-danger" : status.tone === "gold" ? "text-gold-strong" : "text-ink-muted")}>{status.label}</span>
+                    <span className={cn("tabular text-sm font-medium", status.tone === "danger" ? "text-danger" : status.tone === "gold" ? "text-gold-strong" : "text-ink-muted")}>{status.label}</span>
                     {editable && !budget.carried_over && <button type="button" onClick={() => onEditBudget(budget)} className="grid size-10 place-items-center rounded-lg text-ink-subtle hover:bg-sage-soft hover:text-ink" aria-label={`Edit ${budget.category_name} budget`}><Pencil className="size-3.5" aria-hidden="true" /></button>}
                   </span>
                 </div>

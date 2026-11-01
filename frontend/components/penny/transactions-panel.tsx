@@ -13,7 +13,7 @@ import { EMPTY_FILTERS, filterTransactions, hasActiveFilters, type KindFilter, s
 import { cn } from "@/lib/utils";
 import { categoryOptions } from "./dialogs";
 import { cad, EmptyState } from "./shared";
-import { categoryIcon } from "./today-view";
+import { categoryIcon } from "./category-icons";
 
 type Props = {
   dashboard: Dashboard;
@@ -195,14 +195,14 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
                     <td className="border-b border-line/70 p-0 group-last:border-b-0 md:py-3 md:pl-5 md:pr-3">
                       <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left md:hidden" aria-expanded={expanded === item.id} aria-label={`${item.description}, ${income ? "money in" : "money out"} ${cad(item.amount_cents)}, ${item.category}, ${formatShortDate(item.occurred_on)}. Show details`}>
                         <TransactionIdentity item={item} category={item.category_id ? categories.get(item.category_id) : undefined} />
-                        <span className={cn("tabular whitespace-nowrap shrink-0 font-semibold", income ? "text-money-in" : "text-money-out")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</span>
+                        <span className={cn("tabular whitespace-nowrap shrink-0 font-semibold", income ? "text-money-in" : "text-ink")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</span>
                         <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
                       </button>
                       <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id} className="hidden min-w-0 items-center gap-3 text-left md:flex"><TransactionIdentity item={item} category={item.category_id ? categories.get(item.category_id) : undefined} /></button>
                       {expanded === item.id && <div className="mx-4 mb-3 rounded-xl bg-sage-soft p-3 text-xs text-ink-muted md:mx-0 md:mb-0 md:mt-2"><p>{income ? "Income" : "Expense"} · {accounts.get(item.account_id) ?? "Unknown account"}{item.bill_id ? ` · ${item.paid_automatically === true ? "paid automatically" : item.paid_automatically === false ? "you marked it paid" : "recurring payment"}` : ""}</p><div className="mt-2 flex gap-2 md:hidden"><Button size="sm" variant="outline" onClick={() => onEdit(item)}>Edit</Button><Button size="sm" variant="destructive-soft" onClick={() => onDelete(item)}>Delete</Button></div></div>}
                     </td>
                     <td className="hidden truncate border-b border-line/70 px-3 py-3 text-ink-muted group-last:border-b-0 lg:table-cell">{accounts.get(item.account_id) ?? "—"}</td>
-                    <td className={cn("tabular hidden whitespace-nowrap border-b border-line/70 px-3 py-3 text-right font-semibold group-last:border-b-0 md:table-cell", income ? "text-money-in" : "text-money-out")}>
+                    <td className={cn("tabular hidden whitespace-nowrap border-b border-line/70 px-3 py-3 text-right font-semibold group-last:border-b-0 md:table-cell", income ? "text-money-in" : "text-ink")}>
                       {income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}
                     </td>
                     <td className="hidden border-b border-line/70 py-2 pl-3 pr-4 text-right group-last:border-b-0 md:table-cell">
