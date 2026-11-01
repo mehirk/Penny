@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bus, ChevronRight, Coffee, CreditCard, Dumbbell, Flame, Gamepad2, GraduationCap, HeartPulse, Home, Info, PiggyBank, ShieldCheck, ShoppingCart, Smartphone, Sparkles, Sprout, TrendingDown, TrendingUp, UtensilsCrossed, Wallet, type LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import type { Category, Dashboard, MonthPoint, Transaction } from "@/lib/api";
+import type { Category, Dashboard, MonthPoint, SpendingRunway, Transaction } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { categoryColours } from "./charts";
@@ -46,7 +46,8 @@ export function TodayView({ dashboard, onNavigate, onAsk }: Props) {
   const [scoreInfo, setScoreInfo] = useState(false);
   return (
     <div className="mx-auto max-w-7xl space-y-5">
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem] [&>*]:min-w-0">
+      <PhoneToday dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} />
+      <div className="hidden gap-5 sm:grid xl:grid-cols-[minmax(0,1fr)_24rem] [&>*]:min-w-0">
         <div className="space-y-5">
           <MetricCards dashboard={dashboard} onNavigate={onNavigate} />
           <SpendingOverview dashboard={dashboard} onNavigate={onNavigate} />
@@ -63,6 +64,211 @@ export function TodayView({ dashboard, onNavigate, onAsk }: Props) {
       </div>
       <ScoreDialog open={scoreInfo} onOpenChange={setScoreInfo} dashboard={dashboard} />
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ phone
+
+const RUNWAY_STYLE: Record<SpendingRunway["status"], { pill: string; bar: string }> = {
+  on_track: { pill: "bg-zone-green-soft text-money-in", bar: "bg-zone-green" },
+  tight: { pill: "bg-gold-soft text-gold-strong", bar: "bg-gold" },
+  empty: { pill: "bg-danger-soft text-danger", bar: "bg-danger" },
+};
+
+function runwayLabel(runway: SpendingRunway): string {
+  if (runway.status === "on_track") return "On track";
+  if (runway.status === "empty") return "Nothing left";
+  return runway.until_payday ? "Tight until payday" : "Tight this month";
+}
+
+/** A grouped list on a phone: a bordered panel without the card's shadow, like an iOS inset list. */
+const GROUP = "overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface";
+
+/**
+ * Home on a phone: what you can spend (and per day, until payday), three numbers, then what's
+ * next. The charts and score live on their own tabs here. Every figure comes from the API.
+ */
+function PhoneToday({ dashboard, onNavigate, onAsk }: Props) {
+  const { home, credit, totals, period } = dashboard;
+  const runway = dashboard.spending_runway;
+  const used = totals.total_budget_cents ? Math.min(100, (totals.spending_cents * 100) / totals.total_budget_cents) : 0;
+  const change = home.spending_change_basis_points;
+  return (
+    <div className="space-y-6 sm:hidden">
+      <Card className="p-5">
+        <button type="button" onClick={() => onNavigate("spending", "budgets")} className="block w-full text-left">
+          <span className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold text-ink-muted">Safe to spend</span>
+            {runway && <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", RUNWAY_STYLE[runway.status].pill)}>{runwayLabel(runway)}</span>}
+          </span>
+          <span className="tabular mt-1 block text-4xl font-semibold tracking-tight text-ink">{cad(dashboard.spending_power_cents)}</span>
+          {runway && (
+            <span className="mt-1 block text-sm text-ink-muted">
+              About <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day · {runway.days_left} day{runway.days_left === 1 ? "" : "s"} {runway.until_payday ? "until payday" : "left this month"}
+            </span>
+          )}
+        </button>
+        <div className="mt-4">
+          <Bar value={used} className={runway ? RUNWAY_STYLE[runway.status].bar : "bg-info"} label={`${Math.round(used)}% of the budget used ${period.phrase}`}
+            caption={`${Math.round(used)}% of your budget used ${period.phrase}. Bills due before payday are already taken out.`} />
+        </div>
+      </Card>
+
+      <section aria-label="At a glance">
+        <ul className={cn(GROUP, "divide-y divide-line")}>
+          <Glance icon={Wallet} tone="bg-zone-green-soft text-money-in" label="Total cash" value={cad(home.cash_cents)} onOpen={() => onNavigate("accounts", "total-balance")} />
+          <Glance icon={BarChart3} tone="bg-info-soft text-info" label={`Spent ${period.phrase}`} value={cad(totals.spending_cents)} onOpen={() => onNavigate("spending", "trends")}
+            detail={change === null ? undefined : `${percent(change)} ${change <= 0 ? "less" : "more"} than ${period.phrase === "this month" ? "last month" : "the period before"}`} />
+          {credit
+            ? <Glance icon={CreditCard} tone="bg-[#f2ecff] text-[#7047b7] dark:bg-[#302847] dark:text-[#c1a5ee]" label="Credit used" value={percent(credit.utilization_basis_points)} detail={`${cad(credit.balance_cents)} of ${cad(credit.credit_limit_cents)}`} onOpen={() => onNavigate("accounts", "account-credit")} />
+            : <Glance icon={PiggyBank} tone="bg-gold-soft text-gold-strong" label={period.single_month ? "Saved this month" : "Saved"} value={cad(home.monthly_saved_cents)} onOpen={() => onNavigate("goals")} />}
+        </ul>
+      </section>
+
+      <PhoneBills dashboard={dashboard} onOpen={() => onNavigate("recurring")} />
+      <PhoneRecent dashboard={dashboard} onOpen={() => onNavigate("spending", "transactions")} />
+
+      <PhoneSection title="Ask Penny">
+        <button type="button" onClick={() => onNavigate("ai")} className={cn(GROUP, "flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm text-ink-subtle hover:border-accent")}>
+          <Sparkles className="size-4 shrink-0 text-info" aria-hidden="true" />Ask anything about your money
+        </button>
+        <ul className="mt-2 space-y-2" aria-label="Suggested questions">
+          {personalPrompts(dashboard).slice(0, 2).map(({ icon: Icon, text }) => (
+            <li key={text}><button type="button" onClick={() => onAsk(text)} className="flex min-h-11 w-full items-center gap-2.5 rounded-xl bg-sage-soft px-3 py-2 text-left text-sm text-ink-muted hover:text-ink"><Icon className="size-4 shrink-0" aria-hidden="true" />{text}</button></li>
+          ))}
+        </ul>
+      </PhoneSection>
+    </div>
+  );
+}
+
+function PhoneSection({ title, action, onOpen, children }: { title: string; action?: string; onOpen?: () => void; children: React.ReactNode }) {
+  const id = useId();
+  return (
+    <section aria-labelledby={id}>
+      <div className="mb-1 flex items-center justify-between gap-3 px-1">
+        <h2 id={id} className="text-base font-semibold tracking-tight text-ink">{title}</h2>
+        {action && onOpen && <button type="button" onClick={onOpen} className="-mr-2 inline-flex min-h-11 items-center gap-0.5 rounded-lg px-2 text-sm font-semibold text-info">{action}<ChevronRight className="size-4" aria-hidden="true" /></button>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Glance({ icon: Icon, tone, label, value, detail, onOpen }: { icon: LucideIcon; tone: string; label: string; value: string; detail?: string; onOpen: () => void }) {
+  return (
+    <li>
+      <button type="button" onClick={onOpen} className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-sage-soft">
+        <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", tone)} aria-hidden="true"><Icon className="size-5" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-ink">{label}</span>
+          {detail && <span className="block truncate text-xs text-ink-subtle">{detail}</span>}
+        </span>
+        <span className="tabular shrink-0 font-semibold text-ink">{value}</span>
+        <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
+      </button>
+    </li>
+  );
+}
+
+function dueIn(days: number): string {
+  if (days < 0) return "Overdue";
+  if (days === 0) return "Today";
+  return days === 1 ? "Tomorrow" : `In ${days} days`;
+}
+
+function PhoneBills({ dashboard, onOpen }: { dashboard: Dashboard; onOpen: () => void }) {
+  const byId = new Map(dashboard.categories.map((category) => [category.id, category]));
+  const bills = new Map(dashboard.bills.map((bill) => [bill.id, bill]));
+  const items = dashboard.recurring.items.slice(0, 3);
+  return (
+    <PhoneSection title="Coming up" action="All bills" onOpen={onOpen}>
+      {items.length === 0 ? <p className={cn(GROUP, "p-4 text-sm text-ink-subtle")}>No bills set up yet.</p> : (
+        <ul className={cn(GROUP, "divide-y divide-line")}>
+          {items.map((item) => {
+            const bill = bills.get(item.id);
+            const Icon = categoryIcon(bill?.category_id ? byId.get(bill.category_id) : undefined);
+            const soon = item.days_until_due <= 3;
+            return (
+              <li key={item.id}>
+                <button type="button" onClick={onOpen} className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sage-soft">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-sage text-ink-muted" aria-hidden="true"><Icon className="size-4" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-ink">{item.name}</span>
+                    <span className="block text-xs"><span className={soon ? "font-semibold text-danger" : "text-ink-subtle"}>{dueIn(item.days_until_due)}</span><span className="text-ink-subtle"> · {formatShortDate(item.next_due)}</span></span>
+                  </span>
+                  <span className="tabular shrink-0 text-sm font-semibold text-ink">{cad(item.amount_cents)}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </PhoneSection>
+  );
+}
+
+function shiftDay(value: string, days: number): string {
+  const day = new Date(`${value}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + days);
+  return day.toISOString().slice(0, 10);
+}
+
+/** The latest transactions, grouped under Today, Yesterday, or the date, like a bank app's feed. */
+function PhoneRecent({ dashboard, onOpen }: { dashboard: Dashboard; onOpen: () => void }) {
+  const byId = new Map(dashboard.categories.map((category) => [category.id, category]));
+  const today = dashboard.money_calendar.today;
+  const dayLabel = (value: string) => value === today ? "Today" : today && value === shiftDay(today, -1) ? "Yesterday" : formatShortDate(value);
+  const groups: { day: string; rows: Transaction[] }[] = [];
+  for (const item of dashboard.transactions.slice(0, 4)) {
+    const last = groups.at(-1);
+    if (last?.day === item.occurred_on) last.rows.push(item);
+    else groups.push({ day: item.occurred_on, rows: [item] });
+  }
+  return (
+    <PhoneSection title="Recent" action="See all" onOpen={onOpen}>
+      {groups.length === 0 ? <p className={cn(GROUP, "p-4 text-sm text-ink-subtle")}>No transactions {dashboard.period.phrase} yet.</p> : (
+        <div className={GROUP}>
+          {groups.map((group) => (
+            <section key={group.day} aria-label={dayLabel(group.day)} className="border-t border-line first:border-t-0">
+              <h3 className="px-4 pb-0.5 pt-2.5 text-xs font-semibold text-ink-subtle" aria-hidden="true">{dayLabel(group.day)}</h3>
+              <ul>
+                {group.rows.map((item) => {
+                  const category = item.category_id ? byId.get(item.category_id) : undefined;
+                  const Icon = categoryIcon(category, item.kind);
+                  const income = item.kind === "income";
+                  return (
+                    <li key={item.id}>
+                      <button type="button" onClick={onOpen} className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left hover:bg-sage-soft">
+                        <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", income ? "bg-money-in-soft text-money-in" : "bg-sage text-ink-muted")} aria-hidden="true"><Icon className="size-4" /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-ink">{item.description}</span>
+                          {item.category && <span className="block truncate text-xs text-ink-subtle">{item.category}</span>}
+                        </span>
+                        <span className={cn("tabular shrink-0 text-sm font-semibold", income ? "text-money-in" : "text-ink")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+    </PhoneSection>
+  );
+}
+
+/** Financial health as one row that opens how it's scored; phone Goals shows it (Home's card is desktop-only). */
+export function FinancialHealthRow({ dashboard }: { dashboard: Dashboard }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <ul className={GROUP}>
+        <Glance icon={HeartPulse} tone="bg-sage text-ink-muted" label="Financial health" value={`${dashboard.financial_health.score}/100`} detail="How it’s scored" onOpen={() => setOpen(true)} />
+      </ul>
+      <ScoreDialog open={open} onOpenChange={setOpen} dashboard={dashboard} />
+    </>
   );
 }
 

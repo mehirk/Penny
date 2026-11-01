@@ -80,7 +80,7 @@ function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dash
   const [prefill, setPrefill] = useState<ParsedTransaction | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const today = defaultTransactionDate(dashboard.active_month);
+  const today = defaultTransactionDate(dashboard.active_month, dashboard.money_calendar.today);
 
   function onParsed(items: ParsedTransaction[]) {
     if (items.length === 1) {
@@ -142,7 +142,7 @@ function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestD
   const [categoryTouched, setCategoryTouched] = useState(Boolean(item || prefillCategory));
   const [suggestion, setSuggestion] = useState<CategorySuggestion | null>(null);
   const [account, setAccount] = useState(item?.account_id ?? dashboard.accounts.find((a) => a.account_type === "chequing")?.id ?? dashboard.accounts[0]?.id ?? "");
-  const [date, setDate] = useState(item?.occurred_on ?? prefill?.occurred_on ?? defaultTransactionDate(dashboard.active_month));
+  const [date, setDate] = useState(item?.occurred_on ?? prefill?.occurred_on ?? defaultTransactionDate(dashboard.active_month, dashboard.money_calendar.today));
   const [adding, setAdding] = useState<"category" | "account" | null>(null);
   const [splits, setSplits] = useState<SplitDraft>({});
   const [splitErrors, setSplitErrors] = useState<Record<string, string>>({});
@@ -232,10 +232,11 @@ function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestD
         })}
       </div>
 
+      {/* A neutral frame: a coloured one read as an error before anything was typed. The sign carries the kind. */}
       <Field label="Amount (CAD)" error={amountError} hint={splitMode ? "The total of the accounts below." : undefined}>
         {(props) => (
-          <div className={cn("flex items-center rounded-2xl border-2 px-4 transition-colors focus-within:ring-4 focus-within:ring-accent/15", style.on)}>
-            <span className="tabular shrink-0 whitespace-nowrap text-3xl font-semibold" aria-hidden="true">{style.sign}$</span>
+          <div className="flex items-center rounded-2xl border-2 border-line bg-sage-soft px-4 transition-colors focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15">
+            <span className={cn("tabular shrink-0 whitespace-nowrap text-3xl font-semibold", style.text)} aria-hidden="true">{style.sign}$</span>
             {splitMode
               ? <output {...props} className="tabular flex min-h-16 w-full min-w-0 items-center px-1 text-3xl font-semibold text-ink">{centsToInput(String(splitTotal))}</output>
               : <input {...props} name="amount" inputMode="decimal" enterKeyHint="next" autoComplete="off" placeholder="0.00" defaultValue={item ? centsToInput(String(item.amount_cents)) : prefill?.amount_cents ? centsToInput(String(prefill.amount_cents)) : ""} required className="tabular min-h-16 w-full min-w-0 bg-transparent px-1 text-3xl font-semibold text-ink placeholder:text-ink-subtle/60 focus:outline-none" />}
@@ -358,7 +359,7 @@ function QuickAdd({ onParsed, filled }: { onParsed: (items: ParsedTransaction[])
       <p id={hintId} role="status" className={cn("mt-1.5 text-xs", error ? "text-danger" : "text-ink-subtle")}>
         {error || (filled
           ? `Filled in ${filled.source === "ai" ? "by Penny AI" : "from your note"}${repeat ? `, set to repeat ${FREQUENCY_WORDS[repeat.frequency]} (next ${shortDateLabel(repeat.next_due)})` : ""}. Review it below, then add it.`
-          : "Add one, or several separated by ; or a new line (Shift+Enter). Nothing saves until you review it.")}
+          : <>Add one, or several separated by ; or a new line<span className="max-sm:hidden"> (Shift+Enter)</span>. Nothing saves until you review it.</>)}
       </p>
     </div>
   );

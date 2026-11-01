@@ -379,7 +379,8 @@ function PennyApp() {
             {view === "ai" && <CoachView chat={coachChat} dashboard={dashboard} onDashboardChange={applyChange} onApproved={(message) => toast({ title: "Change applied", description: message })} />}
             {view === "settings" && <SettingsView dashboard={dashboard} save={mutate} />}
           </div>
-          <div className="mt-8"><MobileAccount dashboard={dashboard} /></div>
+          {/* Small screens: the signed-in account and Sign out sit at the end of Settings. */}
+          {view === "settings" && <div className="mt-8"><MobileAccount dashboard={dashboard} /></div>}
         </main>
       </div>
       <MobileNavigation active={view} onNavigate={navigate} />

@@ -362,6 +362,16 @@ class Period(DashboardModel):
     month_count: int = Field(ge=1)
 
 
+class SpendingRunway(DashboardModel):
+    """How long Safe to spend has to last and what it allows per day (app.domain.runway)."""
+
+    until: date
+    until_payday: bool
+    days_left: int = Field(ge=1)
+    per_day_cents: int = Field(ge=0)
+    status: Literal["on_track", "tight", "empty"]
+
+
 class DashboardTotals(Summary):
     available_balance_cents: int
     total_budget_cents: int = Field(ge=0)
@@ -396,6 +406,8 @@ class DashboardResponse(DashboardModel):
     accounts_overview: AccountsOverview
     previous_month_cash_flow_cents: int | None
     spending_power_cents: int = Field(ge=0)
+    # Only while the period shown includes today.
+    spending_runway: SpendingRunway | None
     totals: DashboardTotals
 
 

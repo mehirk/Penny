@@ -61,6 +61,7 @@ from app.dashboard_models import (
     RecurringExpense,
     RecurringSummary,
     SpendingClassification,
+    SpendingRunway,
     SplitTransactionWrite,
     TransactionPatch,
     TransactionRepeat,
@@ -91,6 +92,7 @@ from app.domain.pay_cycle import (
 from app.domain.pay_cycle import Event as CycleEvent
 from app.domain.periods import describe_period, month_end, months_between
 from app.domain.recurring import detect_fixed_series, series_key
+from app.domain.runway import runway
 from app.fixtures import build_demo_dashboard
 from app.history_fixtures import build_history_budgets, build_history_transactions
 from app.learning.content import LESSONS_BY_ID, TOPICS, LessonContent
@@ -999,6 +1001,29 @@ class DashboardStore:
             recurring = self._recurring()
             calendar_view = self._money_calendar(month, recurring.items)
             learning = build_learning(self._learner, self._mission_xp(), self.today())
+            safe_cents = max(
+                0,
+                min(
+                    summary.budget_remaining_cents,
+                    cash_balance - recurring.due_before_payday_cents,
+                ),
+            )
+            today = self.today()
+            spending_runway = (
+                SpendingRunway(
+                    **asdict(
+                        runway(
+                            safe_cents,
+                            today,
+                            self._next_payday(),
+                            month_end(month),
+                            calendar_view.daily_allowance_cents,
+                        )
+                    )
+                )
+                if month <= today <= month_end(month)
+                else None
+            )
             return DashboardResponse(
                 active_month=month,
                 period=self._period(month, month_end(month)),
@@ -1067,13 +1092,8 @@ class DashboardStore:
                     self.today(),
                 ),
                 previous_month_cash_flow_cents=previous_cash_flow,
-                spending_power_cents=max(
-                    0,
-                    min(
-                        summary.budget_remaining_cents,
-                        cash_balance - recurring.due_before_payday_cents,
-                    ),
-                ),
+                spending_power_cents=safe_cents,
+                spending_runway=spending_runway,
                 totals=DashboardTotals(
                     **asdict(summary),
                     available_balance_cents=asset_balance,

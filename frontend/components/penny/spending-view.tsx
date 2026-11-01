@@ -59,11 +59,12 @@ export function SpendingView(props: Props) {
         ))}
       </div>
       {tab === "transactions" ? (
-        <div id="spending-panel-transactions" role="tabpanel" aria-labelledby="spending-tab-transactions" className="space-y-8">
+        // On a phone, budgets ("Food $30 over") come before Penny's take.
+        <div id="spending-panel-transactions" role="tabpanel" aria-labelledby="spending-tab-transactions" className="flex flex-col gap-8">
           <TransactionsPanel dashboard={dashboard} onChangePeriod={props.onChangePeriod} onAdd={props.onAddTransaction} onEdit={props.onEditTransaction} onDelete={props.onDeleteTransaction} />
-          <SpendingTake dashboard={dashboard} version={props.historyVersion} onAsk={props.onAsk} />
+          <div className="max-sm:order-1"><SpendingTake dashboard={dashboard} version={props.historyVersion} onAsk={props.onAsk} /></div>
           <Budgets {...props} />
-          <Trends dashboard={dashboard} historyVersion={props.historyVersion} onSelectMonth={props.onSelectMonth} />
+          <div className="max-sm:order-2"><Trends dashboard={dashboard} historyVersion={props.historyVersion} onSelectMonth={props.onSelectMonth} /></div>
         </div>
       ) : (
         <div id="spending-panel-recurring" role="tabpanel" aria-labelledby="spending-tab-recurring">

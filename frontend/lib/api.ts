@@ -74,8 +74,12 @@ export type Dashboard = {
   accounts_overview: AccountsOverview;
   previous_month_cash_flow_cents: number | null;
   spending_power_cents: number;
+  /** How long Safe to spend has to last; null when the period shown doesn't include today. */
+  spending_runway: SpendingRunway | null;
   totals: { available_balance_cents: number; income_cents: number; spending_cents: number; cash_flow_cents: number; total_budget_cents: number; budget_remaining_cents: number; savings_contributions_cents: number; savings_rate_basis_points: number };
 };
+
+export type SpendingRunway = { until: string; until_payday: boolean; days_left: number; per_day_cents: number; status: "on_track" | "tight" | "empty" };
 
 export type HistoryMonth = { month: string; income_cents: number; spending_cents: number; cash_flow_cents: number; budget_cents: number; transaction_count: number };
 export type History = {

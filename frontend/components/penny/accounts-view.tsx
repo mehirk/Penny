@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowDownLeft, ArrowUpRight, Banknote, CreditCard, Landmark, LineChart, PiggyBank, Settings, TriangleAlert, Wallet, type LucideIcon } from "lucide-react";
+import { useId, useState } from "react";
+import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronDown, CreditCard, Landmark, LineChart, PiggyBank, Settings, TriangleAlert, Wallet, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,20 +42,24 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
   const goalHomes = accounts.filter((account) => account.goal_cents > 0).map((account) => `${cad(account.goal_cents)} in ${account.name}`).join(" · ");
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    // On a phone the AI read moves below the list, so the balances come first.
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <section id="total-balance" aria-labelledby="total-title" className="scroll-mt-28 grid gap-5 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6 lg:grid-cols-[1fr_1.15fr]">
         <div>
           <h2 id="total-title" className="text-sm text-ink-subtle">Your total balance (net worth)</h2>
           <p className={cn("tabular mt-1 text-4xl font-semibold tracking-tight", negative ? "text-danger" : "text-ink")}>{cad(overview.net_worth_cents)}</p>
-          <p className="mt-1 text-sm text-ink-muted">Everything in your accounts, minus what you owe on cards. As of today.</p>
-          <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+          <p className="mt-1 text-sm text-ink-muted">
+            <span className="sm:hidden">You have <span className="tabular font-semibold text-ink">{cad(overview.assets_cents)}</span> and owe <span className={cn("tabular font-semibold", overview.owed_cents ? "text-danger" : "text-ink")}>{cad(overview.owed_cents)}</span>.</span>
+            <span className="hidden sm:inline">Everything in your accounts, minus what you owe on cards. As of today.</span>
+          </p>
+          <div className="mt-5 hidden grid-cols-3 gap-2 text-center sm:grid">
             <Sum label="You have" value={cad(overview.assets_cents)} tone="text-ink" />
             <Sum label="You owe" value={`−${cad(overview.owed_cents)}`} tone={overview.owed_cents ? "text-danger" : "text-ink"} />
             <Sum label="Total" value={cad(overview.net_worth_cents)} tone={negative ? "text-danger" : "text-money-in"} strong />
           </div>
         </div>
 
-        <div className="rounded-2xl bg-sage-soft/70 p-4">
+        <div className="hidden rounded-2xl bg-sage-soft/70 p-4 sm:block">
           <h3 className="text-sm font-semibold text-ink">How it adds up</h3>
           <ul className="mt-2 divide-y divide-line text-sm">
             {accounts.map((account) => (
@@ -70,9 +75,9 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
         </div>
       </section>
 
-      <AccountsRead version={dashboard.accounts_overview.net_worth_cents} onAsk={onAsk} />
+      <div className="max-sm:order-1"><AccountsRead version={dashboard.accounts_overview.net_worth_cents} onAsk={onAsk} /></div>
 
-      <section aria-label="Where your money is" className="grid gap-3 sm:grid-cols-3">
+      <section aria-label="Where your money is" className="hidden gap-3 sm:grid sm:grid-cols-3">
         <Tile icon={Wallet} tone={TYPE_STYLE.chequing.tone} title="Spending money" value={cad(overview.spending_cents)} detail="Chequing and cash. This is what Home calls available." />
         <Tile icon={PiggyBank} tone={TYPE_STYLE.savings.tone} title="Set aside for goals" value={cad(overview.goal_cents)} detail={goalHomes || "No goal money yet. Add some from Goals."} onOpen={() => onNavigate("goals")} />
         <Tile icon={CreditCard} tone={TYPE_STYLE.credit.tone} title="Owed on cards" value={cad(overview.owed_cents)} detail={overview.owed_cents ? "Paying it in full by the due date avoids interest." : "Nothing owed. Nice."} />
@@ -89,15 +94,15 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 id="accounts-list-title" className="text-lg font-semibold tracking-tight text-ink">Accounts</h2>
-            <p className="text-sm text-ink-subtle">Balances today, with money in and out so far this month.</p>
+            <p className="text-sm text-ink-subtle"><span className="sm:hidden">Tap an account for details.</span><span className="hidden sm:inline">Balances today, with money in and out so far this month.</span></p>
           </div>
           <Button size="sm" variant="outline" onClick={() => onNavigate("settings")}><Settings className="size-4" aria-hidden="true" />Add or rename</Button>
         </div>
-        <ul className="grid gap-4 md:grid-cols-2">
+        <ul className="grid gap-3 sm:gap-4 md:grid-cols-2">
           {accounts.map((account) => <AccountCard key={account.id} account={account} />)}
         </ul>
       </section>
-      <p className="px-1 text-xs text-ink-subtle">{dashboard.profile.is_fictional ? "All accounts and balances are fictional. " : ""}No bank is connected; balances change only when you record money in or out.</p>
+      <p className="px-1 text-xs text-ink-subtle max-sm:order-2">{dashboard.profile.is_fictional ? "All accounts and balances are fictional. " : ""}No bank is connected; balances change only when you record money in or out.</p>
     </div>
   );
 }
@@ -131,43 +136,58 @@ function AccountCard({ account }: { account: AccountBalance }) {
   const Icon = style.icon;
   const credit = account.account_type === "credit";
   const used = account.utilization_basis_points;
+  const [open, setOpen] = useState(false);
+  const detailsId = useId();
+  const balance = <p className={cn("tabular text-lg font-semibold tracking-tight sm:text-xl", credit && account.balance_cents > 0 ? "text-danger" : "text-ink")}>{credit && account.balance_cents > 0 ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)}</p>;
   return (
     <li id={`account-${account.account_type === "credit" ? "credit" : account.id}`} className="scroll-mt-28 rounded-[var(--radius-card)]">
-      <Card className="flex h-full flex-col p-5">
-        <div className="flex items-start gap-3">
+      <Card className="flex h-full flex-col p-4 sm:p-5">
+        {/* Phone: name and balance only; tap to open the details. */}
+        <button type="button" aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen((value) => !value)} className="flex min-h-11 items-center gap-3 text-left sm:hidden">
+          <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", style.tone)} aria-hidden="true"><Icon className="size-5" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-semibold text-ink">{account.name}</span>
+            <span className="block text-xs text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}{credit ? " · owed" : ""}</span>
+          </span>
+          {balance}
+          <ChevronDown className={cn("size-4 shrink-0 text-ink-muted transition-transform", open && "rotate-180")} aria-hidden="true" />
+        </button>
+        <div className="hidden items-start gap-3 sm:flex">
           <span className={cn("grid size-11 shrink-0 place-items-center rounded-xl", style.tone)} aria-hidden="true"><Icon className="size-5" /></span>
           <div className="min-w-0 flex-1">
             <h3 className="truncate font-semibold text-ink">{account.name}</h3>
             <Badge tone="neutral" className="mt-0.5">{ACCOUNT_TYPE_LABELS[account.account_type]}</Badge>
           </div>
           <div className="shrink-0 text-right">
-            <p className={cn("tabular text-xl font-semibold tracking-tight", credit && account.balance_cents > 0 ? "text-danger" : "text-ink")}>{credit && account.balance_cents > 0 ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)}</p>
+            {balance}
             <p className="text-xs text-ink-subtle">{credit ? "owed" : "balance"}</p>
           </div>
         </div>
 
-        {credit ? (
-          account.credit_limit_cents !== null && used !== null && (
-            <div className="mt-4">
-              <Progress className="h-2.5" value={Math.min(100, used / 100)} indicatorClassName={used > 3000 ? "bg-danger" : "bg-accent"} aria-label={`${(used / 100).toFixed(0)}% of the limit used`} />
-              <p className="mt-1.5 flex justify-between gap-2 text-xs text-ink-subtle">
-                <span>{(used / 100).toFixed(1)}% of {cad(account.credit_limit_cents)} used</span>
-                <span className="tabular">{cad(account.available_credit_cents ?? 0)} available</span>
-              </p>
+        <div id={detailsId} className={cn("flex-1 flex-col sm:flex", open ? "flex" : "hidden")}>
+          {credit ? (
+            account.credit_limit_cents !== null && used !== null && (
+              <div className="mt-4">
+                <Progress className="h-2.5" value={Math.min(100, used / 100)} indicatorClassName={used > 3000 ? "bg-danger" : "bg-accent"} aria-label={`${(used / 100).toFixed(0)}% of the limit used`} />
+                <p className="mt-1.5 flex justify-between gap-2 text-xs text-ink-subtle">
+                  <span>{(used / 100).toFixed(1)}% of {cad(account.credit_limit_cents)} used</span>
+                  <span className="tabular">{cad(account.available_credit_cents ?? 0)} available</span>
+                </p>
+              </div>
+            )
+          ) : account.goals.length > 0 ? (
+            <div className="mt-4 rounded-xl bg-sage-soft/70 p-3 text-sm">
+              <p className="flex justify-between gap-2"><span className="text-ink-muted">Kept here for goals</span><span className="tabular font-semibold text-ink">{cad(account.goal_cents)}</span></p>
+              <ul className="mt-1 space-y-0.5 text-xs text-ink-subtle">{account.goals.map((goal) => <li key={goal.id} className="flex justify-between gap-2"><span className="truncate">· {goal.name}</span><span className="tabular">{cad(goal.current_cents)}</span></li>)}</ul>
+              <p className="mt-2 flex justify-between gap-2 border-t border-line pt-2"><span className="text-ink-muted">Free to use</span><span className="tabular font-semibold text-ink">{cad(account.free_cents ?? 0)}</span></p>
             </div>
-          )
-        ) : account.goals.length > 0 ? (
-          <div className="mt-4 rounded-xl bg-sage-soft/70 p-3 text-sm">
-            <p className="flex justify-between gap-2"><span className="text-ink-muted">Kept here for goals</span><span className="tabular font-semibold text-ink">{cad(account.goal_cents)}</span></p>
-            <ul className="mt-1 space-y-0.5 text-xs text-ink-subtle">{account.goals.map((goal) => <li key={goal.id} className="flex justify-between gap-2"><span className="truncate">· {goal.name}</span><span className="tabular">{cad(goal.current_cents)}</span></li>)}</ul>
-            <p className="mt-2 flex justify-between gap-2 border-t border-line pt-2"><span className="text-ink-muted">Free to use</span><span className="tabular font-semibold text-ink">{cad(account.free_cents ?? 0)}</span></p>
-          </div>
-        ) : null}
+          ) : null}
 
-        <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 pt-4 text-xs text-ink-subtle">
-          <span className="inline-flex items-center gap-1"><ArrowDownLeft className="size-3.5 text-money-in" aria-hidden="true" />In this month <span className="tabular font-semibold text-ink">{cad(account.money_in_cents)}</span></span>
-          <span className="inline-flex items-center gap-1"><ArrowUpRight className="size-3.5 text-money-out" aria-hidden="true" />Out <span className="tabular font-semibold text-ink">{cad(account.money_out_cents)}</span></span>
-          <span className="ml-auto">{account.last_activity_on ? `Last activity ${formatShortDate(account.last_activity_on)}` : "No transactions yet"}</span>
+          <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 pt-4 text-xs text-ink-subtle">
+            <span className="inline-flex items-center gap-1"><ArrowDownLeft className="size-3.5 text-money-in" aria-hidden="true" />In this month <span className="tabular font-semibold text-ink">{cad(account.money_in_cents)}</span></span>
+            <span className="inline-flex items-center gap-1"><ArrowUpRight className="size-3.5 text-money-out" aria-hidden="true" />Out <span className="tabular font-semibold text-ink">{cad(account.money_out_cents)}</span></span>
+            <span className="ml-auto">{account.last_activity_on ? `Last activity ${formatShortDate(account.last_activity_on)}` : "No transactions yet"}</span>
+          </div>
         </div>
       </Card>
     </li>

@@ -261,13 +261,13 @@ export function CoachView({ chat, dashboard, onDashboardChange, onApproved }: { 
         <Composer disabled={pending} onSend={(text) => void chat.send(text)} />
         <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-ink-subtle">
           <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-          Educational guidance using fictional data. Every amount Penny quotes is checked against your records, and nothing changes without your approval. Chats are saved on this device.
+          Educational guidance using fictional data. Every amount Penny quotes is checked against your records, and nothing changes without your approval. Chats are saved to your account.
         </p>
       </div>
 
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Your chats</DialogTitle><DialogDescription>Saved on this device.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Your chats</DialogTitle><DialogDescription>Saved to your account, so they follow you to other devices.</DialogDescription></DialogHeader>
           {historyList}
         </DialogContent>
       </Dialog>
@@ -356,7 +356,7 @@ function Composer({ disabled, onSend }: { disabled: boolean; onSend: (text: stri
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
           enterKeyHint="send"
-          placeholder="Can I afford a $300 concert trip? How do I hit my goal sooner?"
+          placeholder="Can I afford a $300 concert trip?"
           className="max-h-40 min-h-11 flex-1 resize-none bg-transparent px-2 py-2.5 text-base text-ink [field-sizing:content] placeholder:text-ink-subtle/80 focus:outline-none"
         />
         <Button type="submit" size="icon" disabled={disabled || !text.trim()} aria-label="Send question">

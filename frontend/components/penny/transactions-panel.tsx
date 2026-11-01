@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
-import { ArrowDownLeft, ArrowUpDown, ArrowUpRight, CalendarDays, ChevronRight, Download, LoaderCircle, Pencil, Plus, ReceiptText, Repeat, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowUpDown, CalendarDays, ChevronRight, Download, LoaderCircle, Pencil, Plus, ReceiptText, Repeat, Search, Sparkles, Trash2, X } from "lucide-react";
 import { Calendar, shortDateLabel } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
-import { assistApi, type Dashboard, type SearchFilters, type Transaction } from "@/lib/api";
+import { assistApi, type Category, type Dashboard, type SearchFilters, type Transaction } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { EMPTY_FILTERS, filterTransactions, hasActiveFilters, type KindFilter, sortTransactions, type TransactionFilters, type TransactionSort, transactionsToCsv } from "@/lib/transactions";
 import { cn } from "@/lib/utils";
 import { categoryOptions } from "./dialogs";
 import { cad, EmptyState } from "./shared";
+import { categoryIcon } from "./today-view";
 
 type Props = {
   dashboard: Dashboard;
@@ -82,6 +83,7 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
   const headingId = useId();
   const searchId = useId();
   const accounts = useMemo(() => new Map(dashboard.accounts.map((account) => [account.id, account.name])), [dashboard.accounts]);
+  const categories = useMemo(() => new Map(dashboard.categories.map((category) => [category.id, category])), [dashboard.categories]);
   const rows = useMemo(() => {
     const parents = new Map(dashboard.categories.map((category) => [category.id, category.parent_id]));
     return sortTransactions(filterTransactions(dashboard.transactions, filters, (id) => parents.get(id) ?? null), sort);
@@ -116,7 +118,7 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {rows.length > 0 && <Button variant="outline" size="sm" onClick={exportCsv} aria-label={`Export ${filtering ? "filtered " : ""}transactions as CSV`}><Download className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Export</span></Button>}
-          <Button size="sm" onClick={onAdd}><Plus className="size-4" aria-hidden="true" />Add<span className="sr-only"> transaction</span></Button>
+          <Button size="sm" onClick={onAdd} className="max-sm:hidden"><Plus className="size-4" aria-hidden="true" />Add<span className="sr-only"> transaction</span></Button>
         </div>
       </div>
 
@@ -131,8 +133,7 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
                 {searching ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
               </button>
             </div>
-            {/* On phones the controls share one row that scrolls sideways. */}
-            <div className="scroll-area -mx-4 flex min-w-0 items-center gap-2 overflow-x-auto px-4 pb-0.5 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&>*]:shrink-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
             <div role="radiogroup" aria-label="Money in or out" className="inline-flex rounded-lg bg-sage-soft p-0.5">
               {KIND_OPTIONS.map((option) => (
                 <button key={option.value} type="button" role="radio" aria-checked={filters.kind === option.value} onClick={() => setFilters({ ...filters, kind: option.value })} className={cn("min-h-9 rounded-md px-3 text-sm font-semibold transition-colors", filters.kind === option.value ? "bg-surface text-ink shadow-sm" : "text-ink-muted hover:text-ink")}>
@@ -161,7 +162,7 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
           <p id={`${searchId}-hint`} aria-live="polite" className={cn("mt-2 flex flex-wrap items-center gap-1.5 text-xs", searchError ? "text-danger" : "text-ink-subtle")}>
             {searchError || (understood
               ? <><Sparkles className="size-3.5 text-accent-strong" aria-hidden="true" />Showing <span className="font-semibold text-ink">{understood.summary}</span>{understood.source === "ai" ? " · read by Penny AI" : ""}</>
-              : "Type to filter by name, or press Enter to search in plain words.")}
+              : <span className="max-sm:sr-only">Type to filter by name, or press Enter to search in plain words.</span>)}
           </p>
         </div>
       )}
@@ -193,11 +194,11 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
                   <tr key={item.id} className="group transition-colors hover:bg-sage-soft/60">
                     <td className="border-b border-line/70 p-0 group-last:border-b-0 md:py-3 md:pl-5 md:pr-3">
                       <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left md:hidden" aria-expanded={expanded === item.id} aria-label={`${item.description}, ${income ? "money in" : "money out"} ${cad(item.amount_cents)}, ${item.category}, ${formatShortDate(item.occurred_on)}. Show details`}>
-                        <TransactionIdentity item={item} />
+                        <TransactionIdentity item={item} category={item.category_id ? categories.get(item.category_id) : undefined} />
                         <span className={cn("tabular whitespace-nowrap shrink-0 font-semibold", income ? "text-money-in" : "text-money-out")}>{income ? cad(item.amount_cents, true) : cad(-item.amount_cents)}</span>
                         <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
                       </button>
-                      <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id} className="hidden min-w-0 items-center gap-3 text-left md:flex"><TransactionIdentity item={item} /></button>
+                      <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id} className="hidden min-w-0 items-center gap-3 text-left md:flex"><TransactionIdentity item={item} category={item.category_id ? categories.get(item.category_id) : undefined} /></button>
                       {expanded === item.id && <div className="mx-4 mb-3 rounded-xl bg-sage-soft p-3 text-xs text-ink-muted md:mx-0 md:mb-0 md:mt-2"><p>{income ? "Income" : "Expense"} · {accounts.get(item.account_id) ?? "Unknown account"}{item.bill_id ? ` · ${item.paid_automatically === true ? "paid automatically" : item.paid_automatically === false ? "you marked it paid" : "recurring payment"}` : ""}</p><div className="mt-2 flex gap-2 md:hidden"><Button size="sm" variant="outline" onClick={() => onEdit(item)}>Edit</Button><Button size="sm" variant="destructive-soft" onClick={() => onDelete(item)}>Delete</Button></div></div>}
                     </td>
                     <td className="hidden truncate border-b border-line/70 px-3 py-3 text-ink-muted group-last:border-b-0 lg:table-cell">{accounts.get(item.account_id) ?? "—"}</td>
@@ -221,21 +222,22 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onEdit, on
   );
 }
 
-function TransactionIdentity({ item }: { item: Transaction }) {
+/** The category's icon, as on Home, so a list of purchases can be scanned by kind. */
+function TransactionIdentity({ item, category }: { item: Transaction; category: Category | undefined }) {
   const income = item.kind === "income";
   return (
     <>
-      <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", income ? "bg-money-in-soft text-money-in" : "bg-money-out-soft text-money-out")} aria-hidden="true">
-        {income ? <ArrowDownLeft className="size-[1.1rem]" /> : <ArrowUpRight className="size-[1.1rem]" />}
+      <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", income ? "bg-money-in-soft text-money-in" : "bg-sage text-ink-muted")} aria-hidden="true">
+        {createElement(categoryIcon(category, item.kind), { className: "size-[1.1rem]" })}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-semibold text-ink">{item.description}</span>
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-subtle">
           <span className="truncate">{item.category} · {formatShortDate(item.occurred_on)}</span>
           {item.bill_id && <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-[#f2ecff] px-1.5 py-px text-[11px] font-semibold text-[#7047b7] dark:bg-[#302847] dark:text-[#c1a5ee]"><Repeat className="size-2.5" aria-hidden="true" />Recurring</span>}
-          {item.necessity && <span className={cn("shrink-0 rounded-full px-1.5 py-px text-[11px] font-semibold", item.necessity === "need" ? "bg-info-soft text-info" : "bg-gold-soft text-gold-strong")}>{item.necessity === "need" ? "Need" : "Want"}</span>}
+          {item.necessity && <span className={cn("shrink-0 rounded-full px-1.5 max-sm:hidden py-px text-[11px] font-semibold", item.necessity === "need" ? "bg-info-soft text-info" : "bg-gold-soft text-gold-strong")}>{item.necessity === "need" ? "Need" : "Want"}</span>}
           {item.unusual && <span className="shrink-0 rounded-full bg-danger-soft px-1.5 py-px text-[11px] font-semibold text-danger" title="At least 3 times what you usually spend on one purchase in this category">Unusual</span>}
-          {item.auto_categorized && <span className="shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[11px] font-semibold text-accent-strong" title="Category picked automatically from the merchant name">Auto</span>}
+          {item.auto_categorized && <span className="shrink-0 max-sm:hidden rounded-full bg-accent-soft px-1.5 py-px text-[11px] font-semibold text-accent-strong" title="Category picked automatically from the merchant name">Auto</span>}
         </span>
       </span>
     </>

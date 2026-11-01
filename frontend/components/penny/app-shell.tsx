@@ -345,8 +345,19 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
   const summary = `You have ${cad(dashboard.home.available_cents)} available and ${saved} ${period.phrase}.`;
   const description = pastHome ? `Looking back at ${period.label}. Balances and goals show today’s values.` : view === "today" ? summary : item.description;
   const showMonth = MONTH_VIEWS.includes(view);
+  // Phone Home is about today: a short greeting and no period picker (it's on Spending). Looking
+  // back at a past month keeps the picker, so there's a way back.
+  const phoneToday = view === "today" && includesNow;
   const showAdd = view === "today" || view === "spending";
+  const picker = (
+    <>
+      <PeriodPicker dashboard={dashboard} loading={monthLoading} onChange={onChangePeriod} />
+      {/* Phones already say so in the line under the title. */}
+      {dashboard.profile.is_fictional && <Badge tone="gold" className="max-sm:hidden">Fictional data</Badge>}
+    </>
+  );
   return (
+    <>
     <header className="sticky top-0 z-20 border-b border-line/70 bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur-md">
       <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-10 lg:py-4">
         {/* Actions sit beside the title on phones, and centred against the whole header (title,
@@ -355,7 +366,7 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
           <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
             <BrandMark className="size-9 lg:hidden" />
             <div className="min-w-0">
-              <h1 id="page-title" tabIndex={-1} className="truncate text-lg font-semibold tracking-tight text-ink focus:outline-none sm:text-2xl">{title}</h1>
+              <h1 id="page-title" tabIndex={-1} className="truncate text-lg font-semibold tracking-tight text-ink focus:outline-none sm:text-2xl">{phoneToday ? <><span className="sm:hidden">Hi, {firstName}</span><span className="hidden sm:inline">{title}</span></> : title}</h1>
               <p className="hidden text-sm text-ink-subtle sm:line-clamp-2">{description}</p>
             </div>
           </div>
@@ -367,18 +378,22 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
             )}
             <SettingsMenu onOpenDisplay={onOpenDisplay} onNavigate={onNavigate} />
           </div>
-          {showMonth ? (
-            <div className="col-span-2 mt-3 flex flex-wrap items-center gap-2 sm:col-span-1">
-              <PeriodPicker dashboard={dashboard} loading={monthLoading} onChange={onChangePeriod} />
-              {dashboard.profile.is_fictional && <Badge tone="gold">Fictional data</Badge>}
-            </div>
-          ) : (
-            <p className="col-span-2 mt-1 text-xs text-ink-subtle sm:hidden">{formatMonth(dashboard.current_month)}{dashboard.profile.is_fictional ? " · Fictional data" : ""}</p>
+          {showMonth && (
+            <div className="col-span-1 mt-3 hidden flex-wrap items-center gap-2 sm:flex">{picker}</div>
           )}
-          {pastHome && <p className="col-span-2 mt-2 text-xs text-ink-subtle sm:hidden">Looking back at a past month. Balances and goals show today’s values.</p>}
+          <p className="col-span-2 mt-1 text-xs text-ink-subtle sm:hidden">{showMonth ? period.label : formatMonth(dashboard.current_month)}{dashboard.profile.is_fictional ? " · Fictional data" : ""}</p>
         </div>
       </div>
     </header>
+    {/* Phones: the period picker sits at the top of the page and scrolls away, so the pinned
+        header stays short (like an iOS large title). The line above still names the period. */}
+    {showMonth && !phoneToday && (
+      <div className="px-4 pt-4 sm:hidden">
+        <div className="flex flex-wrap items-center gap-2">{picker}</div>
+        {pastHome && <p className="mt-2 text-xs text-ink-subtle">Looking back at a past month. Balances and goals show today’s values.</p>}
+      </div>
+    )}
+    </>
   );
 }
 
