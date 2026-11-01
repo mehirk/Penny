@@ -360,6 +360,9 @@ function PennyApp() {
       if (!data) throw new Error("Pick at least one budget");
       return data;
     }, `${picked.length} budget${picked.length === 1 ? "" : "s"} updated`);
+  /** Applies an approved rebalance: every limit changes together, or none do. */
+  const applyBudgetChanges = (changes: { budget_id: string; limit_cents: number }[]) =>
+    mutate(() => dashboardApi.applyBudgetChanges(changes, month), "Budgets rebalanced");
   const completeMission = (mission: Mission) => {
     void mutate(() => dashboardApi.completeMission(mission.id, month), `Mission complete · +${mission.xp_reward} XP`)
       .then((error) => { if (error) toast({ title: "Couldn’t complete the mission", description: error, tone: "error" }); });
@@ -401,7 +404,7 @@ function PennyApp() {
           {monthLoading && <PageSkeleton />}
           <div key={view} className={monthLoading ? "hidden" : "animate-fade"} aria-busy={monthLoading}>
             {view === "today" && <TodayView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} onEditTransaction={setTransactionTarget} onSetUp={() => setSetupOpen(true)} />}
-            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: markBillPaid, onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} />}
+            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: markBillPaid, onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} onApplyBudgetChanges={applyBudgetChanges} />}
             {view === "accounts" && <AccountsView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
             {view === "goals" && <GoalsView dashboard={dashboard} onAsk={askPenny} onAdd={() => setGoalTarget("new")} onEdit={setGoalTarget} onAddMoney={setAddMoneyTarget} onComplete={(goal) => void mutate(() => dashboardApi.updateGoal(goal.id, { status: "completed" }, month), `${goal.name} reached`)} />}
             {view === "invest" && <InvestView dashboard={dashboard} onNavigate={navigate} />}

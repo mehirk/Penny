@@ -181,3 +181,60 @@ def test_overdue_bill_is_held_back() -> None:
     _add_rent(store, ids["chequing"], store.today() - timedelta(days=40))
     # Two missed months still unpaid, plus this month's if it's still to come.
     assert store.dashboard_for_user(USER).spending_power_cents <= 250_000 - 20_000
+
+
+def test_breakdown_shows_each_step() -> None:
+    store, ids = _setup()
+    _add_rent(store, ids["chequing"], store.today())
+    safe = store.dashboard_for_user(USER).safe_to_spend
+    assert safe is not None
+    assert (safe.spending_money_cents, safe.unpaid_bills_cents, safe.safe_cents) == (
+        250_000,
+        10_000,
+        240_000,
+    )
+
+
+def test_import_rows_skips_duplicates_and_keeps_balances() -> None:
+    from app.dashboard_models import ImportRow
+
+    store, ids = _setup()
+    row = ImportRow(
+        occurred_on=store.today(), description="Loblaws", amount_cents=4_820, kind="spending"
+    )
+    imported, errors = store.import_rows(USER, [row, row], ids["chequing"])
+    assert (imported, len(errors)) == (1, 1)
+    assert store.dashboard_for_user(USER).safe_to_spend.spending_money_cents == 250_000  # type: ignore[union-attr]
+
+
+def test_budget_changes_apply_together_or_not_at_all() -> None:
+    from app.dashboard_models import BudgetLimitChange, BudgetWrite
+
+    store, ids = _setup()
+    month = store.today().replace(day=1)
+    for category in ("cat-groceries", "cat-fun"):
+        store.create_budget(
+            USER, BudgetWrite(category_id=category, month_start=month, limit_cents=10_000)
+        )
+    budgets = {b.category_id: b.id for b in store.dashboard_for_user(USER).budgets}
+    with pytest.raises(HTTPException):
+        store.apply_budget_changes(
+            USER,
+            [
+                BudgetLimitChange(budget_id=budgets["cat-groceries"], limit_cents=15_000),
+                BudgetLimitChange(budget_id="missing", limit_cents=5_000),
+            ],
+        )
+    limits = {b.category_id: b.limit_cents for b in store.dashboard_for_user(USER).budgets}
+    assert limits["cat-groceries"] == 10_000
+    result = store.apply_budget_changes(
+        USER,
+        [
+            BudgetLimitChange(budget_id=budgets["cat-groceries"], limit_cents=15_000),
+            BudgetLimitChange(budget_id=budgets["cat-fun"], limit_cents=5_000),
+        ],
+    )
+    assert {b.category_id: b.limit_cents for b in result.budgets} == {
+        "cat-groceries": 15_000,
+        "cat-fun": 5_000,
+    }

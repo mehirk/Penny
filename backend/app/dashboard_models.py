@@ -270,6 +270,9 @@ class RecurringSummary(DashboardModel):
     # Unpaid bills (including overdue) through month end or payday, whichever is later; Safe to
     # spend holds this back.
     unpaid_bills_cents: int = Field(ge=0)
+    # The due dates behind unpaid_bills_cents, soonest (or most overdue) first.
+    unpaid: list[UpcomingPayment] = Field(default_factory=list)
+    unpaid_until: date | None = None
     share_of_income_basis_points: int | None
     methodology: str
 
@@ -375,6 +378,21 @@ class SpendingRunway(DashboardModel):
     status: Literal["on_track", "tight", "empty"]
 
 
+class SafeToSpendBreakdown(DashboardModel):
+    """Each step of Safe to spend (app.domain.runway.safe_to_spend), so the app can show it."""
+
+    spending_from: Literal["chequing", "chequing_and_savings"]
+    spending_money_cents: int
+    set_aside_cents: int = Field(ge=0)
+    owed_on_cards_cents: int = Field(ge=0)
+    unpaid_bills_cents: int = Field(ge=0)
+    spent_outside_cents: int = Field(ge=0)
+    safe_cents: int = Field(ge=0)
+    short_cents: int = Field(ge=0)
+    # Held back until this date: the day before payday, or month end if that's later.
+    holds_until: date
+
+
 class DashboardTotals(Summary):
     available_balance_cents: int
     total_budget_cents: int = Field(ge=0)
@@ -409,6 +427,7 @@ class DashboardResponse(DashboardModel):
     accounts_overview: AccountsOverview
     previous_month_cash_flow_cents: int | None
     spending_power_cents: int = Field(ge=0)
+    safe_to_spend: SafeToSpendBreakdown | None = None
     # A real (non-demo) account with no budget, bills, or pay schedule yet: offer the setup.
     needs_onboarding: bool = False
     # Only while the period shown includes today.
@@ -474,6 +493,17 @@ class BudgetWrite(DashboardModel):
 
 class BudgetPatch(DashboardModel):
     limit_cents: int = Field(ge=0)
+
+
+class BudgetLimitChange(DashboardModel):
+    budget_id: str
+    limit_cents: int = Field(ge=0)
+
+
+class BudgetChangesRequest(DashboardModel):
+    """Budget limits the user approved together, such as a suggested rebalance."""
+
+    changes: list[BudgetLimitChange] = Field(min_length=1, max_length=40)
 
 
 class GoalWrite(DashboardModel):
@@ -669,6 +699,21 @@ class ForecastResponse(DashboardModel):
 class ImportRequest(DashboardModel):
     csv: str = Field(min_length=1, max_length=400_000)
     account_id: str
+
+
+class ImportRow(DashboardModel):
+    """One reviewed row from an uploaded statement."""
+
+    occurred_on: date
+    description: str = Field(min_length=1, max_length=160)
+    amount_cents: int = Field(gt=0)
+    kind: Literal["income", "spending"]
+    category_id: str | None = None
+
+
+class ImportRowsRequest(DashboardModel):
+    account_id: str
+    rows: list[ImportRow] = Field(min_length=1, max_length=600)
 
 
 class ImportResult(DashboardModel):

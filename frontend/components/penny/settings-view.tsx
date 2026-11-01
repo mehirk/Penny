@@ -1,7 +1,7 @@
 "use client";
 
-import { type ChangeEvent, useState, useSyncExternalStore } from "react";
-import { Banknote, BellRing, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, ShieldCheck, Sparkles, Tags, Trash2, Wallet } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
+import { Banknote, BellRing, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
 import { EmailReminders } from "./email-reminders";
 import { cad, Field } from "./shared";
 import { BackBar } from "./back-bar";
+import { StatementImport } from "./statement-import";
 import { useSubpage } from "./subpage";
 
 /** Saves a change through the app's mutation runner; resolves to an error message or null. */
@@ -89,7 +90,7 @@ export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: 
     { id: "pay", labelId: "pay-title", group: "Money", icon: Banknote, title: "When you get paid", summary: pay ? `${PAY_SHORT[pay.frequency]} · next ${formatShortDate(pay.next_payday)}` : "Not set up yet", body: <PayScheduleSection dashboard={dashboard} save={save} /> },
     { id: "accounts", labelId: "accounts-title", group: "Money", icon: Wallet, title: "Accounts", summary: `${dashboard.accounts.length} account${dashboard.accounts.length === 1 ? "" : "s"}`, body: <AccountsSection dashboard={dashboard} save={save} /> },
     { id: "categories", labelId: "categories-title", group: "Money", icon: Tags, title: "Categories", summary: custom ? `${custom} of your own` : "Penny’s defaults", body: <CategoriesSection dashboard={dashboard} save={save} /> },
-    { id: "import", labelId: "import-title", group: "Money", icon: FileUp, title: "Import history", summary: "From a CSV file", body: <ImportSection dashboard={dashboard} save={save} /> },
+    { id: "import", labelId: "import-title", group: "Money", icon: FileUp, title: "Import a statement", summary: "PDF, Excel, or CSV · read by Penny AI", body: <StatementImport dashboard={dashboard} save={save} /> },
     { id: "appearance", labelId: "appearance-title", group: "App", icon: Palette, title: "Appearance", summary: `${styleName} · ${themeName}`, body: <AppearanceSection /> },
     { id: "reminders", labelId: "reminders-title", group: "App", icon: BellRing, title: "Email reminders", summary: "Bills, budgets, and streaks", body: <EmailReminders /> },
     { id: "security", labelId: "trust-title", group: "Privacy", icon: ShieldCheck, title: "Security and trust", summary: "How your data is protected", body: <TrustSection /> },
@@ -401,41 +402,3 @@ function CategoryRow({ name, custom, onDelete }: { name: string; custom: boolean
   );
 }
 
-function ImportSection({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
-  const [account, setAccount] = useState(dashboard.accounts.find((item) => item.account_type === "chequing")?.id ?? dashboard.accounts[0]?.id ?? "");
-  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[]; ai_categorized: number } | null>(null);
-  const [error, setError] = useState("");
-
-  async function onFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (file.size > 400_000) { setError("That file is too big. Split it into smaller files."); return; }
-    const text = await file.text();
-    let summary: { imported: number; skipped: number; errors: string[]; ai_categorized: number } | null = null;
-    const failure = await save(async () => { const response = await dashboardApi.importCsv(text, account); summary = response; return response.dashboard; }, "Import finished");
-    setError(failure ?? "");
-    setResult(summary);
-  }
-
-  return (
-    <section className={SECTION} aria-labelledby="import-title">
-      <p className="mt-1 text-sm text-ink-subtle">Import a CSV from your bank or another app. Needs Date (YYYY-MM-DD), Description, and Amount (negative for money out) columns. Duplicates are skipped and balances don’t change. Export anytime from Spending.</p>
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Select aria-label="Import into account" value={account} onChange={(event) => setAccount(event.target.value)} className="sm:max-w-xs">{dashboard.accounts.map((item) => <option key={item.id} value={item.id}>Into {item.name}</option>)}</Select>
-        <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-on-primary hover:bg-primary-hover has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent">
-          <FileUp className="size-4" aria-hidden="true" />Choose CSV file
-          <input type="file" accept=".csv,text/csv" onChange={(event) => void onFile(event)} className="sr-only" />
-        </label>
-      </div>
-      {error && <p role="alert" className="mt-3 rounded-xl bg-danger-soft p-3 text-sm text-danger">{error}</p>}
-      {result && (
-        <div className="mt-3 rounded-xl bg-sage-soft p-3 text-sm" role="status">
-          <p className="font-semibold text-ink">Imported {result.imported} transaction{result.imported === 1 ? "" : "s"}{result.skipped ? `, skipped ${result.skipped}` : ""}.</p>
-          {result.ai_categorized > 0 && <p className="mt-1 flex items-center gap-1.5 text-ink-muted"><Sparkles className="size-3.5 text-accent-strong" aria-hidden="true" />Penny AI sorted {result.ai_categorized} that the usual rules couldn’t place. They’re tagged “Auto” so you can check them.</p>}
-          {result.errors.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-ink-muted">{result.errors.map((item, index) => <li key={index}>{item}</li>)}</ul>}
-        </div>
-      )}
-    </section>
-  );
-}

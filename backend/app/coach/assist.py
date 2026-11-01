@@ -22,6 +22,7 @@ from app.dashboard_models import Category, DashboardResponse, OnboardingAnswers
 from app.dashboard_store import DashboardStore
 from app.domain.categorize import categorize
 from app.domain.finance import ceil_div, format_cad
+from app.domain.rebalance import BudgetLine, rebalance
 from app.learning.content import LESSONS_BY_ID
 
 logger = logging.getLogger(__name__)
@@ -1187,6 +1188,210 @@ async def accounts_read(settings: Settings, store: DashboardStore, user_id: str)
         f"FACTS: {facts}",
         fallback,
         3,
+    )
+
+
+# ------------------------------------------------------------------ safe to spend
+
+
+async def safe_to_spend_read(settings: Settings, store: DashboardStore, user_id: str) -> AssistText:
+    """Why Safe to spend is what it is, what's coming, and one practical step."""
+    d = store.dashboard_for_user(user_id)
+    safe = d.safe_to_spend
+    if safe is None:
+        return AssistText(items=[], source="built_in", model=None)
+    f = FactBook()
+    money = {
+        "safe_to_spend": f.money("Safe to spend", safe.safe_cents, "safe_to_spend"),
+        "spending_money": f.money("Spending money", safe.spending_money_cents, "accounts"),
+        "goal_money_set_aside": f.money("Goal money", safe.set_aside_cents, "goals"),
+        "owed_on_cards": f.money("Owed on cards", safe.owed_on_cards_cents, "accounts"),
+        "unpaid_bills": f.money("Unpaid bills", safe.unpaid_bills_cents, "bills"),
+        "spent_from_other_accounts": f.money(
+            "Spent from other accounts", safe.spent_outside_cents, "transactions"
+        ),
+    }
+    facts: dict[str, object] = {
+        **money,
+        "spending_money_is": "chequing and cash"
+        if safe.spending_from == "chequing"
+        else "chequing, cash, and savings",
+        "held_back_until": f"{safe.holds_until:%B} {safe.holds_until.day}",
+    }
+    bills = [
+        f"{item.name} {f.money(item.name, item.amount_cents, 'bills')} "
+        + (
+            f"overdue since {item.due_on:%b} {item.due_on.day}"
+            if item.days_until_due < 0
+            else f"due {item.due_on:%b} {item.due_on.day}"
+        )
+        for item in d.recurring.unpaid[:5]
+    ]
+    facts["unpaid_bill_list"] = bills
+    runway = d.spending_runway
+    if runway:
+        facts["per_day"] = f.money("Per day", runway.per_day_cents, "safe_to_spend")
+        facts["days_left"] = runway.days_left
+    if safe.short_cents:
+        facts["short_by"] = f.money("Short by", safe.short_cents, "safe_to_spend")
+    over = [b for b in d.budgets if not b.carried_over and b.remaining_cents < 0]
+    if over:
+        facts["over_budget"] = [
+            f"{b.category_name} over by "
+            + f.money(b.category_name + " over", -b.remaining_cents, "budgets")
+            for b in over[:3]
+        ]
+
+    taken = [
+        f"{money[key]} {label}"
+        for key, label, cents in (
+            ("goal_money_set_aside", "for goals", safe.set_aside_cents),
+            ("owed_on_cards", "owed on cards", safe.owed_on_cards_cents),
+            ("unpaid_bills", "for unpaid bills", safe.unpaid_bills_cents),
+            ("spent_from_other_accounts", "spent from other accounts", safe.spent_outside_cents),
+        )
+        if cents
+    ]
+    fallback = [
+        f"You have {money['spending_money']} in {facts['spending_money_is']}"
+        + (f"; Penny holds back {', '.join(taken)}." if taken else ", and nothing is held back.")
+    ]
+    if safe.short_cents:
+        fallback.append(
+            f"What's spoken for is {facts['short_by']} more than you have, so hold off on extras "
+            "until money comes in."
+        )
+    elif bills:
+        fallback.append(f"Next up: {bills[0]}. It's already set aside, so you can't overspend it.")
+    else:
+        fallback.append("No unpaid bills are coming up, so all of it is yours to use.")
+    if runway and safe.safe_cents:
+        fallback.append(
+            f"That's about {facts['per_day']} a day for {runway.days_left} "
+            f"day{'' if runway.days_left == 1 else 's'}."
+        )
+    return await _phrase(
+        settings,
+        f,
+        "Explain this person's Safe to spend in exactly 3 bullets (at most 28 words each): "
+        "1) what it's made of (spending money minus what's held back), 2) the bill or risk to "
+        "watch with its date (or the shortfall, or an over-budget category), 3) one practical "
+        "step for the days left. Use only the facts given.",
+        f"FACTS: {facts}",
+        fallback,
+        3,
+    )
+
+
+# ------------------------------------------------------------------ rebalance
+
+
+class BudgetChangeOut(AssistModel):
+    budget_id: str
+    category_id: str
+    category_name: str
+    from_cents: int
+    to_cents: int
+    spent_cents: int
+
+
+class BudgetRebalance(AssistModel):
+    month: date
+    over_cents: int
+    covered_cents: int
+    uncovered_cents: int
+    changes: list[BudgetChangeOut]
+    summary: AssistText
+
+
+async def budget_rebalance(
+    settings: Settings, store: DashboardStore, user_id: str
+) -> BudgetRebalance:
+    """Moves that cover overspent budgets from ones with room (app.domain.rebalance), with a
+    short explanation. Nothing changes until the user applies them."""
+    d = store.dashboard_for_user(user_id)
+    budgets = {b.category_id: b for b in d.budgets if not b.carried_over}
+    plan = rebalance(
+        [
+            BudgetLine(
+                category_id=b.category_id,
+                limit_cents=b.limit_cents,
+                spent_cents=b.spent_cents,
+                floor_cents=store.bill_floor_cents(user_id, b.category_id),
+            )
+            for b in budgets.values()
+        ]
+    )
+    changes = [
+        BudgetChangeOut(
+            budget_id=budgets[c.category_id].id,
+            category_id=c.category_id,
+            category_name=budgets[c.category_id].category_name,
+            from_cents=c.from_cents,
+            to_cents=c.to_cents,
+            spent_cents=budgets[c.category_id].spent_cents,
+        )
+        for c in plan.changes
+    ]
+    f = FactBook()
+    raised = [c for c in changes if c.to_cents > c.from_cents]
+    lowered = [c for c in changes if c.to_cents < c.from_cents]
+    facts: dict[str, object] = {
+        "raise": [
+            f"{c.category_name} {f.money(c.category_name, c.from_cents, 'budgets')} → "
+            f"{f.money(c.category_name + ' new', c.to_cents, 'budgets')} "
+            f"(spent {f.money(c.category_name + ' spent', c.spent_cents, 'budgets')})"
+            for c in raised
+        ],
+        "lower": [
+            f"{c.category_name} {f.money(c.category_name, c.from_cents, 'budgets')} → "
+            f"{f.money(c.category_name + ' new', c.to_cents, 'budgets')}"
+            for c in lowered
+        ],
+        "moved": f.money("Moved", plan.covered_cents, "budgets"),
+        "total_budget_unchanged": True,
+    }
+    if plan.uncovered_cents:
+        facts["still_uncovered"] = f.money("Still uncovered", plan.uncovered_cents, "budgets")
+    if not plan.over_cents:
+        summary = AssistText(
+            items=["Every budget is within its limit. Nothing to move."],
+            source="built_in",
+            model=None,
+        )
+    else:
+        fallback = []
+        if changes:
+            fallback.append(
+                f"Move {facts['moved']} from "
+                + ", ".join(c.category_name for c in lowered)
+                + " to "
+                + ", ".join(c.category_name for c in raised)
+                + " so your total budget stays the same."
+            )
+        if plan.uncovered_cents:
+            fallback.append(
+                f"{facts['still_uncovered']} can't be covered by other budgets; spending less for "
+                "the rest of the month is the way to close it."
+            )
+        fallback.append("Nothing changes until you apply it.")
+        summary = await _phrase(
+            settings,
+            f,
+            "In 2 or 3 short bullets (at most 25 words each), explain these budget moves: which "
+            "budgets go over and which give up room, that the total budget doesn't grow, and if "
+            "anything is still uncovered, one realistic way to spend less. No new numbers.",
+            f"FACTS: {facts}",
+            fallback,
+            3,
+        )
+    return BudgetRebalance(
+        month=d.active_month,
+        over_cents=plan.over_cents,
+        covered_cents=plan.covered_cents,
+        uncovered_cents=plan.uncovered_cents,
+        changes=changes,
+        summary=summary,
     )
 
 

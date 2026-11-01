@@ -127,22 +127,35 @@ def history_items(
 
 
 async def ask_json(
-    settings: Settings, instructions: str, prompt: str, name: str, schema: dict[str, Any]
+    settings: Settings,
+    instructions: str,
+    prompt: str,
+    name: str,
+    schema: dict[str, Any],
+    attachment: dict[str, Any] | None = None,
+    max_output_tokens: int = MAX_OUTPUT_TOKENS,
+    timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     """One tool-free model call that must return JSON matching `schema`.
+
+    `attachment` is an extra input part sent before the prompt, such as a PDF
+    (`{"type": "input_file", "filename": ..., "file_data": "data:application/pdf;base64,..."}`).
 
     Raises ModelUnavailable without a key or when the response is incomplete or invalid.
     """
     if not settings.openai_api_key:
         raise ModelUnavailable("no_api_key")
     client = AsyncOpenAI(
-        api_key=settings.openai_api_key, timeout=settings.coach_timeout_seconds, max_retries=1
+        api_key=settings.openai_api_key,
+        timeout=timeout_seconds or settings.coach_timeout_seconds,
+        max_retries=1,
     )
+    content: Any = [attachment, {"type": "input_text", "text": prompt}] if attachment else prompt
     response = await client.responses.create(
         model=settings.openai_model,
         instructions=instructions,
-        input=[{"role": "user", "content": prompt}],
-        max_output_tokens=MAX_OUTPUT_TOKENS,
+        input=[{"role": "user", "content": content}],
+        max_output_tokens=max_output_tokens,
         reasoning={"effort": "low"},
         store=False,
         text={"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},

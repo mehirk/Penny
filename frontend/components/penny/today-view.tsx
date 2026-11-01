@@ -9,6 +9,7 @@ import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { categoryIcon } from "./category-icons";
 import { AccountDetail } from "./account-detail";
+import { SafeDetail } from "./safe-detail";
 import { SpentDetail } from "./spent-detail";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
 import { accountEmoji } from "./emoji";
@@ -60,6 +61,7 @@ export function TodayView({ dashboard, onNavigate, onAsk, onEditTransaction, onS
   const account = dashboard.accounts_overview.accounts.find((item) => item.id === pageId);
   if (account) return <AccountDetail dashboard={dashboard} account={account} backLabel="Home" onBack={back} />;
   if (pageId === "spent") return <SpentDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} />;
+  if (pageId === "safe") return <SafeDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} onAsk={onAsk} />;
   return <HomeOverview dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} onEditTransaction={onEditTransaction} onSetUp={onSetUp} onOpenPage={openPage} />;
 }
 
@@ -102,7 +104,7 @@ function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp
           <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
         </button>
       )}
-      <SafeToSpendHero dashboard={dashboard} onNavigate={onNavigate} />
+      <SafeToSpendHero dashboard={dashboard} onOpen={() => onOpenPage("safe")} />
       <div className="grid gap-6 lg:grid-cols-2 lg:gap-8 [&>*]:min-w-0">
       <div className="space-y-6">
 
@@ -141,7 +143,7 @@ function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp
 }
 
 /** The one big number, centred like a bank app's balance: what's safe to spend and per day until payday. */
-function SafeToSpendHero({ dashboard, onNavigate }: Pick<Props, "dashboard" | "onNavigate">) {
+function SafeToSpendHero({ dashboard, onOpen }: Pick<Props, "dashboard"> & { onOpen: () => void }) {
   const { totals, period } = dashboard;
   const runway = dashboard.spending_runway;
   const used = totals.total_budget_cents ? Math.min(100, (totals.spending_cents * 100) / totals.total_budget_cents) : 0;
@@ -149,7 +151,7 @@ function SafeToSpendHero({ dashboard, onNavigate }: Pick<Props, "dashboard" | "o
   <section aria-labelledby="safe-title" className="pb-2 pt-4 text-center">
     <p className="text-[3.5rem] font-semibold leading-none tracking-tight text-ink"><BigAmount cents={dashboard.spending_power_cents} /></p>
     <div className="mt-3 flex items-center justify-center gap-1">
-      <button type="button" id="safe-title" onClick={() => onNavigate("spending", "budgets")} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-base font-semibold text-ink-muted hover:text-ink">
+      <button type="button" id="safe-title" onClick={onOpen} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-base font-semibold text-ink-muted hover:text-ink">
         Safe to spend<ChevronRight className="size-4" aria-hidden="true" />
       </button>
       <AmountsToggle className="-ml-1" />

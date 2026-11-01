@@ -5,7 +5,7 @@ import { LoaderCircle, MessageCircle, RefreshCw, Sparkles, WandSparkles } from "
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { type AssistSource, type AssistText, assistApi, type BudgetSuggestion, type BudgetSuggestions, type Dashboard } from "@/lib/api";
+import { type AssistSource, type AssistText, assistApi, type BudgetChange, type BudgetRebalance, type BudgetSuggestion, type BudgetSuggestions, type Dashboard } from "@/lib/api";
 import { formatMonth } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { cad, describeError } from "./shared";
@@ -212,5 +212,79 @@ export function GoalPlan({ goalId, version }: { goalId: string; version: number 
           : <ul className="mt-1.5 space-y-1.5">{plan.data?.items.map((item, index) => <li key={index} className="flex gap-2 text-sm leading-relaxed text-ink-muted"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />{item}</li>)}</ul>}
       <p className="mt-2 text-[11px] text-ink-subtle">Educational, not financial advice.</p>
     </div>
+  );
+}
+
+/** "Penny's read" on Safe to spend: what it's made of, what's coming, one step. Figures come from the API's own sum. */
+export function SafeToSpendRead({ version, onAsk }: { version: string; onAsk: (question: string) => void }) {
+  const read = useAssist<AssistText>(`safe:${version}`, () => assistApi.safeToSpend());
+  return (
+    <Card className="p-5 sm:p-6" aria-labelledby="safe-read-title" aria-busy={read.loading}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="safe-read-title" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-ink"><WandSparkles className="size-5 text-accent-strong" aria-hidden="true" />Penny’s read</h2>
+        {read.data && <SourceBadge source={read.data.source} />}
+      </div>
+      {read.loading
+        ? <div className="mt-4 space-y-2" aria-label="Loading Penny’s read">{[90, 74, 82].map((width) => <div key={width} className="h-4 animate-pulse rounded bg-sage-soft" style={{ width: `${width}%` }} />)}</div>
+        : read.error
+          ? <p role="alert" className="mt-3 text-sm text-danger">Couldn’t load Penny’s read. <button type="button" className="min-h-11 font-semibold underline" onClick={read.retry}>Try again</button></p>
+          : <ul className="mt-3 space-y-2">{read.data?.items.map((item, index) => <li key={index} className="flex gap-2.5 text-sm leading-relaxed text-ink-muted"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />{item}</li>)}</ul>}
+      <Button size="sm" variant="ghost" className="mt-3 -ml-2" onClick={() => onAsk("Can I afford something today without missing a bill?")}><MessageCircle className="size-4" aria-hidden="true" />Ask about a purchase</Button>
+    </Card>
+  );
+}
+
+/**
+ * Shown when a budget is over: moves that cover it from budgets with room, so the total stays the
+ * same. The amounts come from the API's rebalance; nothing changes until the user presses Apply.
+ */
+export function RebalanceCard({ version, onApply }: { version: string; onApply: (changes: { budget_id: string; limit_cents: number }[]) => Promise<string | null> }) {
+  const plan = useAssist<BudgetRebalance>(`rebalance:${version}`, () => assistApi.budgetRebalance());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [dismissed, setDismissed] = useState("");
+  if (dismissed === version) return null;
+  if (plan.loading) {
+    return <div className="mt-4 space-y-2 rounded-xl border border-gold/40 bg-gold-soft/40 p-4" aria-label="Loading budget suggestions">{[80, 60].map((width) => <div key={width} className="h-4 animate-pulse rounded bg-surface/70" style={{ width: `${width}%` }} />)}</div>;
+  }
+  if (plan.error || !plan.data || plan.data.over_cents === 0) return null;
+  const { changes, summary, uncovered_cents: uncovered } = plan.data;
+  const raised = changes.filter((item) => item.to_cents > item.from_cents);
+  const lowered = changes.filter((item) => item.to_cents < item.from_cents);
+
+  async function apply() {
+    setBusy(true);
+    setError("");
+    const failure = await onApply(changes.map((item) => ({ budget_id: item.budget_id, limit_cents: item.to_cents })));
+    setBusy(false);
+    if (failure) setError(failure);
+  }
+
+  const row = (item: BudgetChange) => (
+    <li key={item.budget_id} className="flex min-h-11 items-center justify-between gap-3 px-3 py-2 text-sm">
+      <span className="min-w-0 truncate font-semibold text-ink">{item.category_name}</span>
+      <span className="tabular shrink-0"><span className="text-ink-subtle line-through">{cad(item.from_cents)}</span> <span className="font-semibold text-ink">{cad(item.to_cents)}</span></span>
+    </li>
+  );
+  return (
+    <section aria-labelledby="rebalance-title" className="mt-4 rounded-xl border border-gold/40 bg-gold-soft/40 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 id="rebalance-title" className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Sparkles className="size-4 text-accent-strong" aria-hidden="true" />Over budget? Penny suggests</h3>
+        <SourceBadge source={summary.source} />
+      </div>
+      <ul className="mt-2 space-y-1.5">{summary.items.map((item, index) => <li key={index} className="flex gap-2 text-sm leading-relaxed text-ink-muted"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-gold" aria-hidden="true" />{item}</li>)}</ul>
+      {changes.length > 0 && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div><p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-subtle">Raise</p><ul className="divide-y divide-line rounded-xl border border-line bg-surface">{raised.map(row)}</ul></div>
+          <div><p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-subtle">Lower</p><ul className="divide-y divide-line rounded-xl border border-line bg-surface">{lowered.map(row)}</ul></div>
+        </div>
+      )}
+      {uncovered > 0 && <p className="mt-2 text-xs text-ink-muted"><span className="tabular font-semibold text-ink">{cad(uncovered)}</span> can’t be covered by other budgets.</p>}
+      {error && <p role="alert" className="mt-2 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {changes.length > 0 && <Button size="sm" disabled={busy} onClick={() => void apply()}>{busy && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}Apply {changes.length} change{changes.length === 1 ? "" : "s"}</Button>}
+        <Button size="sm" variant="ghost" onClick={() => setDismissed(version)}>Not now</Button>
+      </div>
+    </section>
   );
 }

@@ -30,6 +30,7 @@ from app.dashboard_models import (
     BillHistory,
     BillPatch,
     BillWrite,
+    BudgetLimitChange,
     BudgetPatch,
     BudgetWrite,
     Category,
@@ -52,6 +53,7 @@ from app.dashboard_models import (
     HistoryResponse,
     HistoryTotals,
     HomeSummary,
+    ImportRow,
     Mission,
     MoneyCalendar,
     MonthlyBudget,
@@ -64,6 +66,7 @@ from app.dashboard_models import (
     Period,
     RecurringExpense,
     RecurringSummary,
+    SafeToSpendBreakdown,
     SpendingClassification,
     SpendingRunway,
     SplitTransactionWrite,
@@ -96,7 +99,7 @@ from app.domain.pay_cycle import (
 from app.domain.pay_cycle import Event as CycleEvent
 from app.domain.periods import describe_period, month_end, months_between
 from app.domain.recurring import detect_fixed_series, series_key
-from app.domain.runway import runway, safe_to_spend_cents
+from app.domain.runway import runway, safe_to_spend
 from app.domain.starter_budget import StarterPlan, monthly_income_cents, starter_plan
 from app.fixtures import build_demo_dashboard
 from app.history_fixtures import build_history_budgets, build_history_transactions
@@ -1007,7 +1010,7 @@ class DashboardStore:
             calendar_view = self._money_calendar(month, recurring.items)
             learning = build_learning(self._learner, self._mission_xp(), self.today())
             pool = self._spending_pool()
-            safe_cents = safe_to_spend_cents(
+            safe = safe_to_spend(
                 sum(a.balance_cents for a in self._accounts.values() if a.id in pool),
                 recurring.unpaid_bills_cents,
                 set_aside_cents=sum(g.current_cents for g in goals if g.account_id in pool),
@@ -1021,6 +1024,7 @@ class DashboardStore:
                     and acct.account_type != "credit"
                 ),
             )
+            safe_cents = safe.safe_cents
             today = self.today()
             spending_runway = (
                 SpendingRunway(
@@ -1106,6 +1110,11 @@ class DashboardStore:
                 ),
                 previous_month_cash_flow_cents=previous_cash_flow,
                 spending_power_cents=safe_cents,
+                safe_to_spend=SafeToSpendBreakdown(
+                    **asdict(safe),
+                    spending_from=self._profile.spending_from,
+                    holds_until=recurring.unpaid_until or month_end(month),
+                ),
                 needs_onboarding=self._needs_onboarding(),
                 spending_runway=spending_runway,
                 totals=DashboardTotals(
@@ -1662,6 +1671,51 @@ class DashboardStore:
                 imported += 1
             return imported, errors
 
+    def import_rows(
+        self, user_id: str, rows: list[ImportRow], account_id: str
+    ) -> tuple[int, list[str]]:
+        """Adds reviewed statement rows as history. Like CSV import, balances don't change and
+        a row matching an existing transaction (date, description, amount, kind) is skipped."""
+        with self._lock:
+            self.require_owner(user_id)
+            if account_id not in self._accounts:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown account")
+            existing = {
+                (t.occurred_on, t.description.casefold(), t.amount_cents, t.kind)
+                for t in self._transactions.values()
+            }
+            errors: list[str] = []
+            imported = 0
+            for line, row in enumerate(rows, start=1):
+                key = (row.occurred_on, row.description.casefold(), row.amount_cents, row.kind)
+                if key in existing:
+                    errors.append(f"Row {line}: already in Penny")
+                    continue
+                if row.occurred_on > self.today():
+                    errors.append(f"Row {line}: date is in the future")
+                    continue
+                category = self._categories.get(row.category_id) if row.category_id else None
+                if category and category.kind != row.kind:
+                    category = None
+                category_id = (
+                    category.id if category else categorize(row.description, row.kind).category_id
+                )
+                item_id = f"tx-{uuid4().hex[:12]}"
+                self._transactions[item_id] = Transaction(
+                    id=item_id,
+                    description=row.description,
+                    category=self._category_name(category_id),
+                    account_id=account_id,
+                    category_id=category_id,
+                    amount_cents=row.amount_cents,
+                    kind=row.kind,
+                    occurred_on=row.occurred_on,
+                    auto_categorized=category is None and category_id is not None,
+                )
+                existing.add(key)
+                imported += 1
+            return imported, errors
+
     def uncategorized(self, user_id: str) -> list[tuple[str, str]]:
         """Distinct (description, kind) pairs that still have no category."""
         with self._lock:
@@ -2066,6 +2120,30 @@ class DashboardStore:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Budget not found")
             self._require_bill_floor(self._budgets[budget_id]["category_id"], request.limit_cents)
             self._budgets[budget_id]["limit_cents"] = request.limit_cents
+            return self._snapshot()
+
+    def bill_floor_cents(self, user_id: str, category_id: str) -> int:
+        """The lowest a budget for this category can go: its scheduled bills per month."""
+        with self._lock:
+            self.require_owner(user_id)
+            return self._bill_floor_cents(category_id)
+
+    def apply_budget_changes(
+        self, user_id: str, changes: list[BudgetLimitChange]
+    ) -> DashboardResponse:
+        """Sets several budget limits at once (an approved rebalance): all or nothing."""
+        with self._lock:
+            self.require_owner(user_id)
+            if len({change.budget_id for change in changes}) != len(changes):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "One change per budget")
+            for change in changes:
+                if change.budget_id not in self._budgets:
+                    raise HTTPException(status.HTTP_404_NOT_FOUND, "Budget not found")
+                self._require_bill_floor(
+                    self._budgets[change.budget_id]["category_id"], change.limit_cents
+                )
+            for change in changes:
+                self._budgets[change.budget_id]["limit_cents"] = change.limit_cents
             return self._snapshot()
 
     def delete_budget(self, user_id: str, budget_id: str) -> DashboardResponse:
