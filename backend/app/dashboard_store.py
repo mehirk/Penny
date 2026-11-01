@@ -19,6 +19,7 @@ from app.dashboard_features import (
     build_learning,
     build_recurring,
     flexible_budget_cents,
+    monthly_equivalent_cents,
     next_due_after,
     score_month,
 )
@@ -55,6 +56,8 @@ from app.dashboard_models import (
     MonthlyBudget,
     MonthPoint,
     NetWorthSnapshot,
+    OnboardingAnswers,
+    OnboardingApply,
     PayCycle,
     PaySchedule,
     Period,
@@ -92,7 +95,8 @@ from app.domain.pay_cycle import (
 from app.domain.pay_cycle import Event as CycleEvent
 from app.domain.periods import describe_period, month_end, months_between
 from app.domain.recurring import detect_fixed_series, series_key
-from app.domain.runway import runway
+from app.domain.runway import runway, safe_to_spend_cents
+from app.domain.starter_budget import StarterPlan, monthly_income_cents, starter_plan
 from app.fixtures import build_demo_dashboard
 from app.history_fixtures import build_history_budgets, build_history_transactions
 from app.learning.content import LESSONS_BY_ID, TOPICS, LessonContent
@@ -1001,12 +1005,11 @@ class DashboardStore:
             recurring = self._recurring()
             calendar_view = self._money_calendar(month, recurring.items)
             learning = build_learning(self._learner, self._mission_xp(), self.today())
-            safe_cents = max(
-                0,
-                min(
-                    summary.budget_remaining_cents,
-                    cash_balance - recurring.due_before_payday_cents,
-                ),
+            safe_cents = safe_to_spend_cents(
+                cash_balance,
+                recurring.due_before_payday_cents,
+                total_budget,
+                summary.budget_remaining_cents,
             )
             today = self.today()
             spending_runway = (
@@ -1093,6 +1096,7 @@ class DashboardStore:
                 ),
                 previous_month_cash_flow_cents=previous_cash_flow,
                 spending_power_cents=safe_cents,
+                needs_onboarding=self._needs_onboarding(),
                 spending_runway=spending_runway,
                 totals=DashboardTotals(
                     **asdict(summary),
@@ -2029,6 +2033,7 @@ class DashboardStore:
                 for item in self._budgets.values()
             ):
                 raise HTTPException(status.HTTP_409_CONFLICT, "Budget already exists")
+            self._require_bill_floor(request.category_id, request.limit_cents)
             budget_id = f"budget-{uuid4().hex[:12]}"
             self._budgets[budget_id] = {"id": budget_id, **request.model_dump()}
             return self._snapshot()
@@ -2040,6 +2045,7 @@ class DashboardStore:
             self.require_owner(user_id)
             if budget_id not in self._budgets:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Budget not found")
+            self._require_bill_floor(self._budgets[budget_id]["category_id"], request.limit_cents)
             self._budgets[budget_id]["limit_cents"] = request.limit_cents
             return self._snapshot()
 
@@ -2084,6 +2090,163 @@ class DashboardStore:
         if not transaction:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Transaction not found")
         return transaction
+
+    def _bill_floor_cents(self, category_id: str) -> int:
+        """What this category's scheduled bills cost per month (a parent includes its children)."""
+        return sum(
+            monthly_equivalent_cents(bill.amount_cents, bill.frequency)
+            for bill in self._bills.values()
+            if bill.category_id
+            and category_id in (bill.category_id, self._parent_of(bill.category_id))
+        )
+
+    def _parent_of(self, category_id: str) -> str | None:
+        category = self._categories.get(category_id)
+        return category.parent_id if category else None
+
+    def _require_bill_floor(self, category_id: str, limit_cents: int) -> None:
+        """A budget can't be set below its own fixed bills; change or remove the bill first."""
+        floor = self._bill_floor_cents(category_id)
+        if limit_cents < floor:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                f"Your scheduled bills in {self._category(category_id).name} need "
+                f"{format_cad(floor)} a month. Change or remove the bill first.",
+            )
+
+    # ------------------------------------------------------------------ onboarding
+
+    def _needs_onboarding(self) -> bool:
+        return (
+            not self._profile.is_fictional
+            and not self._budgets
+            and not self._bills
+            and self._pay_schedule is None
+        )
+
+    def _spending_category(self, category_id: str) -> Category:
+        category = self._category(category_id)
+        if category.kind != "spending":
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, f"{category.name} isn't a spending category"
+            )
+        return category
+
+    def _starter_plan(self, answers: OnboardingAnswers) -> StarterPlan:
+        income = answers.income
+        try:
+            monthly = (
+                monthly_income_cents(income.amount_cents, income.frequency, income.interval_days)
+                if income
+                else answers.monthly_money_cents or 0
+            )
+        except ValueError as error:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+        fixed: dict[str, int] = {}
+        for bill in answers.bills:
+            self._spending_category(bill.category_id)
+            fixed[bill.category_id] = fixed.get(bill.category_id, 0) + monthly_equivalent_cents(
+                bill.amount_cents, bill.frequency
+            )
+        for category_id in answers.everyday:
+            self._spending_category(category_id)
+        everyday = {key: value for key, value in answers.everyday.items() if value > 0}
+        return starter_plan(monthly, fixed, everyday, answers.savings_basis_points)
+
+    def starter_plan_for(self, user_id: str, answers: OnboardingAnswers) -> StarterPlan:
+        """The proposed plan only; nothing is saved."""
+        with self._lock:
+            self.require_owner(user_id)
+            return self._starter_plan(answers)
+
+    def apply_onboarding(self, user_id: str, request: OnboardingApply) -> DashboardResponse:
+        """Saves the approved setup: balances, accounts, pay, bills, and this month's budgets."""
+        with self._lock:
+            self.require_owner(user_id)
+            if not self._needs_onboarding():
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "Your plan is already set up. Change it from Budgets and Settings.",
+                )
+            answers = request.answers
+            plan = self._starter_plan(answers)
+            for category_id in request.everyday_limits:
+                self._spending_category(category_id)
+            used = {item.account_id for item in self._transactions.values()}
+            for account_id in answers.opening_balances:
+                account = self._accounts.get(account_id)
+                if not account:
+                    raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown account")
+                if account_id in used:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        f"{account.name} already has transactions, so its balance comes from them",
+                    )
+            for new in answers.new_accounts:
+                if (new.account_type == "credit") != (new.credit_limit_cents is not None):
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        "Credit cards need a limit; other accounts can't have one",
+                    )
+            income = answers.income
+            if income and (income.frequency == "custom") != (income.interval_days is not None):
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "Set the days between paydays only for a custom schedule",
+                )
+
+            for account_id, cents in answers.opening_balances.items():
+                self._accounts[account_id] = self._accounts[account_id].model_copy(
+                    update={"balance_cents": cents}
+                )
+            for new in answers.new_accounts:
+                account = Account(id=f"acct-{uuid4().hex[:10]}", **new.model_dump())
+                self._accounts[account.id] = account
+            home = next(
+                (
+                    account
+                    for kind in ("chequing", "cash", "savings", "other", "investment")
+                    for account in self._accounts.values()
+                    if account.account_type == kind
+                ),
+                None,
+            )
+            if home is None and (income or answers.bills):
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "Add a chequing or cash account for your pay and bills",
+                )
+            if income and home:
+                self._pay_schedule = PaySchedule(
+                    name="Paycheque",
+                    amount_cents=income.amount_cents,
+                    account_id=home.id,
+                    frequency=income.frequency,
+                    next_payday=income.next_payday,
+                    interval_days=income.interval_days,
+                )
+            for item in answers.bills:
+                if home:
+                    bill = Bill(
+                        id=f"bill-{uuid4().hex[:10]}",
+                        account_id=home.id,
+                        auto_record=True,
+                        **item.model_dump(),
+                    )
+                    self._bills[bill.id] = bill
+            for line in plan.lines:
+                limit = line.fixed_cents + request.everyday_limits.get(
+                    line.category_id, line.flexible_cents
+                )
+                if limit > 0:
+                    budget_id = f"budget-{uuid4().hex[:12]}"
+                    self._budgets[budget_id] = {
+                        "id": budget_id,
+                        "category_id": line.category_id,
+                        "month_start": self.active_month,
+                        "limit_cents": limit,
+                    }
+            return self._snapshot()
 
     def _category(self, category_id: str) -> Category:
         category = self._categories.get(category_id)

@@ -74,6 +74,8 @@ export type Dashboard = {
   accounts_overview: AccountsOverview;
   previous_month_cash_flow_cents: number | null;
   spending_power_cents: number;
+  /** A real account with no budget, bills, or pay schedule yet: offer the setup. */
+  needs_onboarding: boolean;
   /** How long Safe to spend has to last; null when the period shown doesn't include today. */
   spending_runway: SpendingRunway | null;
   totals: { available_balance_cents: number; income_cents: number; spending_cents: number; cash_flow_cents: number; total_budget_cents: number; budget_remaining_cents: number; savings_contributions_cents: number; savings_rate_basis_points: number };
@@ -226,6 +228,24 @@ export type SearchFilters = { query: string; kind: "all" | "income" | "spending"
 export type AssistText = { items: string[]; source: AssistSource; model: string | null };
 export type BudgetSuggestion = { category_id: string; budget_id: string | null; category_name: string; current_limit_cents: number | null; suggested_cents: number; average_cents: number; reason: string };
 export type BudgetSuggestions = { month: string; suggestions: BudgetSuggestion[]; summary: AssistText };
+
+export type OnboardingAnswers = {
+  opening_balances: Record<string, number>;
+  new_accounts: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null }[];
+  income: { amount_cents: number; frequency: PayFrequency; next_payday: string; interval_days: number | null } | null;
+  monthly_money_cents: number | null;
+  bills: { name: string; amount_cents: number; category_id: string; frequency: BillFrequency; next_due: string }[];
+  everyday: Record<string, number>;
+  savings_basis_points: number;
+};
+export type StarterPlanLine = { category_id: string; category_name: string; fixed_cents: number; flexible_cents: number; requested_cents: number; limit_cents: number };
+export type StarterPlan = { income_cents: number; fixed_cents: number; savings_cents: number; flexible_cents: number; buffer_cents: number; status: "fits" | "trimmed" | "short"; lines: StarterPlanLine[]; summary: AssistText };
+
+/** First-run setup: the plan is only a proposal until `apply` (the user's approval). */
+export const onboardingApi = {
+  plan: (answers: OnboardingAnswers) => authorizedRequest<StarterPlan>("/api/v1/onboarding/plan", { method: "POST", body: JSON.stringify(answers) }),
+  apply: (answers: OnboardingAnswers, everydayLimits: Record<string, number>) => request("/api/v1/onboarding/apply", { method: "POST", body: JSON.stringify({ answers, everyday_limits: everydayLimits }) }),
+};
 
 /** Smart helpers. They only read data or fill forms; every change still goes through a user action. */
 export const assistApi = {

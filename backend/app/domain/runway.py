@@ -19,6 +19,23 @@ Status = Literal["on_track", "tight", "empty"]
 TIGHT_BASIS_POINTS = 5_000
 
 
+def safe_to_spend_cents(
+    spendable_cents: int,
+    due_before_payday_cents: int,
+    budget_total_cents: int,
+    budget_remaining_cents: int,
+) -> int:
+    """Money that's safe to spend now: spendable cash after the bills due before payday, and,
+    once any budget is set, no more than what's left in it. Never negative. Without a budget,
+    the cash after bills alone decides (a missing budget doesn't mean nothing is safe)."""
+    if due_before_payday_cents < 0 or budget_total_cents < 0:
+        raise ValueError("due_before_payday_cents and budget_total_cents must not be negative")
+    after_bills = spendable_cents - due_before_payday_cents
+    if budget_total_cents == 0:
+        return max(0, after_bills)
+    return max(0, min(budget_remaining_cents, after_bills))
+
+
 @dataclass(frozen=True, slots=True)
 class Runway:
     until: date

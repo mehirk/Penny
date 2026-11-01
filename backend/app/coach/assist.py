@@ -18,7 +18,7 @@ from app.coach.context import build_snapshot, load_context
 from app.coach.facts import FactBook, parse_cad
 from app.coach.llm import ModelUnavailable, ask_json
 from app.config import Settings
-from app.dashboard_models import Category, DashboardResponse
+from app.dashboard_models import Category, DashboardResponse, OnboardingAnswers
 from app.dashboard_store import DashboardStore
 from app.domain.categorize import categorize
 from app.domain.finance import ceil_div, format_cad
@@ -659,6 +659,91 @@ async def budget_suggestions(
         )
     )
     return BudgetSuggestions(month=dashboard.active_month, suggestions=suggestions, summary=summary)
+
+
+# ------------------------------------------------------------------ onboarding
+
+
+class StarterPlanLine(AssistModel):
+    category_id: str
+    category_name: str
+    fixed_cents: int  # locked: scheduled bills in this category
+    flexible_cents: int  # everyday spending, which the user can change
+    requested_cents: int
+    limit_cents: int
+
+
+class StarterPlanOut(AssistModel):
+    income_cents: int
+    fixed_cents: int
+    savings_cents: int
+    flexible_cents: int
+    buffer_cents: int
+    status: Literal["fits", "trimmed", "short"]
+    lines: list[StarterPlanLine]
+    summary: AssistText
+
+
+async def onboarding_plan(
+    settings: Settings, store: DashboardStore, user_id: str, answers: OnboardingAnswers
+) -> StarterPlanOut:
+    """A proposed starting budget. The numbers come from app.domain.starter_budget; the model
+    only words the summary, and every figure in it must match them."""
+    plan = store.starter_plan_for(user_id, answers)
+    names = {c.id: c.name for c in store.snapshot().categories}
+    f = FactBook()
+    income = f.money("Monthly money in", plan.income_cents, "onboarding")
+    fixed = f.money("Fixed costs", plan.fixed_cents, "onboarding")
+    savings = f.money("Savings", plan.savings_cents, "onboarding")
+    everyday = f.money("Everyday spending", plan.flexible_cents, "onboarding")
+    buffer = f.money("Unassigned buffer", plan.buffer_cents, "onboarding")
+    if plan.status == "short":
+        fallback = [
+            f"Your fixed costs ({fixed}) are more than the {income} coming in each month, so "
+            "there's nothing left for everyday spending yet. Look at your bills or add income."
+        ]
+    elif plan.status == "trimmed":
+        fallback = [
+            f"Your everyday estimates didn't fit after {fixed} in fixed costs and {savings} for "
+            f"savings, so each was scaled down to fit {everyday}. Adjust any of them below."
+        ]
+    else:
+        fallback = [
+            f"{fixed} covers your fixed costs, {savings} goes to savings, and {everyday} is for "
+            f"everyday spending, leaving a {buffer} buffer."
+        ]
+    summary = await _phrase(
+        settings,
+        f,
+        "Write one or two friendly sentences (max 45 words) explaining this starter budget to "
+        "a student: what's fixed, what's saved, what's left for everyday spending. Educational "
+        "only, no investment, tax, or credit advice.",
+        f"PLAN: income {income}, fixed {fixed}, savings {savings}, everyday {everyday}, "
+        f"buffer {buffer}, status {plan.status}",
+        fallback,
+        1,
+        max_chars=320,
+    )
+    return StarterPlanOut(
+        income_cents=plan.income_cents,
+        fixed_cents=plan.fixed_cents,
+        savings_cents=plan.savings_cents,
+        flexible_cents=plan.flexible_cents,
+        buffer_cents=plan.buffer_cents,
+        status=plan.status,
+        lines=[
+            StarterPlanLine(
+                category_id=line.category_id,
+                category_name=names.get(line.category_id, line.category_id),
+                fixed_cents=line.fixed_cents,
+                flexible_cents=line.flexible_cents,
+                requested_cents=line.requested_cents,
+                limit_cents=line.limit_cents,
+            )
+            for line in plan.lines
+        ],
+        summary=summary,
+    )
 
 
 # ------------------------------------------------------------------ lessons
