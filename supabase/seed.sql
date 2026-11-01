@@ -1,0 +1,3 @@
+-- Nothing to seed. Lessons live in code (backend/app/learning/content.py), and the backend
+-- creates each user's data on their first request, including the fictional Maya demo data
+-- for the user in PENNY_DEMO_OWNER_USER_ID.

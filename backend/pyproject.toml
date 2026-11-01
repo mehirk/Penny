@@ -1,0 +1,26 @@
+[project]
+name = "penny-api"
+version = "0.1.0"
+description = "Typed API and deterministic financial domain for the Penny MVP"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "openai>=2,<3",
+  "psycopg-pool>=3.3.3,<4",
+  "psycopg[binary]>=3.3.6,<4",
+  "pydantic-settings>=2.6,<3",
+  "pyjwt[crypto]>=2.10,<3",
+  "uvicorn[standard]>=0.32,<1",
+]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.8,<1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
