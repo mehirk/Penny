@@ -18,7 +18,6 @@ from app.dashboard_features import (
     build_foundations,
     build_learning,
     build_recurring,
-    flexible_budget_cents,
     monthly_equivalent_cents,
     next_due_after,
     score_month,
@@ -32,6 +31,7 @@ from app.dashboard_models import (
     BillWrite,
     BudgetLimitChange,
     BudgetPatch,
+    BudgetPlan,
     BudgetWrite,
     CardPayment,
     Category,
@@ -48,6 +48,7 @@ from app.dashboard_models import (
     DashboardTotals,
     FinancialHealth,
     FinancialHealthFactor,
+    FixedCost,
     ForecastDay,
     ForecastEvent,
     ForecastResponse,
@@ -783,9 +784,8 @@ class DashboardStore:
         """Daily Money Scores for a month, through today when it is the current month."""
         transactions = self._monthly_transactions(month)
         fixed = detect_fixed_series(self._transactions.values(), month)
-        budget = flexible_budget_cents(
-            sum(item["limit_cents"] for item in self._monthly_budgets(month)), fixed
-        )
+        # Category budgets are the flexible part of the plan; recurring bills sit outside them.
+        budget = sum(item["limit_cents"] for item in self._monthly_budgets(month))
         if budget <= 0:
             # No flexible budget means nothing to pace against; an empty month isn't "green".
             return []
@@ -800,7 +800,6 @@ class DashboardStore:
         history = [
             day for offset in (2, 1) for day in self._scored_month(add_months(month, -offset))
         ] + scores
-        fixed = detect_fixed_series(self._transactions.values(), month)
         due: dict[date, list[str]] = {}
         if month == self.active_month:
             for item in recurring_items:
@@ -812,9 +811,7 @@ class DashboardStore:
             month_transactions=self._monthly_transactions(month),
             scores=scores,
             history=history,
-            flexible_budget=flexible_budget_cents(
-                sum(item["limit_cents"] for item in self._monthly_budgets(month)), fixed
-            ),
+            flexible_budget=sum(item["limit_cents"] for item in self._monthly_budgets(month)),
             due_by_day=due,
         )
 
@@ -905,6 +902,57 @@ class DashboardStore:
     def _monthly_budgets(self, month: date) -> list[dict]:
         return [item for item in self._budgets.values() if item["month_start"] == month]
 
+    def _is_bill_payment(self, item: Transaction) -> bool:
+        """A payment toward a recurring bill: it counts against the fixed budget, not a category."""
+        return item.kind == "spending" and item.bill_id in self._bills
+
+    def _fixed_costs(
+        self, start: date, end: date, rows: Iterable[Transaction], kinds: dict[str, str]
+    ) -> list[FixedCost]:
+        """Each recurring bill's share of the budget for start..end: payments toward it in the
+        period, plus what's still due by `end` (overdue ones too). Past periods have nothing due."""
+        today = self.today()
+        paid: dict[str, int] = {}
+        for item in rows:
+            if self._is_bill_payment(item) and item.bill_id:
+                paid[item.bill_id] = paid.get(item.bill_id, 0) + item.amount_cents
+        lines = []
+        for bill in self._bills.values():
+            due_dates = (
+                bill_due_dates(bill, start if start > today else date.min, end)
+                if end >= today
+                else []
+            )
+            due = bill.amount_cents * len(due_dates)
+            if due or paid.get(bill.id):
+                lines.append(
+                    FixedCost(
+                        bill_id=bill.id,
+                        name=bill.name,
+                        category_id=bill.category_id,
+                        kind="subscription" if kinds.get(bill.id) == "subscription" else "bill",
+                        amount_cents=paid.get(bill.id, 0) + due,
+                        paid_cents=paid.get(bill.id, 0),
+                        due_cents=due,
+                        next_due_on=due_dates[0] if due_dates else None,
+                    )
+                )
+        return sorted(lines, key=lambda line: (-line.amount_cents, line.name))
+
+    @staticmethod
+    def _budget_plan(
+        fixed: list[FixedCost], variable_cents: int, variable_spent_cents: int
+    ) -> BudgetPlan:
+        fixed_cents = sum(line.amount_cents for line in fixed)
+        return BudgetPlan(
+            fixed_cents=fixed_cents,
+            fixed_paid_cents=sum(line.paid_cents for line in fixed),
+            variable_cents=variable_cents,
+            variable_spent_cents=variable_spent_cents,
+            total_cents=fixed_cents + variable_cents,
+            fixed=fixed,
+        )
+
     def _data_months(self) -> list[date]:
         months = {month_start(item.occurred_on) for item in self._transactions.values()}
         months.update(item["month_start"] for item in self._budgets.values())
@@ -959,11 +1007,12 @@ class DashboardStore:
                 TransactionAmount(item.amount_cents, TransactionKind(item.kind)) for item in monthly
             ]
             monthly_budgets = self._monthly_budgets(month)
-            total_budget = sum(item["limit_cents"] for item in monthly_budgets)
-            summary = build_summary(domain_transactions, total_budget, [])
-            spending_by_category, breakdown = self._category_breakdown(monthly)
+            # Category budgets are the variable part; recurring bills are measured separately.
+            variable_rows = [item for item in monthly if not self._is_bill_payment(item)]
+            _, breakdown = self._category_breakdown(monthly)
+            spending_by_category, _ = self._category_breakdown(variable_rows)
             exact: dict[str | None, int] = {}
-            for item in monthly:
+            for item in variable_rows:
                 if item.kind == "spending":
                     exact[item.category_id] = exact.get(item.category_id, 0) + item.amount_cents
             carried = not monthly_budgets and month == self.active_month
@@ -976,8 +1025,20 @@ class DashboardStore:
                     {**item, "id": f"carry-{item['id']}", "month_start": month}
                     for item in (self._monthly_budgets(previous) if previous else [])
                 ]
-                total_budget = sum(item["limit_cents"] for item in monthly_budgets)
-                summary = build_summary(domain_transactions, total_budget, [])
+            recurring = self._recurring()
+            fixed_costs = self._fixed_costs(
+                month,
+                month_end(month),
+                monthly,
+                {item.id: item.kind for item in recurring.items},
+            )
+            plan = self._budget_plan(
+                fixed_costs,
+                sum(item["limit_cents"] for item in monthly_budgets),
+                sum(item.amount_cents for item in variable_rows if item.kind == "spending"),
+            )
+            total_budget = plan.total_cents
+            summary = build_summary(domain_transactions, total_budget, [])
             budgets = []
             for item in monthly_budgets:
                 category = self._categories[item["category_id"]]
@@ -1022,15 +1083,13 @@ class DashboardStore:
                 if previous_transactions
                 else None
             )
-            recurring = self._recurring()
             calendar_view = self._money_calendar(month, recurring.items)
             learning = build_learning(self._learner, self._mission_xp(), self.today())
-            # Bills due later this month only matter while this month is the one on screen.
-            current = month_start(self.today()) == month
             safe = safe_to_spend(
-                total_budget,
+                plan.fixed_cents,
+                plan.variable_cents,
                 summary.spending_cents,
-                recurring.unpaid_bills_cents if current else 0,
+                sum(line.due_cents for line in fixed_costs),
             )
             safe_cents = safe.safe_cents
             today = self.today()
@@ -1133,6 +1192,7 @@ class DashboardStore:
                     ),
                     key=lambda item: (item.due_on, item.account_name),
                 ),
+                budget_plan=plan,
                 needs_onboarding=self._needs_onboarding(),
                 spending_runway=spending_runway,
                 totals=DashboardTotals(
@@ -1937,14 +1997,25 @@ class DashboardStore:
                 for b in self._monthly_budgets(m)
                 if (overlap := (min(end, month_end(m)) - max(start, m)).days + 1)
             ]
-            total_budget = sum(item["limit_cents"] for item in month_budgets)
+            variable_rows = [t for t in rows if not self._is_bill_payment(t)]
+            plan = self._budget_plan(
+                self._fixed_costs(
+                    start, end, rows, {item.id: item.kind for item in base.recurring.items}
+                ),
+                sum(item["limit_cents"] for item in month_budgets),
+                sum(t.amount_cents for t in variable_rows if t.kind == "spending"),
+            )
+            total_budget = plan.total_cents
             summary = build_summary(
                 [TransactionAmount(t.amount_cents, TransactionKind(t.kind)) for t in rows],
                 total_budget,
                 [],
             )
-            spending_by_category, breakdown = self._category_breakdown(rows)
-            budgets = self._combined_budgets(month_budgets, rows, spending_by_category, start)
+            _, breakdown = self._category_breakdown(rows)
+            spending_by_category, _ = self._category_breakdown(variable_rows)
+            budgets = self._combined_budgets(
+                month_budgets, variable_rows, spending_by_category, start
+            )
             needs = sum(t.amount_cents for t in rows if t.necessity == "need")
             wants = sum(t.amount_cents for t in rows if t.necessity == "want")
             length = (end - start).days + 1
@@ -1959,6 +2030,7 @@ class DashboardStore:
                     "period": period,
                     "transactions": rows,
                     "budgets": budgets,
+                    "budget_plan": plan,
                     "category_spending": breakdown,
                     "spending_classification": SpendingClassification(
                         needs_cents=needs,
@@ -2227,7 +2299,6 @@ class DashboardStore:
                 for item in self._budgets.values()
             ):
                 raise HTTPException(status.HTTP_409_CONFLICT, "Budget already exists")
-            self._require_bill_floor(request.category_id, request.limit_cents)
             budget_id = f"budget-{uuid4().hex[:12]}"
             self._budgets[budget_id] = {"id": budget_id, **request.model_dump()}
             return self._snapshot()
@@ -2239,15 +2310,8 @@ class DashboardStore:
             self.require_owner(user_id)
             if budget_id not in self._budgets:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Budget not found")
-            self._require_bill_floor(self._budgets[budget_id]["category_id"], request.limit_cents)
             self._budgets[budget_id]["limit_cents"] = request.limit_cents
             return self._snapshot()
-
-    def bill_floor_cents(self, user_id: str, category_id: str) -> int:
-        """The lowest a budget for this category can go: its scheduled bills per month."""
-        with self._lock:
-            self.require_owner(user_id)
-            return self._bill_floor_cents(category_id)
 
     def apply_budget_changes(
         self, user_id: str, changes: list[BudgetLimitChange]
@@ -2260,9 +2324,6 @@ class DashboardStore:
             for change in changes:
                 if change.budget_id not in self._budgets:
                     raise HTTPException(status.HTTP_404_NOT_FOUND, "Budget not found")
-                self._require_bill_floor(
-                    self._budgets[change.budget_id]["category_id"], change.limit_cents
-                )
             for change in changes:
                 self._budgets[change.budget_id]["limit_cents"] = change.limit_cents
             return self._snapshot()
@@ -2308,31 +2369,6 @@ class DashboardStore:
         if not transaction:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Transaction not found")
         return transaction
-
-    def _bill_floor_cents(self, category_id: str) -> int:
-        """What this category's scheduled bills cost per month (a parent includes its children)."""
-        return sum(
-            monthly_equivalent_cents(bill.amount_cents, bill.frequency)
-            for bill in self._bills.values()
-            if bill.category_id
-            and category_id in (bill.category_id, self._parent_of(bill.category_id))
-        )
-
-    def _parent_of(self, category_id: str) -> str | None:
-        category = self._categories.get(category_id)
-        return category.parent_id if category else None
-
-    def _require_bill_floor(self, category_id: str, limit_cents: int) -> None:
-        """A budget can't be set below its own fixed bills; change or remove the bill first."""
-        floor = self._bill_floor_cents(category_id)
-        if limit_cents < floor:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                f"Your scheduled bills in {self._category(category_id).name} need "
-                f"{format_cad(floor)} a month. Change or remove the bill first.",
-            )
-
-    # ------------------------------------------------------------------ onboarding
 
     def set_spending_from(self, user_id: str, value: str) -> DashboardResponse:
         with self._lock:
@@ -2462,10 +2498,10 @@ class DashboardStore:
                         **item.model_dump(),
                     )
                     self._bills[bill.id] = bill
+            # Bills are the fixed part of the budget on their own; category budgets are only the
+            # everyday (variable) amounts.
             for line in plan.lines:
-                limit = line.fixed_cents + request.everyday_limits.get(
-                    line.category_id, line.flexible_cents
-                )
+                limit = request.everyday_limits.get(line.category_id, line.flexible_cents)
                 if limit > 0:
                     budget_id = f"budget-{uuid4().hex[:12]}"
                     self._budgets[budget_id] = {

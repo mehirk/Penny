@@ -58,6 +58,10 @@
   --color-money-in: #03703f;
   --color-money-out: #b8232f;
   --color-money-in-soft: color-mix(in srgb, var(--color-money-in) 14%, var(--color-surface));
+  /* Recurring bills (the fixed part of the budget): one blue in every palette, so they stand
+     apart from category budgets. The Graphite chart blue, validated against light and dark. */
+  --color-recurring: #2a78d6;
+  --color-recurring-soft: color-mix(in srgb, var(--color-recurring) 14%, var(--color-surface));
   --color-money-out-soft: color-mix(in srgb, var(--color-money-out) 14%, var(--color-surface));
   --color-on-money: #ffffff;
 
@@ -125,6 +129,8 @@
   --color-money-in: #3ee08f;
   --color-money-out: #ff8288;
   --color-money-in-soft: color-mix(in srgb, var(--color-money-in) 22%, var(--color-surface));
+  --color-recurring: #3987e5;
+  --color-recurring-soft: color-mix(in srgb, var(--color-recurring) 22%, var(--color-surface));
   --color-money-out-soft: color-mix(in srgb, var(--color-money-out) 22%, var(--color-surface));
   --color-on-money: #08110c;
   --color-zone-green: #3ccf8e;

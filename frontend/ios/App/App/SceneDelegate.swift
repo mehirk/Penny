@@ -11,8 +11,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window = UIWindow(windowScene: windowScene)
         window?.rootViewController = PennyViewController()
         window?.makeKeyAndVisible()
+        // Face ID app lock (FaceIDPlugin.swift): covered from launch until unlocked.
+        AppLock.shared.lock(in: window)
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
+    }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        AppLock.shared.appBecameActive()
+    }
+
+    /// Covers Penny as it leaves the screen, before iOS takes the app-switcher snapshot.
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        AppLock.shared.lock(in: window)
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
@@ -40,6 +51,8 @@ class PennyViewController: CAPBridgeViewController {
 
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
+        // Sign in with Face ID (FaceIDPlugin.swift), a plugin of the app itself rather than an npm package.
+        bridge?.registerPluginInstance(FaceIDPlugin())
         webView?.isOpaque = false
         webView?.backgroundColor = Self.canvas
         webView?.scrollView.backgroundColor = Self.canvas

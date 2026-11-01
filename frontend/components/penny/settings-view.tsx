@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import { Banknote, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { Banknote, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, ScanFace, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
 import { type Dashboard, dashboardApi, type PayFrequency, type PaySchedule } from "@/lib/api";
+import { biometryName, clearSignIn, faceIdStatus, type FaceIdStatus, isCancelled, saveSignIn, setFaceIdDeclined } from "@/lib/face-id";
 import { formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
+import { createSupabaseBrowserClient, getSupabaseUserEmail } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, THEME_ICONS } from "./app-shell";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
@@ -71,6 +73,60 @@ function TrustSection() {
   );
 }
 
+/** Turns sign-in with Face ID on (it needs the password once, to keep it behind Face ID) or off. */
+function FaceIdSection({ status, onChange }: { status: FaceIdStatus; onChange: (status: FaceIdStatus) => void }) {
+  const name = biometryName(status);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function turnOn() {
+    setError("");
+    setBusy(true);
+    try {
+      const email = await getSupabaseUserEmail();
+      if (!email) { setError("Sign in again first, then turn this on."); return; }
+      // Checks the password is right before keeping it, so Face ID never saves a wrong one.
+      const { error: authError } = await createSupabaseBrowserClient().auth.signInWithPassword({ email, password });
+      if (authError) { setError(/invalid login credentials/i.test(authError.message) ? "That password isn’t right." : authError.message); return; }
+      await saveSignIn(email, password);
+      setFaceIdDeclined(false);
+      setPassword("");
+      onChange({ ...status, saved: true });
+    } catch (reason) {
+      if (!isCancelled(reason)) setError(`${name} couldn’t be turned on. Try again.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function turnOff() {
+    setBusy(true);
+    await clearSignIn();
+    onChange({ ...status, saved: false });
+    setBusy(false);
+  }
+
+  return (
+    <section aria-labelledby="face-id-title" className="space-y-4">
+      {status.saved ? (
+        <>
+          <p className="flex items-start gap-2 text-sm text-ink"><Check className="mt-0.5 size-4 shrink-0 text-money-in" aria-hidden="true" />On. Penny asks for {name} each time you come back to the app, and uses it instead of your password when you sign in.</p>
+          <Button variant="outline" className="w-full sm:w-auto" disabled={busy} onClick={() => void turnOff()}>Turn off {name}</Button>
+        </>
+      ) : (
+        <form onSubmit={(event) => { event.preventDefault(); void turnOn(); }} className="space-y-4">
+          <p className="text-sm text-ink-muted">Lock Penny whenever you leave the app, and sign in with a glance instead of your password. Enter your password once to turn it on.</p>
+          <Field label="Password">{(props) => <Input {...props} type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy} className="min-h-11 text-base" />}</Field>
+          {error && <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+          <Button type="submit" className="w-full sm:w-auto" disabled={busy || !password}><ScanFace className="size-4" aria-hidden="true" />{busy ? "Turning on…" : `Turn on ${name}`}</Button>
+        </form>
+      )}
+      <p className="text-xs text-ink-subtle">Your sign-in is kept only on this iPhone, in its Keychain, and can be read only after {name}. If you change your password or the faces set up in {name}, Penny asks for your password again.</p>
+    </section>
+  );
+}
+
 const PAY_SHORT: Record<PayFrequency, string> = { weekly: "Weekly", biweekly: "Every 2 weeks", semimonthly: "Twice a month", monthly: "Monthly", custom: "Custom" };
 
 type SettingsPage = { id: string; labelId: string; group: string; icon: LucideIcon; title: string; summary: string; body: React.ReactNode };
@@ -86,6 +142,8 @@ export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: 
   const styleName = PALETTE_OPTIONS.find((option) => option.value === palette)?.label ?? "Penny";
   const themeName = THEME_OPTIONS.find((option) => option.value === theme)?.label ?? "";
   const custom = dashboard.categories.filter((category) => category.custom).length;
+  const [faceId, setFaceId] = useState<FaceIdStatus | null>(null);
+  useEffect(() => { void faceIdStatus().then(setFaceId); }, []);
   const pages: SettingsPage[] = [
     { id: "pay", labelId: "pay-title", group: "Money", icon: Banknote, title: "When you get paid", summary: pay ? `${PAY_SHORT[pay.frequency]} · next ${formatShortDate(pay.next_payday)}` : "Not set up yet", body: <PayScheduleSection dashboard={dashboard} save={save} /> },
     { id: "accounts", labelId: "accounts-title", group: "Money", icon: Wallet, title: "Accounts", summary: `${dashboard.accounts.length} account${dashboard.accounts.length === 1 ? "" : "s"}`, body: <AccountsSection dashboard={dashboard} save={save} /> },
@@ -94,6 +152,10 @@ export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: 
     { id: "appearance", labelId: "appearance-title", group: "App", icon: Palette, title: "Appearance", summary: `${styleName} · ${themeName}`, body: <AppearanceSection /> },
     { id: "security", labelId: "trust-title", group: "Privacy", icon: ShieldCheck, title: "Security and trust", summary: "How your data is protected", body: <TrustSection /> },
   ];
+  // iPhone with Face ID (or Touch ID) set up: sign in with it instead of the password.
+  if (faceId?.available) {
+    pages.splice(pages.length - 1, 0, { id: "face-id", labelId: "face-id-title", group: "Privacy", icon: ScanFace, title: biometryName(faceId), summary: faceId.saved ? "On · no password needed" : "Off", body: <FaceIdSection status={faceId} onChange={setFaceId} /> });
+  }
   const page = pages.find((item) => item.id === pageId);
   // Laptop: the list stays on the left and the chosen section shows beside it (first by default).
   const wide = useWideScreen();

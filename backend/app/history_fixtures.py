@@ -15,11 +15,10 @@ from app.models import Transaction
 _CATEGORY_IDS = {"Transportation": "cat-transport", "Entertainment": "cat-fun"}
 
 RENT_CENTS = 82_500
+# Everyday (variable) budgets only; rent, transit, and phone are recurring bills (the fixed part).
 BUDGET_LIMITS_CENTS = {
-    "cat-housing": 85_000,
     "cat-food": 30_000,
-    "cat-transport": 10_000,
-    "cat-phone": 5_000,
+    "cat-transport": 3_000,
     "cat-school": 10_000,
     "cat-fun": 8_000,
 }

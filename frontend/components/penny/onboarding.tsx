@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Lock, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -30,6 +30,7 @@ const EVERYDAY_PRESETS = [
   { category: "cat-school", label: "School supplies", emoji: "📚", amount: "20" },
 ];
 const SAVINGS_OPTIONS = [0, 500, 1_000, 1_500, 2_000];
+const MAX_SAVINGS_BASIS_POINTS = 5_000;
 const PAY_OPTIONS: { value: PayFrequency; label: string }[] = [
   { value: "weekly", label: "Every week" },
   { value: "biweekly", label: "Every 2 weeks" },
@@ -50,6 +51,12 @@ function nextOnDay(today: string, day: number): string {
   if (candidate < base) candidate.setUTCMonth(candidate.getUTCMonth() + 1);
   return isoDay(candidate);
 }
+/** Basis points for a typed percentage ("12" or "12.5", up to 2 decimals); invalid is null. */
+function percentToBasisPoints(value: string): number | null {
+  const match = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(value.trim().replace(/%$/, ""));
+  if (!match) return null;
+  return Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+}
 /** Cents for a typed amount; blank or invalid is null (amounts are required; 0.00 is fine). */
 const toCents = (value: string): number | null => {
   try { return parseCadToCents(value); } catch { return null; }
@@ -59,7 +66,7 @@ const toCents = (value: string): number | null => {
  * First-run setup for a real (non-demo) account: a few questions, then a starting budget built
  * by Penny's rules (the AI only explains it). Nothing is saved until the user approves the plan.
  */
-export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard; onDone: (data: Dashboard) => void; onSkip: () => void }) {
+export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone: (data: Dashboard) => void }) {
   const today = dashboard.money_calendar.today ?? isoDay(new Date());
   const categoryIds = useMemo(() => new Set(dashboard.categories.filter((c) => c.kind === "spending").map((c) => c.id)), [dashboard.categories]);
   const editable = dashboard.accounts_overview.accounts.filter((a) => a.last_activity_on === null);
@@ -75,13 +82,15 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
   const [bills, setBills] = useState<Bill[]>(() => BILL_PRESETS.filter((p) => categoryIds.has(p.category)).map((p) => ({ key: p.key, on: false, name: p.name, category: p.category, amount: p.amount, day: "1" })));
   const [everyday, setEveryday] = useState<Record<string, string>>(() => Object.fromEntries(EVERYDAY_PRESETS.filter((p) => categoryIds.has(p.category)).map((p) => [p.category, p.amount])));
   const [savings, setSavings] = useState(1_000);
+  // A typed percentage when "Custom" is picked; null while a preset is chosen.
+  const [customSavings, setCustomSavings] = useState<string | null>(null);
   const [plan, setPlan] = useState<StarterPlan | null>(null);
   // Shown once when the budget so far adds up to more than comes in; Continue again keeps it.
   const [warning, setWarning] = useState<{ check: StarterCheck; key: string } | null>(null);
   const [limits, setLimits] = useState<Record<string, string>>({});
 
   /** The answers as the API expects them, or an error message for the first bad amount. */
-  function answers(): OnboardingAnswers | string {
+  function answers(savingsOverride?: number): OnboardingAnswers | string {
     const opening: Record<string, number> = {};
     for (const account of editable) {
       const cents = toCents(balances[account.id] ?? "");
@@ -120,7 +129,50 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
       if (cents === null) return "Enter an amount for each everyday category (0.00 to skip one).";
       if (cents > 0) spend[category] = cents;
     }
-    return { opening_balances: opening, new_accounts: accounts, income, monthly_money_cents: monthlyMoney, bills: billList, everyday: spend, savings_basis_points: savings };
+    let savingsBasisPoints = savingsOverride ?? savings;
+    if (savingsOverride === undefined && customSavings !== null) {
+      const typed = percentToBasisPoints(customSavings);
+      if (typed === null || typed > MAX_SAVINGS_BASIS_POINTS) return `Enter a savings percentage from 0 to ${MAX_SAVINGS_BASIS_POINTS / 100}.`;
+      savingsBasisPoints = typed;
+    }
+    return { opening_balances: opening, new_accounts: accounts, income, monthly_money_cents: monthlyMoney, bills: billList, everyday: spend, savings_basis_points: savingsBasisPoints };
+  }
+
+  // Penny's suggestions stay on screen while amounts are entered (Everyday and Saving): the
+  // figures come from the API's deterministic check, refreshed shortly after each change.
+  const draft = step === 3 || step === 4 ? answers() : null;
+  const draftKey = draft && typeof draft !== "string" ? JSON.stringify(draft) : null;
+  const [live, setLive] = useState<{ check: StarterCheck; key: string } | null>(null);
+  useEffect(() => {
+    if (!draftKey) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      onboardingApi.check(JSON.parse(draftKey) as OnboardingAnswers).then((check) => { if (!cancelled) setLive({ check, key: draftKey }); }).catch(() => undefined);
+    }, 350);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [draftKey]);
+
+  /** Skips only the step on screen: its amounts become 0 (or nothing), then setup moves on. */
+  function skipStep() {
+    setError("");
+    setWarning(null);
+    if (step === 0) {
+      setBalances(Object.fromEntries(editable.map((a) => [a.id, "0.00"])));
+      setNewAccounts([]);
+    } else if (step === 1) {
+      setIncomeMode("monthly");
+      setMonthly("0.00");
+    } else if (step === 2) {
+      setBills((list) => list.filter((b) => !b.key.startsWith("custom")).map((b) => ({ ...b, on: false })));
+    } else if (step === 3) {
+      setEveryday((values) => Object.fromEntries(Object.keys(values).map((key) => [key, "0.00"])));
+    } else if (step === 4) {
+      setSavings(0);
+      setCustomSavings(null);
+      void buildPlan(0);
+      return;
+    }
+    setStep(step + 1);
   }
 
   async function next() {
@@ -142,7 +194,11 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
       }
     }
     if (step < STEPS.length - 2) { setStep(step + 1); return; }
-    const built = answers();
+    await buildPlan();
+  }
+
+  async function buildPlan(savingsOverride?: number) {
+    const built = answers(savingsOverride);
     if (typeof built === "string") { setError(built); return; }
     setBusy(true);
     try {
@@ -189,7 +245,7 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
       <div className="mx-auto flex min-h-dvh max-w-lg flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1rem)]">
         <div className="flex items-center justify-between gap-3">
           {step > 0 ? <button type="button" onClick={() => { setError(""); setStep(step - 1); }} className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-lg px-2 font-semibold text-ink-muted hover:text-ink"><ArrowLeft className="size-4" aria-hidden="true" />Back</button> : <span />}
-          <button type="button" onClick={onSkip} className="min-h-11 rounded-lg px-2 text-sm font-semibold text-ink-subtle hover:text-ink">Skip for now</button>
+          <span className="text-xs font-semibold text-ink-subtle">Step {step + 1} of {STEPS.length}</span>
         </div>
         <ol className="mt-2 flex gap-1.5" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
           {STEPS.map((name, index) => <li key={name} className={cn("h-1 flex-1 rounded-full", index <= step ? "bg-primary" : "bg-sage")} aria-hidden="true" />)}
@@ -301,15 +357,28 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
             <section>
               <h1 id="setup-title" className="text-2xl font-semibold tracking-tight text-ink">Saving</h1>
               <p className="mt-2 text-sm text-ink-muted">How much of what comes in would you like to set aside each month? Even a little builds a cushion.</p>
-              <div role="radiogroup" aria-label="Savings" className="mt-5 grid grid-cols-5 gap-2">
+              <div role="radiogroup" aria-label="Savings" className="mt-5 grid grid-cols-3 gap-2 sm:grid-cols-6">
                 {SAVINGS_OPTIONS.map((bp) => (
-                  <button key={bp} type="button" role="radio" aria-checked={savings === bp} onClick={() => setSavings(bp)} className={cn("min-h-14 rounded-xl border text-base font-semibold", savings === bp ? "border-primary bg-primary-soft text-ink" : "border-line text-ink-muted")}>{bp / 100}%</button>
+                  <button key={bp} type="button" role="radio" aria-checked={customSavings === null && savings === bp} onClick={() => { setSavings(bp); setCustomSavings(null); }} className={cn("min-h-14 rounded-xl border text-base font-semibold", customSavings === null && savings === bp ? "border-primary bg-primary-soft text-ink" : "border-line text-ink-muted")}>{bp / 100}%</button>
                 ))}
+                <button type="button" role="radio" aria-checked={customSavings !== null} onClick={() => setCustomSavings(customSavings ?? String(savings / 100))} className={cn("min-h-14 rounded-xl border text-base font-semibold", customSavings !== null ? "border-primary bg-primary-soft text-ink" : "border-line text-ink-muted")}>Custom</button>
               </div>
+              {customSavings !== null && (
+                <div className="mt-4">
+                  <Field label="Your own percentage" hint={`From 0 to ${MAX_SAVINGS_BASIS_POINTS / 100}% of what comes in.`}>
+                    {(props) => (
+                      <div className="relative w-40">
+                        <Input {...props} inputMode="decimal" autoFocus placeholder="12" value={customSavings} onChange={(e) => setCustomSavings(e.target.value)} className="min-h-11 pr-8 text-base tabular" />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-subtle" aria-hidden="true">%</span>
+                      </div>
+                    )}
+                  </Field>
+                </div>
+              )}
             </section>
           )}
 
-          {(step === 3 || step === 4) && warning && <IncomeWarning check={warning.check} />}
+          {(step === 3 || step === 4) && (live?.key === draftKey || warning) && <PennySuggestions check={live?.key === draftKey ? live.check : warning!.check} step={step === 3 ? "everyday" : "savings"} />}
 
           {step === 5 && plan && <PlanReview plan={plan} limits={limits} onLimit={(category, value) => setLimits({ ...limits, [category]: value })} />}
         </div>
@@ -317,10 +386,45 @@ export function Onboarding({ dashboard, onDone, onSkip }: { dashboard: Dashboard
         {error && <p role="alert" className="mt-4 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         <div className="sticky bottom-0 -mx-4 mt-6 bg-canvas/90 px-4 pb-1 pt-3 backdrop-blur">
           {step < STEPS.length - 1
-            ? <Button className="min-h-12 w-full text-base" disabled={busy} onClick={() => void next()}>{busy ? (step === STEPS.length - 2 ? "Building your plan…" : "Checking…") : (step === 3 || step === 4) && warning ? "Keep these amounts" : step === STEPS.length - 2 ? <><Sparkles className="size-4" aria-hidden="true" />See my plan</> : "Continue"}</Button>
+            ? (
+              <div className="flex gap-2">
+                <Button variant="outline" className="min-h-12 shrink-0 text-base" disabled={busy} onClick={skipStep}>Skip this step</Button>
+                <Button className="min-h-12 flex-1 text-base" disabled={busy} onClick={() => void next()}>{busy ? (step === STEPS.length - 2 ? "Building your plan…" : "Checking…") : (step === 3 || step === 4) && warning ? "Keep these amounts" : step === STEPS.length - 2 ? <><Sparkles className="size-4" aria-hidden="true" />See my plan</> : "Continue"}</Button>
+              </div>
+            )
             : <Button className="min-h-12 w-full text-base" disabled={busy} onClick={() => void approve()}><Check className="size-4" aria-hidden="true" />{busy ? "Saving…" : "Use this plan"}</Button>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Penny's suggestions while amounts are entered: the plan so far against what comes in, and the
+ * 50/30/20 guide for comparison. Every figure comes from the API's check; advice only.
+ */
+function PennySuggestions({ check, step }: { check: StarterCheck; step: "everyday" | "savings" }) {
+  if (check.status !== "fits") return <IncomeWarning check={check} />;
+  if (check.income_cents === 0) {
+    return (
+      <div role="status" className="mt-5 rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-subtle"><Sparkles className="size-3.5" aria-hidden="true" />Penny · suggestion</p>
+        <p className="mt-1">Add what comes in each month (go Back to Income) and Penny will check this plan against it.</p>
+      </div>
+    );
+  }
+  const amount = (cents: number) => <span className="tabular font-semibold text-ink">{cad(cents)}</span>;
+  return (
+    <div role="status" aria-live="polite" className="mt-5 rounded-xl border border-primary/30 bg-primary-soft/40 p-4 text-sm text-ink-muted">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-subtle"><Sparkles className="size-3.5" aria-hidden="true" />Penny · suggestion</p>
+      <p className="mt-1 text-ink">Bills {amount(check.fixed_cents)} + everyday {amount(check.flexible_cents)} + savings {amount(check.savings_cents)} = {amount(check.planned_cents)} a month, of the {amount(check.income_cents)} coming in.</p>
+      {check.buffer_cents > 0 && <p className="mt-1">That leaves {amount(check.buffer_cents)} unassigned as a buffer.</p>}
+      {step === "everyday"
+        ? <p className="mt-2">The 50/30/20 rule is a simple guide: about {amount(check.guide_needs_cents)} for needs (rent, bills, groceries) and {amount(check.guide_wants_cents)} for wants.</p>
+        : check.savings_cents < check.guide_savings_cents
+          ? <p className="mt-2">The 50/30/20 rule suggests saving about 20%, or {amount(check.guide_savings_cents)} a month. Any amount builds a cushion; you can raise it later.</p>
+          : <p className="mt-2">That meets the 50/30/20 guide of saving about 20% ({amount(check.guide_savings_cents)} a month).</p>}
+      <p className="mt-2 text-xs text-ink-subtle">Educational, not financial advice.</p>
     </div>
   );
 }

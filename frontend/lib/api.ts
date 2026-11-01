@@ -79,6 +79,7 @@ export type Dashboard = {
   spending_power_cents: number;
   safe_to_spend: SafeToSpendBreakdown | null;
   card_payments: CardPayment[];
+  budget_plan: BudgetPlan | null;
   /** A real account with no budget, bills, or pay schedule yet: offer the setup. */
   needs_onboarding: boolean;
   /** How long Safe to spend has to last; null when the period shown doesn't include today. */
@@ -87,7 +88,11 @@ export type Dashboard = {
 };
 
 /** Each step of Safe to spend, as the API computed it. */
-export type SafeToSpendBreakdown = { budget_cents: number; spent_cents: number; unpaid_bills_cents: number; safe_cents: number; over_cents: number; has_budget: boolean };
+/** One recurring bill's share of the month's budget: paid so far plus what's still due. */
+export type FixedCost = { bill_id: string; name: string; category_id: string | null; kind: "bill" | "subscription"; amount_cents: number; paid_cents: number; due_cents: number; next_due_on: string | null };
+/** The month's budget: recurring bills (fixed) plus the category budgets (variable). */
+export type BudgetPlan = { fixed_cents: number; fixed_paid_cents: number; variable_cents: number; variable_spent_cents: number; total_cents: number; fixed: FixedCost[] };
+export type SafeToSpendBreakdown = { fixed_cents: number; variable_cents: number; budget_cents: number; spent_cents: number; unpaid_bills_cents: number; safe_cents: number; over_cents: number; has_budget: boolean };
 export type SpendingRunway = { until: string; until_payday: boolean; days_left: number; per_day_cents: number; status: "on_track" | "tight" | "empty" | "over" };
 
 export type HistoryMonth = { month: string; income_cents: number; spending_cents: number; cash_flow_cents: number; budget_cents: number; transaction_count: number };
@@ -264,7 +269,7 @@ export type OnboardingAnswers = {
 export type StarterPlanLine = { category_id: string; category_name: string; fixed_cents: number; flexible_cents: number; requested_cents: number; limit_cents: number };
 export type StarterPlan = { income_cents: number; fixed_cents: number; savings_cents: number; flexible_cents: number; buffer_cents: number; over_income_cents: number; status: "fits" | "over" | "short"; lines: StarterPlanLine[]; guide_needs_cents: number; guide_wants_cents: number; guide_savings_cents: number; summary: AssistText };
 
-export type StarterCheck = { income_cents: number; planned_cents: number; over_income_cents: number; status: "fits" | "over" | "short"; guide_needs_cents: number; guide_wants_cents: number; guide_savings_cents: number };
+export type StarterCheck = { income_cents: number; fixed_cents: number; flexible_cents: number; savings_cents: number; planned_cents: number; buffer_cents: number; over_income_cents: number; status: "fits" | "over" | "short"; guide_needs_cents: number; guide_wants_cents: number; guide_savings_cents: number };
 
 /** First-run setup: the plan is only a proposal until `apply` (the user's approval). */
 export const onboardingApi = {

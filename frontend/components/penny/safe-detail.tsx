@@ -30,7 +30,7 @@ export function SafeDetail({ dashboard, onBack, onNavigate, onAsk }: { dashboard
   }
   const over = safe.safe_cents < 0;
   const steps: { label: string; detail?: string; cents: number; sign: "+" | "−" }[] = [
-    { label: "Monthly budget", detail: "All your budgets added up", cents: safe.budget_cents, sign: "+" },
+    { label: "Monthly budget", detail: safe.fixed_cents > 0 ? `${cad(safe.fixed_cents)} recurring bills + ${cad(safe.variable_cents)} category budgets` : "Your category budgets added up", cents: safe.budget_cents, sign: "+" },
     { label: `Spent ${period.phrase}`, detail: "From any account, card included", cents: safe.spent_cents, sign: "−" },
     { label: "Bills still due", detail: "Unpaid this month, overdue ones included", cents: safe.unpaid_bills_cents, sign: "−" },
   ];

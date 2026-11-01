@@ -387,9 +387,36 @@ class CardPayment(DashboardModel):
     owed_cents: int = Field(ge=0)
 
 
+class FixedCost(DashboardModel):
+    """One recurring bill's share of the month's budget: what's been paid, plus what's still due."""
+
+    bill_id: str
+    name: str
+    category_id: str | None
+    kind: Literal["bill", "subscription"]
+    amount_cents: int = Field(ge=0)  # paid + due
+    paid_cents: int = Field(ge=0)
+    due_cents: int = Field(ge=0)
+    next_due_on: date | None  # the next unpaid due date in the period, if any
+
+
+class BudgetPlan(DashboardModel):
+    """The month's budget: fixed costs (recurring bills) plus the category budgets (variable)."""
+
+    fixed_cents: int = Field(ge=0)
+    fixed_paid_cents: int = Field(ge=0)
+    variable_cents: int = Field(ge=0)
+    # Spending outside the recurring bills, measured against the variable budget.
+    variable_spent_cents: int = Field(ge=0)
+    total_cents: int = Field(ge=0)
+    fixed: list[FixedCost]
+
+
 class SafeToSpendBreakdown(DashboardModel):
     """Each step of Safe to spend (app.domain.runway.safe_to_spend), so the app can show it."""
 
+    fixed_cents: int = Field(ge=0)
+    variable_cents: int = Field(ge=0)
     budget_cents: int = Field(ge=0)
     spent_cents: int = Field(ge=0)
     unpaid_bills_cents: int = Field(ge=0)
@@ -437,6 +464,7 @@ class DashboardResponse(DashboardModel):
     safe_to_spend: SafeToSpendBreakdown | None = None
     # Credit cards with a payment due day, soonest first.
     card_payments: list[CardPayment] = Field(default_factory=list)
+    budget_plan: BudgetPlan | None = None
     # A real (non-demo) account with no budget, bills, or pay schedule yet: offer the setup.
     needs_onboarding: bool = False
     # Only while the period shown includes today.

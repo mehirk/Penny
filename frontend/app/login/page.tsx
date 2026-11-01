@@ -1,13 +1,14 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LoaderCircle, ShieldCheck } from "lucide-react";
+import { ArrowLeft, LoaderCircle, ScanFace, ShieldCheck } from "lucide-react";
 import { BrandMark } from "@/components/penny/app-shell";
 import { Field } from "@/components/penny/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { biometryName, clearSignIn, faceIdDeclined, faceIdStatus, type FaceIdStatus, isCancelled, loadSignIn, saveSignIn, setAppSignedIn, setFaceIdDeclined } from "@/lib/face-id";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 
 function friendlyAuthError(message: string): string {
@@ -22,18 +23,78 @@ export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // iPhone only: Face ID signs in with the sign-in saved in the Keychain, no password needed.
+  const [faceId, setFaceId] = useState<FaceIdStatus | null>(null);
+  // After a password sign-in, the offer to turn Face ID on (it needs the password to save it).
+  const [offer, setOffer] = useState<{ email: string; password: string } | null>(null);
+  const prompted = useRef(false);
+
+  useEffect(() => {
+    // Signed out: no app lock on top of this page (it asks for Face ID itself).
+    setAppSignedIn(false);
+    void faceIdStatus().then((status) => {
+      setFaceId(status);
+      // Opening the app with Face ID on goes straight to the Face ID prompt.
+      if (configured && status.available && status.saved && !prompted.current) {
+        prompted.current = true;
+        void signInWithFaceId();
+      }
+    });
+    // Runs once, on opening the sign-in page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Signs in with the email and password; returns an error message or null. */
+  async function passwordSignIn(email: string, password: string): Promise<string | null> {
+    try {
+      const { error: authError } = await createSupabaseBrowserClient().auth.signInWithPassword({ email, password });
+      return authError ? authError.message : null;
+    } catch (reason) {
+      return reason instanceof Error ? reason.message : "Sign-in failed";
+    }
+  }
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setBusy(true);
     const form = new FormData(event.currentTarget);
+    const email = String(form.get("email"));
+    const password = String(form.get("password"));
+    const failed = await passwordSignIn(email, password);
+    if (failed) { setError(friendlyAuthError(failed)); setBusy(false); return; }
+    if (faceId?.available && !faceId.saved && !faceIdDeclined()) { setOffer({ email, password }); setBusy(false); return; }
+    router.replace("/");
+  }
+
+  async function signInWithFaceId() {
+    setError("");
+    setBusy(true);
+    const saved = await loadSignIn();
+    if (!saved) { setBusy(false); return; }
+    const failed = await passwordSignIn(saved.email, saved.password);
+    if (!failed) { router.replace("/"); return; }
+    if (/invalid login credentials/i.test(failed)) {
+      // The password changed since Face ID was turned on: forget it and ask for the new one.
+      await clearSignIn();
+      setFaceId((status) => (status ? { ...status, saved: false } : status));
+      setError("Your password has changed. Sign in with it to turn Face ID back on.");
+    } else {
+      setError(friendlyAuthError(failed));
+    }
+    setBusy(false);
+  }
+
+  async function turnOnFaceId() {
+    if (!offer) return;
+    setError("");
+    setBusy(true);
     try {
-      const { error: authError } = await createSupabaseBrowserClient().auth.signInWithPassword({ email: String(form.get("email")), password: String(form.get("password")) });
-      if (authError) { setError(friendlyAuthError(authError.message)); setBusy(false); return; }
+      await saveSignIn(offer.email, offer.password);
+      setFaceIdDeclined(false);
       router.replace("/");
     } catch (reason) {
-      setError(friendlyAuthError(reason instanceof Error ? reason.message : "Sign-in failed"));
+      if (!isCancelled(reason)) setError(`${faceId ? biometryName(faceId) : "Face ID"} couldn’t be turned on. You can try again from Settings.`);
       setBusy(false);
     }
   }
@@ -46,16 +107,37 @@ export default function LoginPage() {
           <div><p className="text-lg font-semibold tracking-tight text-ink">Penny</p><p className="text-xs text-ink-subtle">Make money make sense</p></div>
         </div>
         <div className="mt-8 rounded-[1.5rem] border border-line bg-surface p-6 shadow-[var(--shadow-raised)] sm:p-7">
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h1>
-          <p className="mt-1.5 text-sm text-ink-subtle">Use the demo account your team set up. Never use real banking passwords.</p>
-          <form onSubmit={signIn} className="mt-6 space-y-4">
-            <Field label="Email">{(props) => <Input {...props} name="email" type="email" autoComplete="email" required disabled={!configured || busy} />}</Field>
-            <Field label="Password">{(props) => <Input {...props} name="password" type="password" autoComplete="current-password" required disabled={!configured || busy} />}</Field>
-            {error && <p role="alert" className="rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">{error}</p>}
-            <Button type="submit" disabled={!configured || busy} className="w-full">
-              {busy ? <><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Signing in…</> : "Sign in"}
-            </Button>
-          </form>
+          {offer && faceId ? (
+            <>
+              <span className="grid size-12 place-items-center rounded-2xl bg-primary-soft text-ink" aria-hidden="true"><ScanFace className="size-6" /></span>
+              <h1 className="mt-4 text-2xl font-semibold tracking-tight text-ink">Use {biometryName(faceId)} next time?</h1>
+              <p className="mt-1.5 text-sm text-ink-subtle">Sign in with a glance instead of your password. Your sign-in stays on this iPhone, locked by {biometryName(faceId)}. You can turn it off in Settings.</p>
+              {error && <p role="alert" className="mt-4 rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">{error}</p>}
+              <div className="mt-6 space-y-2">
+                <Button className="w-full" disabled={busy} onClick={() => void turnOnFaceId()}><ScanFace className="size-4" aria-hidden="true" />Turn on {biometryName(faceId)}</Button>
+                <Button variant="ghost" className="w-full" disabled={busy} onClick={() => { setFaceIdDeclined(true); router.replace("/"); }}>Not now</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h1>
+              <p className="mt-1.5 text-sm text-ink-subtle">Use the demo account your team set up. Never use real banking passwords.</p>
+              {faceId?.available && faceId.saved && (
+                <>
+                  <Button variant="outline" className="mt-6 w-full" disabled={!configured || busy} onClick={() => void signInWithFaceId()}><ScanFace className="size-4" aria-hidden="true" />Sign in with {biometryName(faceId)}</Button>
+                  <p className="mt-5 text-center text-xs text-ink-subtle">or use your password</p>
+                </>
+              )}
+              <form onSubmit={signIn} className={faceId?.saved ? "mt-3 space-y-4" : "mt-6 space-y-4"}>
+                <Field label="Email">{(props) => <Input {...props} name="email" type="email" autoComplete="email" required disabled={!configured || busy} />}</Field>
+                <Field label="Password">{(props) => <Input {...props} name="password" type="password" autoComplete="current-password" required disabled={!configured || busy} />}</Field>
+                {error && <p role="alert" className="rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">{error}</p>}
+                <Button type="submit" disabled={!configured || busy} className="w-full">
+                  {busy ? <><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Signing in…</> : "Sign in"}
+                </Button>
+              </form>
+            </>
+          )}
           {!configured && <p className="mt-4 rounded-xl bg-gold-soft p-3 text-sm text-gold-strong">Sign-in isn’t set up yet. Add the Supabase URL and publishable key to <code>frontend/.env.local</code>, then restart the dev server.</p>}
         </div>
         <p className="mt-5 flex items-start gap-2 text-xs text-ink-subtle"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />Penny uses only fictional accounts and amounts. No bank is ever connected.</p>

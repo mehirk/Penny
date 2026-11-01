@@ -105,7 +105,7 @@ export function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, o
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-ink">By category</h2>
-          <p className="mt-0.5 text-sm text-ink-muted">Each category’s limit {period.phrase}.</p>
+          <p className="mt-0.5 text-sm text-ink-muted">Everyday spending you set {period.phrase}. Recurring bills aren’t counted here.</p>
         </div>
         {editable && (
           <div className="flex flex-wrap gap-2">

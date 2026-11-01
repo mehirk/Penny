@@ -25,6 +25,7 @@ import { cad, describeError, MENU, NAVIGATION, type View } from "@/components/pe
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { type Bill, type Budget, type BudgetSuggestion, type Dashboard, dashboardApi, type Mission, type SavingsGoal, type Transaction } from "@/lib/api";
+import { setAppSignedIn } from "@/lib/face-id";
 import { addMonths, formatMonth } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -118,16 +119,12 @@ function PennyApp() {
   const [historyVersion, setHistoryVersion] = useState(0);
   const [loadError, setLoadError] = useState<ReturnType<typeof describeError> | null>(null);
   const [transactionTarget, setTransactionTarget] = useState<Transaction | "new" | null>(null);
-  // First-run setup for new real accounts; "Skip for now" is remembered on this device.
-  const [setupSkipped, setSetupSkipped] = useState(() => {
+  // First-run setup for new real accounts. Each step can be skipped, but not the whole setup;
+  // a device that skipped it under the old "Skip for now" still opens on Home with a Set up card.
+  const [setupSkipped] = useState(() => {
     try { return typeof window !== "undefined" && window.localStorage.getItem("penny-setup-skipped") === "1"; } catch { return false; }
   });
   const [setupOpen, setSetupOpen] = useState(false);
-  const skipSetup = () => {
-    try { window.localStorage.setItem("penny-setup-skipped", "1"); } catch { /* storage blocked: skip for this visit */ }
-    setSetupSkipped(true);
-    setSetupOpen(false);
-  };
 
   const [budgetTarget, setBudgetTarget] = useState<Budget | "new" | null>(null);
   const [goalTarget, setGoalTarget] = useState<SavingsGoal | "new" | null>(null);
@@ -139,6 +136,9 @@ function PennyApp() {
   const latestPeriodRequest = useRef<string | null>(null);
   const currentPeriod = useRef<PeriodRange | null>(null);
   useEffect(() => { currentPeriod.current = dashboard?.period ?? null; }, [dashboard]);
+  // Signed in and the dashboard is showing: with Face ID on, the iPhone app now locks when it leaves the screen.
+  const loaded = dashboard !== null;
+  useEffect(() => { if (loaded) setAppSignedIn(true); }, [loaded]);
 
   const remember = useCallback((data: Dashboard) => { cache.current.set(periodKey(data.period), data); return data; }, []);
 
@@ -392,7 +392,7 @@ function PennyApp() {
     void coachChat.send(question);
   };
   if (dashboard.needs_onboarding && (setupOpen || !setupSkipped)) {
-    return <Onboarding dashboard={dashboard} onSkip={skipSetup} onDone={(data) => { setSetupOpen(false); applyChange(data); toast({ title: "Your plan is ready", description: "Change any budget from Spending › Budgets." }); }} />;
+    return <Onboarding dashboard={dashboard} onDone={(data) => { setSetupOpen(false); applyChange(data); toast({ title: "Your plan is ready", description: "Change any budget from Spending › Budgets." }); }} />;
   }
 
   return (

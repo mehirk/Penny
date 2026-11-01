@@ -29,6 +29,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Penny uses Face ID to sign you in without your password.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Penny connects to the Penny server running on your computer to load your fictional budget.</string>
 	<key>UIApplicationSceneManifest</key>
