@@ -72,11 +72,13 @@ const RUNWAY_STYLE: Record<SpendingRunway["status"], { dot: string; bar: string 
   on_track: { dot: "bg-money-in", bar: "bg-ink-subtle" },
   tight: { dot: "bg-gold", bar: "bg-gold" },
   empty: { dot: "bg-danger", bar: "bg-danger" },
+  over: { dot: "bg-danger", bar: "bg-danger" },
 };
 
 function runwayLabel(runway: SpendingRunway): string {
   if (runway.status === "on_track") return "On track";
   if (runway.status === "empty") return "Nothing left";
+  if (runway.status === "over") return "Over budget";
   return runway.until_payday ? "Tight until payday" : "Tight this month";
 }
 
@@ -146,26 +148,37 @@ function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp
 function SafeToSpendHero({ dashboard, onOpen }: Pick<Props, "dashboard"> & { onOpen: () => void }) {
   const { totals, period } = dashboard;
   const runway = dashboard.spending_runway;
+  const safe = dashboard.safe_to_spend;
+  const cents = dashboard.spending_power_cents;
+  const over = cents < 0;
   const used = totals.total_budget_cents ? Math.min(100, (totals.spending_cents * 100) / totals.total_budget_cents) : 0;
   return (
   <section aria-labelledby="safe-title" className="pb-2 pt-4 text-center">
-    <p className="text-[3.5rem] font-semibold leading-none tracking-tight text-ink"><BigAmount cents={dashboard.spending_power_cents} /></p>
+    <p className={cn("text-[3.5rem] font-semibold leading-none tracking-tight", over ? "text-danger" : "text-ink")}>
+      <BigAmount cents={Math.abs(cents)} negative={over} />
+    </p>
     <div className="mt-3 flex items-center justify-center gap-1">
       <button type="button" id="safe-title" onClick={onOpen} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-base font-semibold text-ink-muted hover:text-ink">
         Safe to spend<ChevronRight className="size-4" aria-hidden="true" />
       </button>
       <AmountsToggle className="-ml-1" />
     </div>
-    {runway && (
+    {safe && !safe.has_budget ? (
+      <p className="text-sm text-ink-muted">Set a monthly budget to see what’s safe to spend.</p>
+    ) : over ? (
+      <p role="status" className="text-sm font-semibold text-danger">You’re <span className="tabular">{cad(-cents)}</span> over your budget {period.phrase}</p>
+    ) : runway && (
       <p className="text-sm text-ink-muted">
         <span className="inline-flex items-center gap-1.5 font-semibold text-ink"><span className={cn("size-2 rounded-full", RUNWAY_STYLE[runway.status].dot)} aria-hidden="true" />{runwayLabel(runway)}</span>
         {" · "}about <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} day{runway.days_left === 1 ? "" : "s"}
       </p>
     )}
-    <div className="mx-auto mt-5 max-w-60">
-      <Progress value={used} className="h-1.5" indicatorClassName={runway ? RUNWAY_STYLE[runway.status].bar : "bg-ink-subtle"} aria-label={`${Math.round(used)}% of the budget used ${period.phrase}`} />
-      <p className="mt-2 text-xs text-ink-subtle">{Math.round(used)}% of your budget used · unpaid bills already set aside</p>
-    </div>
+    {totals.total_budget_cents > 0 && (
+      <div className="mx-auto mt-5 max-w-60">
+        <Progress value={used} className="h-1.5" indicatorClassName={over ? "bg-danger" : runway ? RUNWAY_STYLE[runway.status].bar : "bg-ink-subtle"} aria-label={`${Math.round(used)}% of the budget used ${period.phrase}`} />
+        <p className="mt-2 text-xs text-ink-subtle">{Math.round(used)}% of your <span className="tabular">{cad(totals.total_budget_cents)}</span> budget used · unpaid bills set aside</p>
+      </div>
+    )}
   </section>
   );
 }

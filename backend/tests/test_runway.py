@@ -61,7 +61,7 @@ def test_no_allowance_is_on_track_when_money_is_left() -> None:
 
 @pytest.mark.parametrize(
     ("safe", "allowance", "end"),
-    [(-1, 0, MONTH_END), (0, -1, MONTH_END), (0, 0, date(2026, 10, 31))],
+    [(0, -1, MONTH_END), (0, 0, date(2026, 10, 31))],
 )
 def test_rejects_invalid_input(safe: int, allowance: int, end: date) -> None:
     with pytest.raises(ValueError):

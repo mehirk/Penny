@@ -11,13 +11,15 @@ import { SafeToSpendRead } from "./smart-cards";
 const CARD = "overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface shadow-[var(--shadow-card)]";
 
 /**
- * Safe to spend on its own page: every step of the sum (spending money, then what's held back),
- * the unpaid bills behind it with their dates, and Penny's read. All figures come from the API.
+ * Safe to spend on its own page: the month's budget, minus what's been spent, minus bills still
+ * due this month, and Penny's read. It goes negative (in red) once spending passes the budget.
+ * Account balances don't change it. All figures come from the API.
  */
 export function SafeDetail({ dashboard, onBack, onNavigate, onAsk }: { dashboard: Dashboard; onBack: () => void; onNavigate: (view: View, anchor?: string) => void; onAsk: (question: string) => void }) {
   const safe = dashboard.safe_to_spend;
   const runway = dashboard.spending_runway;
   const unpaid = dashboard.recurring.unpaid;
+  const { period } = dashboard;
   if (!safe) {
     return (
       <div className="mx-auto max-w-2xl">
@@ -26,20 +28,18 @@ export function SafeDetail({ dashboard, onBack, onNavigate, onAsk }: { dashboard
       </div>
     );
   }
+  const over = safe.safe_cents < 0;
   const steps: { label: string; detail?: string; cents: number; sign: "+" | "−" }[] = [
-    { label: "Spending money", detail: safe.spending_from === "chequing" ? "Chequing and cash" : "Chequing, cash, and savings", cents: safe.spending_money_cents, sign: "+" },
-    { label: "Set aside for goals", cents: safe.set_aside_cents, sign: "−" },
-    { label: "Owed on credit cards", detail: "Card purchases are money already spent", cents: safe.owed_on_cards_cents, sign: "−" },
-    { label: "Unpaid bills", detail: `Due by ${formatShortDate(safe.holds_until)}, overdue ones included`, cents: safe.unpaid_bills_cents, sign: "−" },
-    { label: "Spent from other accounts", detail: "This month, outside your spending money", cents: safe.spent_outside_cents, sign: "−" },
+    { label: "Monthly budget", detail: "All your budgets added up", cents: safe.budget_cents, sign: "+" },
+    { label: `Spent ${period.phrase}`, detail: "From any account, card included", cents: safe.spent_cents, sign: "−" },
+    { label: "Bills still due", detail: "Unpaid this month, overdue ones included", cents: safe.unpaid_bills_cents, sign: "−" },
   ];
   const shown = steps.filter((step, index) => index === 0 || step.cents > 0);
   // The version changes whenever any step does, so Penny's read is refetched only when it would differ.
-  const version = [safe.safe_cents, safe.spending_money_cents, safe.unpaid_bills_cents, safe.owed_on_cards_cents, safe.set_aside_cents, safe.spent_outside_cents, dashboard.budgets.length].join(":");
+  const version = [safe.safe_cents, safe.budget_cents, safe.spent_cents, safe.unpaid_bills_cents, unpaid.length].join(":");
   const links: { label: string; view: View; anchor?: string }[] = [
-    { label: "Which accounts count as spending money", view: "settings", anchor: "accounts" },
-    { label: "Recurring bills", view: "recurring" },
     { label: "Budgets", view: "spending", anchor: "budgets" },
+    { label: "Recurring bills", view: "recurring" },
   ];
 
   return (
@@ -48,9 +48,13 @@ export function SafeDetail({ dashboard, onBack, onNavigate, onAsk }: { dashboard
 
       <section aria-labelledby="safe-detail-title" className="pb-2 pt-4 text-center">
         <h2 id="safe-detail-title" className="text-base font-semibold text-ink-muted">Safe to spend</h2>
-        <p className="mt-2 text-5xl font-semibold leading-none tracking-tight text-ink"><BigAmount cents={safe.safe_cents} /></p>
-        {runway && safe.safe_cents > 0 && <p className="mt-3 text-sm text-ink-muted">About <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} day{runway.days_left === 1 ? "" : "s"}</p>}
-        {safe.short_cents > 0 && <p role="status" className="mx-auto mt-3 max-w-sm rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">What’s spoken for is <span className="tabular font-semibold">{cad(safe.short_cents)}</span> more than your spending money.</p>}
+        <p className={cn("mt-2 text-5xl font-semibold leading-none tracking-tight", over ? "text-danger" : "text-ink")}><BigAmount cents={Math.abs(safe.safe_cents)} negative={over} /></p>
+        {over
+          ? <p role="status" className="mt-3 text-sm font-semibold text-danger">You’re <span className="tabular">{cad(safe.over_cents)}</span> over your budget {period.phrase}</p>
+          : runway && safe.safe_cents > 0 && <p className="mt-3 text-sm text-ink-muted">About <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} day{runway.days_left === 1 ? "" : "s"}</p>}
+        {!safe.has_budget && (
+          <button type="button" onClick={() => onNavigate("spending", "budgets")} className="mx-auto mt-3 block min-h-11 rounded-xl bg-primary-soft px-4 text-sm font-semibold text-ink">Set a monthly budget</button>
+        )}
       </section>
 
       <section aria-labelledby="safe-how" className="mt-6">
@@ -65,17 +69,17 @@ export function SafeDetail({ dashboard, onBack, onNavigate, onAsk }: { dashboard
               <span className="tabular shrink-0 font-semibold text-ink"><span aria-hidden="true">{step.sign === "−" ? "− " : ""}</span><span className="sr-only">{step.sign === "−" ? "minus " : ""}</span>{cad(step.cents)}</span>
             </li>
           ))}
-          <li className="flex min-h-14 items-center justify-between gap-3 bg-sage-soft/60 px-4 py-3">
+          <li className={cn("flex min-h-14 items-center justify-between gap-3 px-4 py-3", over ? "bg-danger-soft" : "bg-sage-soft/60")}>
             <span className="text-sm font-semibold text-ink">Safe to spend</span>
-            <span className="tabular shrink-0 text-lg font-semibold text-ink">{cad(safe.safe_cents)}</span>
+            <span className={cn("tabular shrink-0 text-lg font-semibold", over ? "text-danger" : "text-ink")}>{over ? "−" : ""}{cad(Math.abs(safe.safe_cents))}</span>
           </li>
         </ul>
-        <p className="mt-2 px-1 text-xs text-ink-subtle">Calculated by Penny’s tested rules, never by AI. Paid bills have already left your balance, so they aren’t taken out twice.</p>
+        <p className="mt-2 px-1 text-xs text-ink-subtle">Your budget is the plan, so account balances don’t change this number. Calculated by Penny’s tested rules, never by AI. A paid bill is part of what’s spent, so it’s never counted twice.</p>
       </section>
 
       {unpaid.length > 0 && (
         <section aria-labelledby="safe-bills" className="mt-6">
-          <h3 id="safe-bills" className="mb-2 px-1 text-base font-semibold text-ink">Bills held back</h3>
+          <h3 id="safe-bills" className="mb-2 px-1 text-base font-semibold text-ink">Bills set aside</h3>
           <ul className={cn(CARD, "divide-y divide-line")}>
             {unpaid.map((bill) => (
               <li key={`${bill.bill_id}:${bill.due_on}`} className="flex min-h-14 items-center justify-between gap-3 px-4 py-3">

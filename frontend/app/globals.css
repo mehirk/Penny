@@ -892,7 +892,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
  */
 #main { view-transition-name: page; }
 /* An inner page (an account, a setting) shows its own "‹ Back" bar instead of the app header. */
-@media (max-width: 1023px) { :root[data-subpage] .page-header { display: none; } }
+@media (max-width: 1023px) { :root[data-subpage] .page-header, :root[data-subpage] .subpage-hidden { display: none; } }
 /* Snapshots are taken with data-nav set: an opaque page, so the old one doesn't show through. */
 :root[data-nav] #main { background: var(--color-canvas); }
 .page-header { view-transition-name: page-header; }

@@ -385,7 +385,7 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
     {/* Phones: the period picker sits at the top of the page and scrolls away, so the pinned
         header stays short (like an iOS large title). The line above still names the period. */}
     {showMonth && !phoneToday && (
-      <div className="px-4 pt-4 sm:hidden">
+      <div className="subpage-hidden px-4 pt-4 sm:hidden">
         <div className="flex flex-wrap items-center gap-2">{picker}</div>
         {pastHome && <p className="mt-2 text-xs text-ink-subtle">Looking back at a past month. Balances and goals show today’s values.</p>}
       </div>

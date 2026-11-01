@@ -74,17 +74,18 @@ def test_without_pay_the_monthly_money_is_the_base() -> None:
     assert plan.income_cents == 80_000
 
 
-def _setup(spending_from: str = "chequing"):  # type: ignore[no-untyped-def]
+def _setup():  # type: ignore[no-untyped-def]
+    """$2,500 in chequing, a savings account and a card, and one $500 Groceries budget."""
     store = _fresh_store(USER, None)
     store.apply_onboarding(
         USER,
         OnboardingApply(
             answers=_answers(
                 bills=[],
-                everyday={},
+                everyday={"cat-groceries": 50_000},
                 income=None,
-                monthly_money_cents=0,
-                spending_from=spending_from,
+                monthly_money_cents=100_000,
+                savings_basis_points=0,
                 new_accounts=[
                     {"name": "Savings", "account_type": "savings", "balance_cents": 100_000},
                     {
@@ -122,29 +123,24 @@ def _spend(store, account_id: str, cents: int) -> int:  # type: ignore[no-untype
 def test_any_purchase_lowers_safe_to_spend(account_type: str) -> None:
     store, ids = _setup()
     before = store.dashboard_for_user(USER).spending_power_cents
-    assert before == 250_000
+    assert before == 50_000
     assert _spend(store, ids[account_type], 4_800) == before - 4_800
 
 
-def test_savings_counts_as_spending_money_when_chosen() -> None:
-    store, _ = _setup("chequing_and_savings")
-    assert store.dashboard_for_user(USER).spending_power_cents == 350_000
-
-
-def test_a_used_up_budget_does_not_zero_safe_to_spend() -> None:
-    # Paying a bill fills its budget, but the money already left the balance; the rest is safe.
-    from app.dashboard_models import BudgetWrite
+def test_balances_do_not_change_safe_to_spend() -> None:
+    from app.dashboard_models import AccountPatch
 
     store, ids = _setup()
-    store.create_budget(
-        USER,
-        BudgetWrite(
-            category_id="cat-groceries",
-            month_start=store.today().replace(day=1),
-            limit_cents=4_800,
-        ),
-    )
-    assert _spend(store, ids["chequing"], 4_800) == 250_000 - 4_800
+    result = store.update_account(USER, ids["chequing"], AccountPatch(balance_cents=1_000))
+    assert result.spending_power_cents == 50_000
+
+
+def test_over_budget_goes_negative() -> None:
+    store, ids = _setup()
+    assert _spend(store, ids["chequing"], 60_000) == -10_000
+    d = store.dashboard_for_user(USER)
+    assert d.safe_to_spend is not None and d.safe_to_spend.over_cents == 10_000
+    assert d.spending_runway is not None and d.spending_runway.status == "over"
 
 
 def _add_rent(store, account_id: str, due: date) -> str:  # type: ignore[no-untyped-def]
@@ -165,13 +161,12 @@ def _add_rent(store, account_id: str, due: date) -> str:  # type: ignore[no-unty
 
 
 def test_unpaid_bill_is_held_back_and_paying_it_changes_nothing() -> None:
-    # $2,500 in chequing and $100 rent not yet paid: $2,400 is safe. Paying the rent takes the
-    # balance to $2,400 and Safe to spend stays $2,400, since the bill isn't counted twice.
+    # $500 budget and $100 rent not yet paid: $400 is safe. Once paid it's part of what's spent,
+    # and Safe to spend stays $400, since the bill isn't counted twice.
     store, ids = _setup()
     rent = _add_rent(store, ids["chequing"], store.today())
-    assert store.dashboard_for_user(USER).spending_power_cents == 240_000
-    paid = store.mark_bill_paid(USER, rent)
-    assert paid.spending_power_cents == 240_000
+    assert store.dashboard_for_user(USER).spending_power_cents == 40_000
+    assert store.mark_bill_paid(USER, rent).spending_power_cents == 40_000
 
 
 def test_overdue_bill_is_held_back() -> None:
@@ -179,19 +174,20 @@ def test_overdue_bill_is_held_back() -> None:
 
     store, ids = _setup()
     _add_rent(store, ids["chequing"], store.today() - timedelta(days=40))
-    # Two missed months still unpaid, plus this month's if it's still to come.
-    assert store.dashboard_for_user(USER).spending_power_cents <= 250_000 - 20_000
+    assert store.dashboard_for_user(USER).spending_power_cents <= 50_000 - 20_000
 
 
 def test_breakdown_shows_each_step() -> None:
     store, ids = _setup()
     _add_rent(store, ids["chequing"], store.today())
+    _spend(store, ids["chequing"], 4_800)
     safe = store.dashboard_for_user(USER).safe_to_spend
-    assert safe is not None
-    assert (safe.spending_money_cents, safe.unpaid_bills_cents, safe.safe_cents) == (
-        250_000,
+    assert safe is not None and safe.has_budget
+    assert (safe.budget_cents, safe.spent_cents, safe.unpaid_bills_cents, safe.safe_cents) == (
+        50_000,
+        4_800,
         10_000,
-        240_000,
+        35_200,
     )
 
 
@@ -199,12 +195,14 @@ def test_import_rows_skips_duplicates_and_keeps_balances() -> None:
     from app.dashboard_models import ImportRow
 
     store, ids = _setup()
+    before = {a.id: a.balance_cents for a in store.dashboard_for_user(USER).accounts}
     row = ImportRow(
         occurred_on=store.today(), description="Loblaws", amount_cents=4_820, kind="spending"
     )
     imported, errors = store.import_rows(USER, [row, row], ids["chequing"])
     assert (imported, len(errors)) == (1, 1)
-    assert store.dashboard_for_user(USER).safe_to_spend.spending_money_cents == 250_000  # type: ignore[union-attr]
+    after = {a.id: a.balance_cents for a in store.dashboard_for_user(USER).accounts}
+    assert after == before
 
 
 def test_budget_changes_apply_together_or_not_at_all() -> None:
@@ -212,7 +210,7 @@ def test_budget_changes_apply_together_or_not_at_all() -> None:
 
     store, ids = _setup()
     month = store.today().replace(day=1)
-    for category in ("cat-groceries", "cat-fun"):
+    for category in ("cat-eating-out", "cat-fun"):
         store.create_budget(
             USER, BudgetWrite(category_id=category, month_start=month, limit_cents=10_000)
         )
@@ -221,20 +219,38 @@ def test_budget_changes_apply_together_or_not_at_all() -> None:
         store.apply_budget_changes(
             USER,
             [
-                BudgetLimitChange(budget_id=budgets["cat-groceries"], limit_cents=15_000),
+                BudgetLimitChange(budget_id=budgets["cat-eating-out"], limit_cents=15_000),
                 BudgetLimitChange(budget_id="missing", limit_cents=5_000),
             ],
         )
     limits = {b.category_id: b.limit_cents for b in store.dashboard_for_user(USER).budgets}
-    assert limits["cat-groceries"] == 10_000
+    assert limits["cat-eating-out"] == 10_000
     result = store.apply_budget_changes(
         USER,
         [
-            BudgetLimitChange(budget_id=budgets["cat-groceries"], limit_cents=15_000),
+            BudgetLimitChange(budget_id=budgets["cat-eating-out"], limit_cents=15_000),
             BudgetLimitChange(budget_id=budgets["cat-fun"], limit_cents=5_000),
         ],
     )
     assert {b.category_id: b.limit_cents for b in result.budgets} == {
-        "cat-groceries": 15_000,
+        "cat-eating-out": 15_000,
         "cat-fun": 5_000,
+        "cat-groceries": 50_000,
     }
+
+
+def test_check_warns_when_budget_is_above_income_but_still_applies() -> None:
+    from app.coach.assist import starter_check
+
+    store = _fresh_store(USER, None)
+    answers = _answers(
+        income=None, monthly_money_cents=100_000, bills=[], everyday={"cat-groceries": 150_000}
+    )
+    check = starter_check(store, USER, answers)
+    assert (check.status, check.over_income_cents, check.guide_needs_cents) == (
+        "over",
+        60_000,
+        50_000,
+    )
+    result = store.apply_onboarding(USER, OnboardingApply(answers=answers))
+    assert {b.category_id: b.limit_cents for b in result.budgets} == {"cat-groceries": 150_000}

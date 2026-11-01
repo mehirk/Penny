@@ -5,7 +5,7 @@ import { Banknote, BellRing, Check, ChevronRight, FileUp, Lock, type LucideIcon,
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
-import { type Dashboard, dashboardApi, type PayFrequency, type PaySchedule, type SpendingFrom } from "@/lib/api";
+import { type Dashboard, dashboardApi, type PayFrequency, type PaySchedule } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -212,11 +212,6 @@ function PayScheduleSection({ dashboard, save }: { dashboard: Dashboard; save: S
   );
 }
 
-const SPENDING_FROM: { value: SpendingFrom; label: string; detail: string }[] = [
-  { value: "chequing", label: "Chequing only", detail: "Savings stays off-limits. Spending from it still comes off Safe to spend." },
-  { value: "chequing_and_savings", label: "Chequing and savings", detail: "You spend from both, so savings counts as spending money." },
-];
-
 function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
@@ -227,23 +222,7 @@ function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: Save
   }
   return (
     <section className={SECTION} aria-labelledby="accounts-title">
-      <fieldset>
-        <legend className="text-base font-semibold text-ink">Spending money</legend>
-        <p className="mt-1 text-sm text-ink-subtle">Which accounts does Safe to spend come from? Goal money, card balances, and upcoming bills are always taken out first.</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {SPENDING_FROM.map((option) => {
-            const selected = dashboard.profile.spending_from === option.value;
-            return (
-              <label key={option.value} className={cn("flex cursor-pointer gap-3 rounded-xl border p-3", selected ? "border-primary bg-primary-soft" : "border-line hover:border-line-strong")}>
-                <input type="radio" name="spending-from" checked={selected} onChange={() => void run(() => dashboardApi.setSpendingFrom(option.value), "Spending money updated")} className="mt-1 size-4 accent-[var(--color-primary)]" />
-                <span><span className="block text-sm font-semibold text-ink">{option.label}</span><span className="block text-xs text-ink-subtle">{option.detail}</span></span>
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
-
-      <h3 className="mt-6 text-base font-semibold text-ink">Your accounts</h3>
+      <h3 className="text-base font-semibold text-ink">Your accounts</h3>
       <ul className="mt-2 space-y-2.5">
         {dashboard.accounts.map((account) => (
           <li key={account.id} className="rounded-[var(--radius-card)] border border-line bg-surface">

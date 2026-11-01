@@ -155,10 +155,9 @@ def build_recurring(
     subscriptions = sum(item.monthly_cents for item in items if item.kind == "subscription")
     week_end = today + timedelta(days=7)
     payday_end = (next_payday - timedelta(days=1)) if next_payday else max(week_end, month_end)
-    # Unpaid bills (overdue ones too) through the end of this month, or the day before payday if
-    # that's later. A paid bill has moved on to its next due date, so it isn't counted again.
-    this_month_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
-    reserve_end = max(this_month_end, payday_end)
+    # Unpaid bills (overdue ones too) through the end of this month: the month's budget has to
+    # cover them. A paid bill has moved on to its next due date, so it isn't counted again.
+    reserve_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
     unpaid = sorted(
         (
             UpcomingPayment(
