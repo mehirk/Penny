@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from datetime import date
 from typing import Annotated, Literal
 
@@ -45,6 +45,7 @@ from app.dashboard_models import (
     BudgetWrite,
     CategorySuggestion,
     CategoryWrite,
+    ChartsResponse,
     CreditUtilizationRequest,
     CreditUtilizationResponse,
     DashboardResponse,
@@ -85,40 +86,17 @@ from app.learning.models import (
     LessonDetail,
 )
 from app.models import CurrentUserResponse, HealthResponse
-from app.reminders.service import (
-    ReminderError,
-    ReminderService,
-    ReminderSettingsWrite,
-    ReminderState,
-    SentEmail,
-)
 
 settings = get_settings()
 AuthenticatedUser = Annotated[CurrentUser, Depends(get_current_user)]
 # Optional month (any day in it) whose snapshot a mutation should return; defaults to today.
 ViewMonth = Annotated[date | None, Query(description="Month to return, e.g. 2026-09-01")]
-reminders = ReminderService(stores.for_user)
 logger = logging.getLogger(__name__)
-
-
-async def _reminder_loop() -> None:
-    """Checks for due reminders on a fixed interval, for users who turned them on."""
-    while True:
-        await asyncio.sleep(get_settings().reminder_check_minutes * 60)
-        try:
-            await reminders.run_scheduled(get_settings())
-        except Exception:  # keep the loop alive; one bad pass shouldn't stop reminders
-            logger.exception("Scheduled reminder pass failed")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    task = asyncio.create_task(_reminder_loop()) if settings.reminder_check_minutes else None
     yield
-    if task:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
     pool.close()
 
 
@@ -488,6 +466,22 @@ def import_rows(request: ImportRowsRequest, current_user: AuthenticatedUser) -> 
     )
 
 
+@app.get("/api/v1/charts", response_model=ChartsResponse, tags=["history"])
+def charts(
+    current_user: AuthenticatedUser,
+    start: Annotated[date, Query(description="First month in the range")],
+    end: Annotated[date, Query(description="Last month in the range")],
+    account: Annotated[list[str] | None, Query(description="Only these accounts")] = None,
+    category: Annotated[
+        list[str] | None, Query(description="Only these top-level categories, or uncategorized")
+    ] = None,
+) -> ChartsResponse:
+    """Month-by-month figures for the Charts tab, up to 24 months, optionally filtered."""
+    return _store(current_user).charts_for_user(
+        current_user.id, start, end, frozenset(account or ()), frozenset(category or ())
+    )
+
+
 @app.get("/api/v1/history", response_model=HistoryResponse, tags=["history"])
 def history(
     current_user: AuthenticatedUser,
@@ -734,41 +728,6 @@ def answer_question(
 ) -> AnswerResult:
     """Grade one answer, once. XP is awarded only when the attempt is passed."""
     return _store(current_user).answer_question(current_user.id, attempt_id, request)
-
-
-@app.get("/api/v1/reminders", response_model=ReminderState, tags=["reminders"])
-def reminder_state(current_user: AuthenticatedUser) -> ReminderState:
-    """Email reminder settings, what's due today, delivery mode, and recent emails."""
-    return reminders.state(get_settings(), current_user.id, current_user.email)
-
-
-@app.put("/api/v1/reminders", response_model=ReminderState, tags=["reminders"])
-def update_reminders(
-    request: ReminderSettingsWrite, current_user: AuthenticatedUser
-) -> ReminderState:
-    """Turn email reminders on or off, choose the address, and pick which reminders to get."""
-    try:
-        return reminders.update(get_settings(), current_user.id, request, current_user.email)
-    except ReminderError as error:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
-
-
-@app.post("/api/v1/reminders/test", response_model=SentEmail, tags=["reminders"])
-async def send_test_reminder(current_user: AuthenticatedUser) -> SentEmail:
-    """Send one test email (rate limited) so the user can check delivery."""
-    try:
-        return await reminders.send_test(get_settings(), current_user.id)
-    except ReminderError as error:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(error)) from error
-
-
-@app.post("/api/v1/reminders/send-now", response_model=SentEmail, tags=["reminders"])
-async def send_reminders_now(current_user: AuthenticatedUser) -> SentEmail:
-    """Email everything that's due right now (rate limited)."""
-    try:
-        return await reminders.send_now(get_settings(), current_user.id)
-    except ReminderError as error:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(error)) from error
 
 
 @app.post("/api/v1/calculations/growth", response_model=GrowthResponse, tags=["calculations"])

@@ -693,7 +693,11 @@ class StarterCheck(AssistModel):
     """Whether the setup answers fit the income, with the 50/30/20 guide. No AI involved."""
 
     income_cents: int
+    fixed_cents: int
+    flexible_cents: int
+    savings_cents: int
     planned_cents: int  # fixed bills + savings + everyday
+    buffer_cents: int  # income not assigned to anything
     over_income_cents: int
     status: Literal["fits", "over", "short"]
     guide_needs_cents: int
@@ -705,7 +709,11 @@ def starter_check(store: DashboardStore, user_id: str, answers: OnboardingAnswer
     plan = store.starter_plan_for(user_id, answers)
     return StarterCheck(
         income_cents=plan.income_cents,
+        fixed_cents=plan.fixed_cents,
+        flexible_cents=plan.flexible_cents,
+        savings_cents=plan.savings_cents,
         planned_cents=plan.fixed_cents + plan.savings_cents + plan.flexible_cents,
+        buffer_cents=plan.buffer_cents,
         over_income_cents=plan.over_income_cents,
         status=plan.status,
         guide_needs_cents=plan.guide_needs_cents,
@@ -1249,6 +1257,10 @@ async def safe_to_spend_read(settings: Settings, store: DashboardStore, user_id:
         "monthly_budget": f.money("Monthly budget", safe.budget_cents, "budgets"),
         "spent_this_month": f.money("Spent this month", safe.spent_cents, "transactions"),
     }
+    # The budget is recurring bills (fixed) plus the category budgets (variable).
+    if safe.fixed_cents:
+        facts["fixed_bills_in_budget"] = f.money("Recurring bills", safe.fixed_cents, "bills")
+        facts["category_budgets"] = f.money("Category budgets", safe.variable_cents, "budgets")
     if safe.unpaid_bills_cents:
         facts["unpaid_bills_this_month"] = f.money("Unpaid bills", safe.unpaid_bills_cents, "bills")
     bills = [
@@ -1344,7 +1356,8 @@ async def budget_rebalance(
                 category_id=b.category_id,
                 limit_cents=b.limit_cents,
                 spent_cents=b.spent_cents,
-                floor_cents=store.bill_floor_cents(user_id, b.category_id),
+                # Category budgets hold no bills (those are the fixed budget), so no floor.
+                floor_cents=0,
             )
             for b in budgets.values()
         ]

@@ -96,7 +96,7 @@ def current_unit() -> Unit:
 
 @asynccontextmanager
 async def unit_scope(*, commit: bool = True) -> AsyncIterator[Unit]:
-    """A unit of work for code outside a request (the reminder loop). With commit=False the
+    """A unit of work for code outside a request (e.g. a background job). With commit=False the
     caller commits, e.g. only when a request succeeded."""
     unit = Unit()
     token = _current.set(unit)

@@ -174,3 +174,57 @@ function PeriodPanel({ id, dashboard, earliest, latest, onChoose, onClose }: { i
     </div>
   );
 }
+
+/**
+ * Pick a range of whole months on the same month grid as the period picker: tap the first month,
+ * then the last (tapping before the start restarts the range). Months with activity are dotted.
+ */
+export function MonthRangePanel({ id, start, end, earliest, latest, dataMonths, maxMonths, onChoose, onClose }: { id: string; start: string; end: string; earliest: string; latest: string; dataMonths: readonly string[]; maxMonths: number; onChoose: (range: PeriodRange) => void; onClose: () => void }) {
+  const [from, setFrom] = useState(start);
+  const [to, setTo] = useState<string | null>(end);
+  const [year, setYear] = useState(Number(end.slice(0, 4)));
+  const firstYear = Number(earliest.slice(0, 4));
+  const lastYear = Number(latest.slice(0, 4));
+  const span = (a: string, b: string) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7)) + 1;
+  const tooLong = to !== null && span(from, to) > maxMonths;
+  const label = (month: string) => `${MONTH_NAMES[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
+
+  function pick(month: string) {
+    if (to !== null || month < from) { setFrom(month); setTo(null); }
+    else setTo(month);
+  }
+
+  return (
+    <div id={id} role="dialog" aria-label="Choose months" className="absolute left-0 top-full z-40 mt-2 w-[min(24rem,calc(100vw-2rem))] animate-enter rounded-2xl border border-line bg-surface p-3 shadow-[var(--shadow-raised)] sm:p-4">
+      <p className="text-sm text-ink-muted" aria-live="polite">
+        <span className="font-semibold text-ink">{label(from)}</span> to <span className="font-semibold text-ink">{to ? label(to) : "pick the last month"}</span>
+      </p>
+      <div className="mt-2 flex items-center justify-between">
+        <button type="button" onClick={() => setYear(year - 1)} disabled={year <= firstYear} className="grid size-10 place-items-center rounded-lg text-ink-muted hover:bg-sage-soft disabled:opacity-30" aria-label="Previous year"><ChevronLeft className="size-4" aria-hidden="true" /></button>
+        <p className="text-sm font-semibold text-ink">{year}</p>
+        <button type="button" onClick={() => setYear(year + 1)} disabled={year >= lastYear} className="grid size-10 place-items-center rounded-lg text-ink-muted hover:bg-sage-soft disabled:opacity-30" aria-label="Next year"><ChevronRight className="size-4" aria-hidden="true" /></button>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+        {MONTH_NAMES.map((name, index) => {
+          const month = `${year}-${String(index + 1).padStart(2, "0")}-01`;
+          const edge = month === from || month === to;
+          const inside = to !== null && month > from && month < to;
+          const hasData = dataMonths.includes(month);
+          const disabled = month > latest || month < earliest;
+          return (
+            <button key={month} type="button" disabled={disabled} aria-pressed={edge || inside} onClick={() => pick(month)} className={cn("relative grid h-12 place-items-center rounded-lg text-sm font-medium transition-colors disabled:opacity-30", edge ? "bg-primary font-semibold text-on-primary" : inside ? "bg-primary-soft text-ink" : "text-ink hover:bg-sage-soft")}>
+              {name}
+              {hasData && !disabled && <span className={cn("absolute bottom-1.5 size-1 rounded-full", edge ? "bg-on-primary" : "bg-accent")} aria-hidden="true" />}
+              <span className="sr-only">{` ${year}${hasData ? ", has activity" : ""}`}</span>
+            </button>
+          );
+        })}
+      </div>
+      {tooLong && <p role="alert" className="mt-2 text-xs text-danger">Pick up to {maxMonths} months.</p>}
+      <div className="mt-3 flex justify-end gap-2 border-t border-line pt-3">
+        <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button size="sm" disabled={to === null || tooLong} onClick={() => to && onChoose({ start: from, end: to })}>Show these months</Button>
+      </div>
+    </div>
+  );
+}

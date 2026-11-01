@@ -1,26 +1,50 @@
 "use client";
 
 import { useId } from "react";
-import { Bot, Eye, EyeOff, GraduationCap, Home, Landmark, ReceiptText, Settings, Target, TrendingUp, type LucideIcon } from "lucide-react";
-import { Label } from "@/components/ui/input";
+import { Bot, ChartColumnBig, Eye, EyeOff, GraduationCap, Home, Landmark, PiggyBank, ReceiptText, Settings, Target, type LucideIcon } from "lucide-react";
+import { Label, Select } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
 import { formatCad } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "./preferences";
 
-export type View = "today" | "spending" | "accounts" | "recurring" | "goals" | "invest" | "learn" | "ai" | "settings";
+export type View = "today" | "spending" | "charts" | "accounts" | "recurring" | "goals" | "budgets" | "learn" | "ai" | "settings";
 
 /** `primary` items sit in the phone tab bar; the rest live under "More". */
-export const NAVIGATION: { id: View; label: string; title: string; description: string; icon: LucideIcon; primary: boolean }[] = [
+/**
+ * Every view. `inMenu: false` keeps a view out of the sidebar and tab bar: Accounts opens from
+ * Home ("Net worth ›"), and each account from its row on Home.
+ */
+export const NAVIGATION: { id: View; label: string; title: string; description: string; icon: LucideIcon; primary: boolean; inMenu?: boolean }[] = [
   { id: "today", label: "Home", title: "Today", description: "Your Money Score, streaks, and what’s coming up.", icon: Home, primary: true },
   { id: "spending", label: "Spending", title: "Spending", description: "Transactions, recurring bills, and budgets.", icon: ReceiptText, primary: true },
-  { id: "accounts", label: "Accounts", title: "Accounts", description: "Every account’s balance, and what it all adds up to.", icon: Landmark, primary: false },
-  { id: "goals", label: "Goals", title: "Goals", description: "Save on purpose and see what it takes each month.", icon: Target, primary: true },
-  { id: "invest", label: "Invest", title: "Invest", description: "Learn how investing works in Canada, at your own pace.", icon: TrendingUp, primary: false },
+  { id: "budgets", label: "Budgets", title: "Budgets", description: "Your plan for the month. Everything else is measured against it.", icon: PiggyBank, primary: true },
+  { id: "charts", label: "Charts", title: "Charts", description: "Your money over time. Pick a range, filter, and choose what to show.", icon: ChartColumnBig, primary: true },
+  { id: "accounts", label: "Accounts", title: "Accounts", description: "Every account’s balance, and what it all adds up to.", icon: Landmark, primary: false, inMenu: false },
+  { id: "goals", label: "Goals", title: "Goals", description: "Save on purpose and see what it takes each month.", icon: Target, primary: false },
   { id: "learn", label: "Learn", title: "Learn", description: "Lessons and challenges for Canada or the US, from Easy to Hard.", icon: GraduationCap, primary: false },
   { id: "ai", label: "Penny AI", title: "Penny AI", description: "Your money coach. It knows your numbers and helps you decide.", icon: Bot, primary: true },
-  { id: "settings", label: "Settings", title: "Settings", description: "Appearance, reminders, and how your data is protected.", icon: Settings, primary: false },
+  { id: "settings", label: "Settings", title: "Settings", description: "Accounts, appearance, and how your data is protected.", icon: Settings, primary: false },
 ];
+
+/** 1st, 2nd, 3rd, 4th … 31st. */
+export function ordinal(day: number): string {
+  const tail = day % 100 >= 11 && day % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[day % 10] ?? "th";
+  return `${day}${tail}`;
+}
+
+/** "Payment due on the …": a card's due day of the month. Short months use their last day. */
+export function DueDaySelect({ value, onChange, ...props }: { value: string; onChange: (value: string) => void; id?: string; "aria-describedby"?: string; "aria-invalid"?: boolean; className?: string }) {
+  return (
+    <Select {...props} value={value} onChange={(event) => onChange(event.target.value)} className={cn("min-h-11 text-base", props.className)}>
+      <option value="">Pick a day</option>
+      {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{ordinal(day)} of the month</option>)}
+    </Select>
+  );
+}
+
+/** Views shown in the sidebar and tab bar. */
+export const MENU = NAVIGATION.filter((item) => item.inMenu !== false);
 
 /** Formats integer cents from the API. Display only; never feed the result back into maths. */
 export const cad = (cents: number, showSign = false) => formatCad(String(cents), showSign);

@@ -1,7 +1,7 @@
 "use client";
 
 import { createElement } from "react";
-import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CalendarClock } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import type { AccountBalance, Dashboard } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
@@ -25,6 +25,7 @@ export function AccountDetail({ dashboard, account, backLabel, onBack }: { dashb
   const categories = new Map(dashboard.categories.map((category) => [category.id, category]));
   const rows = dashboard.transactions.filter((item) => item.account_id === account.id).slice(0, 20);
   const { phrase } = dashboard.period;
+  const card = dashboard.card_payments.find((item) => item.account_id === account.id);
   return (
     <div className="mx-auto max-w-2xl">
       <BackBar label={backLabel} onBack={onBack} />
@@ -43,6 +44,19 @@ export function AccountDetail({ dashboard, account, backLabel, onBack }: { dashb
           <p className="mt-2 text-center text-xs text-ink-subtle"><span className="tabular">{(used / 100).toFixed(1)}%</span> of <span className="tabular">{cad(account.credit_limit_cents)}</span> used · <span className="tabular">{cad(account.available_credit_cents ?? 0)}</span> available</p>
         </div>
       )}
+
+      {credit && (card ? (
+        <p className={cn(GROUP, "mt-6 flex min-h-14 items-center gap-3 px-4 text-sm")}>
+          <CalendarClock className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+          <span className="flex-1 text-ink">Payment due <span className="font-semibold">{formatShortDate(card.due_on)}</span><span className="text-ink-subtle"> · {card.days_until_due === 0 ? "today" : card.days_until_due === 1 ? "tomorrow" : `in ${card.days_until_due} days`}</span></span>
+          <span className="tabular font-semibold text-ink">{cad(card.owed_cents)}</span>
+        </p>
+      ) : (
+        <a href="#settings/accounts" className={cn(GROUP, "mt-6 flex min-h-14 items-center gap-3 px-4 text-sm text-ink hover:bg-sage-soft")}>
+          <CalendarClock className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+          <span className="flex-1">When is this card’s payment due? <span className="font-semibold text-accent-strong">Add it</span></span>
+        </a>
+      ))}
 
       <div className="mt-6 space-y-6">
         <ul className={cn(GROUP, "divide-y divide-line")} aria-label={`Money in and out ${phrase}`}>

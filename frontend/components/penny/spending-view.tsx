@@ -31,11 +31,6 @@ type Props = {
   onAddTransaction: () => void;
   onEditTransaction: (item: Transaction) => void;
   onDeleteTransaction: (item: Transaction) => void;
-  onAddBudget: () => void;
-  onEditBudget: (item: Budget) => void;
-  onCopyBudgets: (fromMonth: string) => void;
-  onApplyBudgets: (month: string, picked: BudgetSuggestion[]) => Promise<string | null>;
-  onApplyBudgetChanges: (changes: { budget_id: string; limit_cents: number }[]) => Promise<string | null>;
 };
 
 export function budgetStatus(budget: Budget): { label: string; tone: "danger" | "gold" | "accent"; bar: string } {
@@ -70,11 +65,9 @@ export function SpendingView(props: Props) {
         ))}
       </div>
       {tab === "transactions" ? (
-        // On a phone, budgets ("Food $30 over") come before Penny's take.
         <div id="spending-panel-transactions" role="tabpanel" aria-labelledby="spending-tab-transactions" className="flex flex-col gap-8">
           <RecentTransactions dashboard={dashboard} onAdd={props.onAddTransaction} onOpen={(item) => openPage(`tx:${item.id}`)} onDelete={props.onDeleteTransaction} onSeeAll={() => openPage("activity")} />
           <div className="max-sm:order-1"><SpendingTake dashboard={dashboard} version={props.historyVersion} onAsk={props.onAsk} /></div>
-          <Budgets {...props} />
           <div className="max-sm:order-2"><Trends dashboard={dashboard} historyVersion={props.historyVersion} onSelectMonth={props.onSelectMonth} /></div>
         </div>
       ) : (
@@ -86,16 +79,24 @@ export function SpendingView(props: Props) {
   );
 }
 
-function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyBudgets, onApplyBudgetChanges }: Props) {
+export type BudgetActions = {
+  onAddBudget: () => void;
+  onEditBudget: (item: Budget) => void;
+  onCopyBudgets: (fromMonth: string) => void;
+  onApplyBudgets: (month: string, picked: BudgetSuggestion[]) => Promise<string | null>;
+  onApplyBudgetChanges: (changes: { budget_id: string; limit_cents: number }[]) => Promise<string | null>;
+};
+
+/** The month's budgets: each category's limit and what's spent, suggestions, and fixes when over. */
+export function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyBudgets, onApplyBudgetChanges }: BudgetActions & { dashboard: Dashboard }) {
   const [suggesting, setSuggesting] = useState(false);
-  const { totals, period } = dashboard;
+  const { period } = dashboard;
   const previousMonth = addMonths(dashboard.active_month, -1);
   const canCopy = dashboard.data_months.includes(previousMonth);
   const editable = period.single_month;
   // Suggestions are made for the current month, from the three months before it.
   const canSuggest = editable && dashboard.active_month === dashboard.current_month;
   const carried = dashboard.budgets.some((budget) => budget.carried_over);
-  const over = totals.budget_remaining_cents < 0;
   // Any single budget over (even when the total isn't) gets suggested moves; refetched whenever a limit or spend changes.
   const overspent = canSuggest && dashboard.budgets.some((budget) => !budget.carried_over && budget.remaining_cents < 0);
   const budgetsKey = dashboard.budgets.map((budget) => `${budget.id}:${budget.limit_cents}:${budget.spent_cents}`).join("|");
@@ -103,11 +104,8 @@ function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyB
     <Card id="budgets" className="scroll-mt-28 p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-ink">Budgets</h2>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            <span className="tabular font-semibold text-ink">{cad(totals.spending_cents)}</span> of <span className="tabular">{cad(totals.total_budget_cents)}</span> spent {period.phrase} ·{" "}
-            <span className={cn("tabular font-semibold", over ? "text-danger" : "text-accent-strong")}>{cad(Math.abs(totals.budget_remaining_cents))} {over ? "over" : "left"}</span>
-          </p>
+          <h2 className="text-lg font-semibold tracking-tight text-ink">By category</h2>
+          <p className="mt-0.5 text-sm text-ink-muted">Everyday spending you set {period.phrase}. Recurring bills aren’t counted here.</p>
         </div>
         {editable && (
           <div className="flex flex-wrap gap-2">

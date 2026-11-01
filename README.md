@@ -13,7 +13,7 @@ The app has seven sections:
 
 Every score, total and projection comes from deterministic integer-cent Python. Bank, brokerage and credit-bureau connections remain intentionally out of scope; Settings explains the standards a future bank connection would have to meet.
 
-The dashboard loads all financial values from FastAPI. Transaction, category-assignment, monthly-budget, and savings-goal mutations return a freshly calculated dashboard snapshot. With `PENNY_DATABASE_URL` set, everything a user has (accounts, transactions, budgets, goals, bills, pay schedule, Learn progress, Penny AI chats and proposals, reminder settings and email log) is saved in Supabase Postgres; see [Where data is stored](#where-data-is-stored). Without it, FastAPI keeps data in memory and it resets on restart.
+The dashboard loads all financial values from FastAPI. Transaction, category-assignment, monthly-budget, and savings-goal mutations return a freshly calculated dashboard snapshot. With `PENNY_DATABASE_URL` set, everything a user has (accounts, transactions, budgets, goals, bills, pay schedule, Learn progress, Penny AI chats and proposals) is saved in Supabase Postgres; see [Where data is stored](#where-data-is-stored). Without it, FastAPI keeps data in memory and it resets on restart.
 
 ## Requirements
 
@@ -84,7 +84,7 @@ Every financial route (dashboard, transactions, budgets, savings goals, Penny AI
 - **Whose data:** the Supabase user whose UUID is in `PENNY_DEMO_OWNER_USER_ID` gets the fictional Maya data set. Every other signed-in user gets their own account, empty apart from a $0 chequing account and starter categories.
 - **Offline demo (development only):** set `PENNY_DEMO_AUTH_TOKEN` in the backend plus `NEXT_PUBLIC_DEMO_MODE=true` and the same `NEXT_PUBLIC_DEMO_AUTH_TOKEN` in the frontend. The backend refuses to start if a demo token is configured outside `PENNY_ENVIRONMENT=development`, and the frontend never invents a token.
 
-The backend reads `.env` and then `.env.local`. Its secrets (`PENNY_DATABASE_URL`, `PENNY_OPENAI_API_KEY`, SMTP) stay server-side; no Supabase service-role key is used anywhere.
+The backend reads `.env` and then `.env.local`. Its secrets (`PENNY_DATABASE_URL`, `PENNY_OPENAI_API_KEY`) stay server-side; no Supabase service-role key is used anywhere.
 
 ### 3. Next.js
 
@@ -143,7 +143,7 @@ Rerun `npm run ios:build` after any frontend change or when the Mac's address ch
 | Money | `accounts`, `categories`, `transactions`, `budgets`, `savings_goals`, `goal_contributions`, `bills`, `pay_schedules`, `missions` |
 | Learn | `learn_profiles`, `learn_results`, `learn_activity`, `learn_attempts` |
 | Penny AI | `coach_conversations`, `coach_messages`, `coach_proposals` |
-| Reminders | `reminder_settings`, `reminder_sent_keys`, `reminder_emails` |
+| Reminders (unused since email reminders were removed, D-100) | `reminder_settings`, `reminder_sent_keys`, `reminder_emails` |
 
 Money is `bigint` cents. Only FastAPI touches these tables, over `PENNY_DATABASE_URL`: row level security is on with no policies, and the `anon` and `authenticated` roles have no grants, so the public Data API can't read or change them. All writes still go through the deterministic backend.
 
@@ -160,9 +160,9 @@ Each request loads the user's data in one query, runs the same integer-cent doma
 | `PENNY_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `PENNY_FRONTEND_ORIGIN` | the hosted website's URL; more in `PENNY_EXTRA_ORIGINS`, comma-separated |
 | `PENNY_DEMO_OWNER_USER_ID` | optional: the user who gets the Maya data |
-| `PENNY_OPENAI_API_KEY`, `PENNY_SMTP_*` | optional: model answers and real reminder emails |
+| `PENNY_OPENAI_API_KEY` | optional: model answers |
 
-Never set `PENNY_DEMO_AUTH_TOKEN` in production (the API refuses to start). Choose a region near the Supabase project: each request makes one or two database round trips. Run one instance, or set `PENNY_REMINDER_CHECK_MINUTES=0` on all but one, so reminder emails aren't sent twice. Free tiers that sleep when idle also pause reminder checks.
+Never set `PENNY_DEMO_AUTH_TOKEN` in production (the API refuses to start). Choose a region near the Supabase project: each request makes one or two database round trips.
 
 **Website.** Host `frontend` on Vercel (or any Next.js host) with `NEXT_PUBLIC_API_BASE_URL` set to the API's `https://` URL, then add the site's URL to the API's allowed origins and to Supabase **Authentication → URL Configuration**.
 

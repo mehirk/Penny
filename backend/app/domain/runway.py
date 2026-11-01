@@ -1,7 +1,9 @@
 """Safe to spend, and how long it has to last.
 
-Safe to spend is the month's budget minus what's been spent this month, minus bills still to be
-paid this month (their budget room is already spoken for). Account balances don't change it: the
+The month's budget is its fixed costs (every recurring bill due this month, paid or not) plus the
+variable budget the user sets per category. Safe to spend is that budget minus what's been spent
+this month, minus bills still to be paid this month (their share is already spoken for), which
+comes to the variable budget minus variable spending. Account balances don't change it: the
 budget is the plan. It goes negative once spending passes the budget, so people can see by how
 much they're over.
 
@@ -27,23 +29,33 @@ TIGHT_BASIS_POINTS = 5_000
 class SafeToSpend:
     """Every step of the Safe to spend sum, so the app can show its working."""
 
-    budget_cents: int
+    fixed_cents: int  # recurring bills due this month, paid or not
+    variable_cents: int  # the category budgets the user set
+    budget_cents: int  # fixed + variable
     spent_cents: int
     unpaid_bills_cents: int
     safe_cents: int  # negative when over budget
     over_cents: int  # how far over budget (0 when not)
 
 
-def safe_to_spend(budget_cents: int, spent_cents: int, unpaid_bills_cents: int) -> SafeToSpend:
-    """Budget − spent this month − bills still due this month. May be negative.
+def safe_to_spend(
+    fixed_cents: int, variable_cents: int, spent_cents: int, unpaid_bills_cents: int
+) -> SafeToSpend:
+    """(Fixed + variable budget) − spent this month − bills still due this month. May be negative.
 
     A paid bill is part of what's spent, and an unpaid one is held back, so each bill counts once.
+    Unpaid bills are part of the fixed costs, so they can't be more than them.
     """
-    for value in (budget_cents, spent_cents, unpaid_bills_cents):
+    for value in (fixed_cents, variable_cents, spent_cents, unpaid_bills_cents):
         if value < 0:
             raise ValueError("amounts must not be negative")
+    if unpaid_bills_cents > fixed_cents:
+        raise ValueError("unpaid bills are part of the fixed costs")
+    budget_cents = fixed_cents + variable_cents
     safe = budget_cents - spent_cents - unpaid_bills_cents
     return SafeToSpend(
+        fixed_cents=fixed_cents,
+        variable_cents=variable_cents,
         budget_cents=budget_cents,
         spent_cents=spent_cents,
         unpaid_bills_cents=unpaid_bills_cents,

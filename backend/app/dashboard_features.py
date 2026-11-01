@@ -230,10 +230,6 @@ MONEY_SCORE_METHODOLOGY = (
 )
 
 
-def flexible_budget_cents(budget_total_cents: int, fixed: Sequence[RecurringSeries]) -> int:
-    return max(0, budget_total_cents - sum(item.amount_cents for item in fixed))
-
-
 def score_month(
     month: date,
     transactions: Sequence[Transaction],

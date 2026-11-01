@@ -5,7 +5,9 @@ export type AccountType = "chequing" | "savings" | "credit" | "cash" | "investme
 export type AccountBalance = { id: string; name: string; account_type: AccountType; balance_cents: number; net_cents: number; credit_limit_cents: number | null; available_credit_cents: number | null; utilization_basis_points: number | null; goals: { id: string; name: string; current_cents: number }[]; goal_cents: number; free_cents: number | null; money_in_cents: number; money_out_cents: number; last_activity_on: string | null };
 /** Every account and how they add up, as of today (whatever period is on screen). */
 export type AccountsOverview = { accounts: AccountBalance[]; spending_cents: number; savings_cents: number; investments_cents: number; other_cents: number; assets_cents: number; owed_cents: number; net_worth_cents: number; goal_cents: number; goal_shortfall_cents: number };
-export type Account = { id: string; name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null };
+export type Account = { id: string; name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day: number | null };
+/** A credit card's next payment (from its due day) and what's owed on it now. */
+export type CardPayment = { account_id: string; account_name: string; due_on: string; days_until_due: number; owed_cents: number };
 export type Category = { id: string; name: string; colour_token: string; kind: "income" | "spending"; parent_id: string | null; custom: boolean };
 export type Transaction = { id: string; description: string; category: string; account_id: string; category_id: string | null; amount_cents: number; kind: "income" | "spending"; occurred_on: string; necessity: "need" | "want" | null; auto_categorized: boolean; bill_id: string | null; paid_automatically: boolean | null; unusual: boolean };
 export type Budget = { id: string; category_id: string; category_name: string; month_start: string; limit_cents: number; spent_cents: number; remaining_cents: number; usage_basis_points: number; carried_over: boolean };
@@ -76,6 +78,8 @@ export type Dashboard = {
   previous_month_cash_flow_cents: number | null;
   spending_power_cents: number;
   safe_to_spend: SafeToSpendBreakdown | null;
+  card_payments: CardPayment[];
+  budget_plan: BudgetPlan | null;
   /** A real account with no budget, bills, or pay schedule yet: offer the setup. */
   needs_onboarding: boolean;
   /** How long Safe to spend has to last; null when the period shown doesn't include today. */
@@ -84,7 +88,11 @@ export type Dashboard = {
 };
 
 /** Each step of Safe to spend, as the API computed it. */
-export type SafeToSpendBreakdown = { budget_cents: number; spent_cents: number; unpaid_bills_cents: number; safe_cents: number; over_cents: number; has_budget: boolean };
+/** One recurring bill's share of the month's budget: paid so far plus what's still due. */
+export type FixedCost = { bill_id: string; name: string; category_id: string | null; kind: "bill" | "subscription"; amount_cents: number; paid_cents: number; due_cents: number; next_due_on: string | null };
+/** The month's budget: recurring bills (fixed) plus the category budgets (variable). */
+export type BudgetPlan = { fixed_cents: number; fixed_paid_cents: number; variable_cents: number; variable_spent_cents: number; total_cents: number; fixed: FixedCost[] };
+export type SafeToSpendBreakdown = { fixed_cents: number; variable_cents: number; budget_cents: number; spent_cents: number; unpaid_bills_cents: number; safe_cents: number; over_cents: number; has_budget: boolean };
 export type SpendingRunway = { until: string; until_payday: boolean; days_left: number; per_day_cents: number; status: "on_track" | "tight" | "empty" | "over" };
 
 export type HistoryMonth = { month: string; income_cents: number; spending_cents: number; cash_flow_cents: number; budget_cents: number; transaction_count: number };
@@ -219,8 +227,8 @@ export const dashboardApi = {
   setPaySchedule: (body: PaySchedule) => request("/api/v1/pay-schedule", { method: "PUT", body: JSON.stringify(body) }),
   createCategory: (body: { name: string; kind: Category["kind"]; parent_id: string | null }) => request("/api/v1/categories", { method: "POST", body: JSON.stringify(body) }),
   deleteCategory: (id: string) => request(`/api/v1/categories/${id}`, { method: "DELETE" }),
-  createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
-  updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day?: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
+  updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteAccount: (id: string) => request(`/api/v1/accounts/${id}`, { method: "DELETE" }),
   importRows: (account_id: string, rows: ImportRow[]) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; ai_categorized: number; dashboard: Dashboard }>("/api/v1/transactions/import-rows", { method: "POST", body: JSON.stringify({ account_id, rows }) }),
   applyBudgetChanges: (changes: { budget_id: string; limit_cents: number }[], month?: string) => request(inMonth("/api/v1/budgets/changes", month), { method: "POST", body: JSON.stringify({ changes }) }),
@@ -250,7 +258,7 @@ export type BudgetSuggestions = { month: string; suggestions: BudgetSuggestion[]
 
 export type OnboardingAnswers = {
   opening_balances: Record<string, number>;
-  new_accounts: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null }[];
+  new_accounts: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day: number | null }[];
   income: { amount_cents: number; frequency: PayFrequency; next_payday: string; interval_days: number | null } | null;
   monthly_money_cents: number | null;
   bills: { name: string; amount_cents: number; category_id: string; frequency: BillFrequency; next_due: string }[];
@@ -261,7 +269,7 @@ export type OnboardingAnswers = {
 export type StarterPlanLine = { category_id: string; category_name: string; fixed_cents: number; flexible_cents: number; requested_cents: number; limit_cents: number };
 export type StarterPlan = { income_cents: number; fixed_cents: number; savings_cents: number; flexible_cents: number; buffer_cents: number; over_income_cents: number; status: "fits" | "over" | "short"; lines: StarterPlanLine[]; guide_needs_cents: number; guide_wants_cents: number; guide_savings_cents: number; summary: AssistText };
 
-export type StarterCheck = { income_cents: number; planned_cents: number; over_income_cents: number; status: "fits" | "over" | "short"; guide_needs_cents: number; guide_wants_cents: number; guide_savings_cents: number };
+export type StarterCheck = { income_cents: number; fixed_cents: number; flexible_cents: number; savings_cents: number; planned_cents: number; buffer_cents: number; over_income_cents: number; status: "fits" | "over" | "short"; guide_needs_cents: number; guide_wants_cents: number; guide_savings_cents: number };
 
 /** First-run setup: the plan is only a proposal until `apply` (the user's approval). */
 export const onboardingApi = {
@@ -292,7 +300,7 @@ export type LessonCard = { id: string; topic: LessonTrack; tier: LessonTier; tit
 export type TopicPath = { id: LessonTrack; label: string; blurb: string; selected: boolean; lessons: LessonCard[] };
 export type LearnBadge = { id: string; title: string; description: string; earned: boolean };
 export type LearnState = { profile: LearnProfile; xp_total: number; level: number; level_xp: number; level_size_xp: number; streak_days: number; completed_today: boolean; topics: TopicPath[]; badges: LearnBadge[] };
-export type LessonTaskView = "spending" | "goals" | "invest" | "ai" | "settings";
+export type LessonTaskView = "spending" | "budgets" | "goals" | "ai" | "settings";
 export type LessonDetail = { card: LessonCard; cards: string[]; task: { label: string; view: LessonTaskView; prompt: string | null } | null };
 export type QuestionKind = "choice" | "multi" | "number" | "order";
 export type QuestionView = { id: string; kind: QuestionKind; prompt: string; options: { id: string; text: string }[]; unit: "$" | "%" | "years" | "" };
@@ -309,16 +317,20 @@ export const learnApi = {
   answer: (attemptId: string, body: { question_id: string; choices?: string[]; value?: string }) => authorizedRequest<AnswerResult>(`/api/v1/learn/attempts/${encodeURIComponent(attemptId)}/answers`, { method: "POST", body: JSON.stringify(body) }),
 };
 
-export type ReminderKinds = { bills: boolean; budgets: boolean; streaks: boolean; lessons: boolean };
-export type SentEmail = { id: string; at: string; to: string; subject: string; text: string; status: "sent" | "preview" | "failed"; trigger: "scheduled" | "manual" | "test"; error: string | null };
-export type ReminderState = { enabled: boolean; email: string | null; kinds: ReminderKinds; delivery: "smtp" | "preview"; sender: string | null; check_minutes: number; due: { kind: keyof ReminderKinds; title: string; detail: string; already_sent: boolean }[]; log: SentEmail[]; emails_left_this_hour: number };
 
-/** Email reminders. Sending happens on the server; SMTP credentials never reach the browser. */
-export const remindersApi = {
-  state: () => authorizedRequest<ReminderState>("/api/v1/reminders"),
-  update: (body: { enabled: boolean; email: string | null; kinds: ReminderKinds }) => authorizedRequest<ReminderState>("/api/v1/reminders", { method: "PUT", body: JSON.stringify(body) }),
-  test: () => authorizedRequest<SentEmail>("/api/v1/reminders/test", { method: "POST" }),
-  sendNow: () => authorizedRequest<SentEmail>("/api/v1/reminders/send-now", { method: "POST" }),
+export type ChartMonth = { month: string; income_cents: number; spending_cents: number; net_cents: number; budget_cents: number; needs_cents: number; wants_cents: number; categories: { category_id: string | null; spent_cents: number }[] };
+export type ChartCategory = { category_id: string | null; category_name: string; spent_cents: number; share_basis_points: number };
+export type ChartAccount = { account_id: string; account_name: string; account_type: string; income_cents: number; spending_cents: number };
+export type ChartsResponse = { start: string; end: string; months: ChartMonth[]; categories: ChartCategory[]; accounts: ChartAccount[]; income_cents: number; spending_cents: number; net_cents: number; budget_cents: number; average_spending_cents: number; data_months: string[] };
+
+/** The Charts tab: month-by-month figures for a range, optionally only some accounts or categories. */
+export const chartsApi = {
+  load: (start: string, end: string, accounts: string[], categories: string[]) => {
+    const query = new URLSearchParams({ start, end });
+    for (const id of accounts) query.append("account", id);
+    for (const id of categories) query.append("category", id);
+    return authorizedRequest<ChartsResponse>(`/api/v1/charts?${query.toString()}`);
+  },
 };
 
 export const historyApi = {

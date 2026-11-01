@@ -68,7 +68,7 @@ class LearnState(LearnModel):
 
 class LessonTask(LearnModel):
     label: str
-    view: Literal["spending", "goals", "invest", "ai", "settings"]
+    view: Literal["spending", "budgets", "goals", "ai", "settings"]
     prompt: str | None
 
 

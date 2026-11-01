@@ -11,12 +11,14 @@ from datetime import date
 
 from app.models import Transaction
 
+# Category names whose id isn't "cat-" plus the lowercased name.
+_CATEGORY_IDS = {"Transportation": "cat-transport", "Entertainment": "cat-fun"}
+
 RENT_CENTS = 82_500
+# Everyday (variable) budgets only; rent, transit, and phone are recurring bills (the fixed part).
 BUDGET_LIMITS_CENTS = {
-    "cat-housing": 85_000,
     "cat-food": 30_000,
-    "cat-transport": 10_000,
-    "cat-phone": 5_000,
+    "cat-transport": 3_000,
     "cat-school": 10_000,
     "cat-fun": 8_000,
 }
@@ -81,9 +83,7 @@ def build_history_transactions() -> list[Transaction]:
                 description=description,
                 category=category,
                 account_id="acct-chequing",
-                category_id=f"cat-{category.lower()}"
-                if category != "Transportation"
-                else "cat-transport",
+                category_id=_CATEGORY_IDS.get(category, f"cat-{category.lower()}"),
                 amount_cents=amount,
                 kind=kind,  # type: ignore[arg-type]
                 occurred_on=_on(plan.month, day),
@@ -102,7 +102,7 @@ def build_history_transactions() -> list[Transaction]:
         )
         add(plan, "phone", 14, "Mobile plan", "Phone", 4_500, "spending")
         add(plan, "school", 8, "Course materials", "School", plan.school, "spending")
-        add(plan, "fun", 17, plan.fun_label, "Fun", plan.fun, "spending")
+        add(plan, "fun", 17, plan.fun_label, "Entertainment", plan.fun, "spending")
         add(plan, "health", 11, "Pharmacy", "Health", plan.health, "spending")
     return items
 

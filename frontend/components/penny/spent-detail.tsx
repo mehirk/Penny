@@ -22,8 +22,8 @@ export function SpentDetail({ dashboard, onBack, onNavigate }: { dashboard: Dash
   const byId = new Map(dashboard.categories.map((category) => [category.id, category]));
   const over = totals.budget_remaining_cents < 0;
   const used = totals.total_budget_cents ? Math.min(100, (totals.spending_cents * 100) / totals.total_budget_cents) : 0;
-  const links: { label: string; view: View; anchor: string }[] = [
-    { label: "Budgets", view: "spending", anchor: "budgets" },
+  const links: { label: string; view: View; anchor?: string }[] = [
+    { label: "Budgets", view: "budgets" },
     { label: "All transactions", view: "spending", anchor: "transactions" },
     { label: "Trends over time", view: "spending", anchor: "trends" },
   ];

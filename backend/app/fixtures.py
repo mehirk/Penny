@@ -82,7 +82,7 @@ def build_demo_dashboard() -> DemoDashboardResponse:
         Transaction(
             id="tx-fun",
             description="Movie night",
-            category="Fun",
+            category="Entertainment",
             amount_cents=2_600,
             kind="spending",
             occurred_on=date(2026, 10, 17),
@@ -152,16 +152,18 @@ def build_demo_dashboard() -> DemoDashboardResponse:
         )
         for item in transactions
     ]
-    summary = build_summary(domain_transactions, 148_000, [15_000])
+    # Category budgets are the everyday (variable) part; rent, transit, and phone are recurring
+    # bills, the fixed part. $948 fixed + $510 variable = a $1,458 budget.
+    summary = build_summary(domain_transactions, 145_800, [15_000])
     budgets = [
-        Budget(category="Housing", limit_cents=85_000, spent_cents=82_500, remaining_cents=2_500),
         Budget(category="Food", limit_cents=30_000, spent_cents=25_817, remaining_cents=4_183),
         Budget(
-            category="Transportation", limit_cents=10_000, spent_cents=7_800, remaining_cents=2_200
+            category="Transportation", limit_cents=3_000, spent_cents=1_840, remaining_cents=1_160
         ),
-        Budget(category="Phone", limit_cents=5_000, spent_cents=4_500, remaining_cents=500),
         Budget(category="School", limit_cents=10_000, spent_cents=3_299, remaining_cents=6_701),
-        Budget(category="Fun", limit_cents=8_000, spent_cents=2_600, remaining_cents=5_400),
+        Budget(
+            category="Entertainment", limit_cents=8_000, spent_cents=2_600, remaining_cents=5_400
+        ),
     ]
     return DemoDashboardResponse(
         profile=DemoUser(

@@ -8,28 +8,37 @@ from app.domain.starter_budget import monthly_income_cents, starter_plan
 # ------------------------------------------------------------------ safe to spend
 
 
-def test_budget_minus_spent_minus_unpaid_bills() -> None:
-    result = safe_to_spend(100_000, 30_000, 10_000)
-    assert (result.safe_cents, result.over_cents) == (60_000, 0)
+def test_budget_is_fixed_plus_variable() -> None:
+    # $600 rent + $50 phone fixed, $350 for everything else: a $1,000 budget.
+    result = safe_to_spend(65_000, 35_000, 0, 65_000)
+    assert (result.budget_cents, result.safe_cents, result.over_cents) == (100_000, 35_000, 0)
 
 
 def test_paid_bill_counts_once() -> None:
-    # $500 budget with $100 rent: unpaid it's held back; once paid it's part of what's spent.
-    assert safe_to_spend(50_000, 0, 10_000).safe_cents == 40_000
-    assert safe_to_spend(50_000, 10_000, 0).safe_cents == 40_000
+    # Unpaid, rent is held back; once paid it's part of what's spent. Either way $350 is left.
+    assert safe_to_spend(65_000, 35_000, 0, 65_000).safe_cents == 35_000
+    assert safe_to_spend(65_000, 35_000, 60_000, 5_000).safe_cents == 35_000
+
+
+def test_variable_spending_lowers_it() -> None:
+    assert safe_to_spend(65_000, 35_000, 62_000, 5_000).safe_cents == 33_000
 
 
 def test_goes_negative_when_over_budget() -> None:
-    result = safe_to_spend(50_000, 62_000, 0)
+    result = safe_to_spend(0, 50_000, 62_000, 0)
     assert (result.safe_cents, result.over_cents) == (-12_000, 12_000)
 
 
-def test_exactly_used_up_is_zero() -> None:
-    assert safe_to_spend(50_000, 40_000, 10_000).safe_cents == 0
+def test_bills_with_no_variable_budget() -> None:
+    # Only bills: nothing's left for anything else, and nothing is over until something's spent.
+    assert safe_to_spend(65_000, 0, 0, 65_000).safe_cents == 0
+    assert safe_to_spend(65_000, 0, 1_000, 65_000).over_cents == 1_000
 
 
-@pytest.mark.parametrize("values", [(-1, 0, 0), (0, -1, 0), (0, 0, -1)])
-def test_safe_to_spend_rejects_negative_inputs(values: tuple[int, int, int]) -> None:
+@pytest.mark.parametrize(
+    "values", [(-1, 0, 0, 0), (0, -1, 0, 0), (0, 0, -1, 0), (0, 0, 0, -1), (10, 0, 0, 20)]
+)
+def test_safe_to_spend_rejects_bad_inputs(values: tuple[int, int, int, int]) -> None:
     with pytest.raises(ValueError):
         safe_to_spend(*values)
 

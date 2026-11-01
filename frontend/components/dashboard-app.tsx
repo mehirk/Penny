@@ -12,7 +12,8 @@ import { CoachView, useCoachChat } from "@/components/penny/coach-view";
 import { AddMoneyDialog, BudgetDialog, ConfirmDialog, type ConfirmRequest, GoalDialog, type InlineCreate, TransactionDialog } from "@/components/penny/dialogs";
 import { AccountsView } from "@/components/penny/accounts-view";
 import { GoalsView } from "@/components/penny/goals-view";
-import { InvestView } from "@/components/penny/invest-view";
+import { ChartsView } from "./penny/charts-view";
+import { BudgetsView } from "@/components/penny/budgets-view";
 import { LearnView } from "@/components/penny/learn-view";
 import type { BillInput } from "@/components/penny/recurring-view";
 import { type SpendingTab, SpendingView } from "@/components/penny/spending-view";
@@ -20,10 +21,12 @@ import { TodayView } from "@/components/penny/today-view";
 import { monthEnd, type PeriodRange } from "@/components/penny/period-picker";
 import { usePreferences } from "@/components/penny/preferences";
 import { PullToRefresh } from "@/components/penny/pull-to-refresh";
-import { cad, describeError, NAVIGATION, type View } from "@/components/penny/shared";
+import { cad, describeError, MENU, NAVIGATION, type View } from "@/components/penny/shared";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { type Bill, type Budget, type BudgetSuggestion, type Dashboard, dashboardApi, type Mission, type SavingsGoal, type Transaction } from "@/lib/api";
+import { onPasswordRequired, setAppSignedIn } from "@/lib/face-id";
+import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 import { addMonths, formatMonth } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -117,16 +120,12 @@ function PennyApp() {
   const [historyVersion, setHistoryVersion] = useState(0);
   const [loadError, setLoadError] = useState<ReturnType<typeof describeError> | null>(null);
   const [transactionTarget, setTransactionTarget] = useState<Transaction | "new" | null>(null);
-  // First-run setup for new real accounts; "Skip for now" is remembered on this device.
-  const [setupSkipped, setSetupSkipped] = useState(() => {
+  // First-run setup for new real accounts. Each step can be skipped, but not the whole setup;
+  // a device that skipped it under the old "Skip for now" still opens on Home with a Set up card.
+  const [setupSkipped] = useState(() => {
     try { return typeof window !== "undefined" && window.localStorage.getItem("penny-setup-skipped") === "1"; } catch { return false; }
   });
   const [setupOpen, setSetupOpen] = useState(false);
-  const skipSetup = () => {
-    try { window.localStorage.setItem("penny-setup-skipped", "1"); } catch { /* storage blocked: skip for this visit */ }
-    setSetupSkipped(true);
-    setSetupOpen(false);
-  };
 
   const [budgetTarget, setBudgetTarget] = useState<Budget | "new" | null>(null);
   const [goalTarget, setGoalTarget] = useState<SavingsGoal | "new" | null>(null);
@@ -138,6 +137,15 @@ function PennyApp() {
   const latestPeriodRequest = useRef<string | null>(null);
   const currentPeriod = useRef<PeriodRange | null>(null);
   useEffect(() => { currentPeriod.current = dashboard?.period ?? null; }, [dashboard]);
+  // Signed in and the dashboard is showing: with Face ID on, the iPhone app now locks when it leaves the screen.
+  const loaded = dashboard !== null;
+  useEffect(() => { if (loaded) setAppSignedIn(true); }, [loaded]);
+  // The app lock gave up on Face ID (two failures): sign out and ask for the password. The lock
+  // stays over the app until the sign-in page shows, so no balances flash in between.
+  useEffect(() => onPasswordRequired(() => {
+    const signOut = isSupabaseConfigured() ? createSupabaseBrowserClient().auth.signOut() : Promise.resolve();
+    void signOut.catch(() => undefined).finally(() => { window.location.replace("/login/?faceid=failed"); });
+  }), []);
 
   const remember = useCallback((data: Dashboard) => { cache.current.set(periodKey(data.period), data); return data; }, []);
 
@@ -186,8 +194,9 @@ function PennyApp() {
     if (target === "recurring") setSpendingTab("recurring");
     else if (target === "spending" && anchor) setSpendingTab("transactions");
     if (motion) slide(motion, () => setView(next)); else withViewTransition(() => setView(next));
-    // Settings anchors are pages of their own ("#settings/accounts"), not sections to scroll to.
-    const page = next === "settings" && anchor ? `${next}/${anchor}` : next;
+    // Settings and Home anchors are pages of their own ("#settings/accounts", "#today/safe"), not sections to scroll to.
+    const ownPage = next === "settings" || next === "today";
+    const page = ownPage && anchor ? `${next}/${anchor}` : next;
     if (window.location.hash !== `#${page}`) {
       window.history.pushState(null, "", `#${page}`);
       // pushState fires no event; views with pages of their own (Settings) listen for this.
@@ -195,7 +204,7 @@ function PennyApp() {
     }
     window.scrollTo({ top: 0 });
     window.requestAnimationFrame(() => document.getElementById("page-title")?.focus({ preventScroll: true }));
-    if (anchor && next !== "settings") spotlight(anchor);
+    if (anchor && !ownPage) spotlight(anchor);
   }, []);
 
   /** Shows a period immediately from cache (if seen before), then refreshes it from the API. */
@@ -303,7 +312,7 @@ function PennyApp() {
     "]": () => goToMonth(addMonths(dashboard.active_month, 1)),
     d: () => setTheme(resolvedTheme === "dark" ? "light" : "dark"),
     "?": () => setDisplayOpen(true),
-    ...Object.fromEntries(NAVIGATION.map((item, index) => [String(index + 1), () => navigate(item.id)])),
+    ...Object.fromEntries(MENU.map((item, index) => [String(index + 1), () => navigate(item.id)])),
   } : {});
 
   if (loading && !dashboard) return <DashboardSkeleton />;
@@ -390,7 +399,7 @@ function PennyApp() {
     void coachChat.send(question);
   };
   if (dashboard.needs_onboarding && (setupOpen || !setupSkipped)) {
-    return <Onboarding dashboard={dashboard} onSkip={skipSetup} onDone={(data) => { setSetupOpen(false); applyChange(data); toast({ title: "Your plan is ready", description: "Change any budget from Spending › Budgets." }); }} />;
+    return <Onboarding dashboard={dashboard} onDone={(data) => { setSetupOpen(false); applyChange(data); toast({ title: "Your plan is ready", description: "Change any budget from Spending › Budgets." }); }} />;
   }
 
   return (
@@ -404,10 +413,11 @@ function PennyApp() {
           {monthLoading && <PageSkeleton />}
           <div key={view} className={monthLoading ? "hidden" : "animate-fade"} aria-busy={monthLoading}>
             {view === "today" && <TodayView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} onEditTransaction={setTransactionTarget} onSetUp={() => setSetupOpen(true)} />}
-            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: markBillPaid, onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} onApplyBudgetChanges={applyBudgetChanges} />}
+            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: markBillPaid, onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} />}
             {view === "accounts" && <AccountsView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
             {view === "goals" && <GoalsView dashboard={dashboard} onAsk={askPenny} onAdd={() => setGoalTarget("new")} onEdit={setGoalTarget} onAddMoney={setAddMoneyTarget} onComplete={(goal) => void mutate(() => dashboardApi.updateGoal(goal.id, { status: "completed" }, month), `${goal.name} reached`)} />}
-            {view === "invest" && <InvestView dashboard={dashboard} onNavigate={navigate} />}
+            {view === "charts" && <ChartsView dashboard={dashboard} />}
+            {view === "budgets" && <BudgetsView dashboard={dashboard} onNavigate={navigate} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} onApplyBudgetChanges={applyBudgetChanges} />}
             {view === "learn" && <LearnView dashboard={dashboard} onCompleteMission={completeMission} onProgress={applyChange} onNavigate={navigate} onAsk={askPenny} />}
             {view === "ai" && <CoachView chat={coachChat} dashboard={dashboard} onDashboardChange={applyChange} onApproved={(message) => toast({ title: "Change applied", description: message })} />}
             {view === "settings" && <SettingsView dashboard={dashboard} save={mutate} />}

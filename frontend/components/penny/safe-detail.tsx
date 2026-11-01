@@ -30,7 +30,7 @@ export function SafeDetail({ dashboard, onBack, onNavigate, onAsk }: { dashboard
   }
   const over = safe.safe_cents < 0;
   const steps: { label: string; detail?: string; cents: number; sign: "+" | "−" }[] = [
-    { label: "Monthly budget", detail: "All your budgets added up", cents: safe.budget_cents, sign: "+" },
+    { label: "Monthly budget", detail: safe.fixed_cents > 0 ? `${cad(safe.fixed_cents)} recurring bills + ${cad(safe.variable_cents)} category budgets` : "Your category budgets added up", cents: safe.budget_cents, sign: "+" },
     { label: `Spent ${period.phrase}`, detail: "From any account, card included", cents: safe.spent_cents, sign: "−" },
     { label: "Bills still due", detail: "Unpaid this month, overdue ones included", cents: safe.unpaid_bills_cents, sign: "−" },
   ];
@@ -38,7 +38,7 @@ export function SafeDetail({ dashboard, onBack, onNavigate, onAsk }: { dashboard
   // The version changes whenever any step does, so Penny's read is refetched only when it would differ.
   const version = [safe.safe_cents, safe.budget_cents, safe.spent_cents, safe.unpaid_bills_cents, unpaid.length].join(":");
   const links: { label: string; view: View; anchor?: string }[] = [
-    { label: "Budgets", view: "spending", anchor: "budgets" },
+    { label: "Budgets", view: "budgets" },
     { label: "Recurring bills", view: "recurring" },
   ];
 
@@ -53,7 +53,7 @@ export function SafeDetail({ dashboard, onBack, onNavigate, onAsk }: { dashboard
           ? <p role="status" className="mt-3 text-sm font-semibold text-danger">You’re <span className="tabular">{cad(safe.over_cents)}</span> over your budget {period.phrase}</p>
           : runway && safe.safe_cents > 0 && <p className="mt-3 text-sm text-ink-muted">About <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} day{runway.days_left === 1 ? "" : "s"}</p>}
         {!safe.has_budget && (
-          <button type="button" onClick={() => onNavigate("spending", "budgets")} className="mx-auto mt-3 block min-h-11 rounded-xl bg-primary-soft px-4 text-sm font-semibold text-ink">Set a monthly budget</button>
+          <button type="button" onClick={() => onNavigate("budgets")} className="mx-auto mt-3 block min-h-11 rounded-xl bg-primary-soft px-4 text-sm font-semibold text-ink">Set a monthly budget</button>
         )}
       </section>
 
