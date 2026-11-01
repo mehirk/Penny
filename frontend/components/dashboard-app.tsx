@@ -186,14 +186,16 @@ function PennyApp() {
     if (target === "recurring") setSpendingTab("recurring");
     else if (target === "spending" && anchor) setSpendingTab("transactions");
     if (motion) slide(motion, () => setView(next)); else withViewTransition(() => setView(next));
-    if (window.location.hash !== `#${next}`) {
-      window.history.pushState(null, "", `#${next}`);
+    // Settings anchors are pages of their own ("#settings/accounts"), not sections to scroll to.
+    const page = next === "settings" && anchor ? `${next}/${anchor}` : next;
+    if (window.location.hash !== `#${page}`) {
+      window.history.pushState(null, "", `#${page}`);
       // pushState fires no event; views with pages of their own (Settings) listen for this.
       window.dispatchEvent(new Event("penny:navigate"));
     }
     window.scrollTo({ top: 0 });
     window.requestAnimationFrame(() => document.getElementById("page-title")?.focus({ preventScroll: true }));
-    if (anchor) spotlight(anchor);
+    if (anchor && next !== "settings") spotlight(anchor);
   }, []);
 
   /** Shows a period immediately from cache (if seen before), then refreshes it from the API. */
@@ -393,7 +395,7 @@ function PennyApp() {
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-xl focus:bg-surface focus:px-4 focus:py-3 focus:font-semibold focus:shadow-[var(--shadow-raised)]">Skip to content</a>
       <Sidebar active={view} dashboard={dashboard} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} onNavigate={navigate} />
       <div className={cn("transition-[padding] duration-200", sidebarCollapsed ? "lg:pl-20" : "lg:pl-64")}>
-        <PageHeader view={view} dashboard={dashboard} monthLoading={monthLoading} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onOpenDisplay={() => setDisplayOpen(true)} onNavigate={navigate} />
+        <PageHeader view={view} dashboard={dashboard} monthLoading={monthLoading} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} />
         <main id="main" tabIndex={-1} className="mx-auto max-w-7xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-5 focus:outline-none sm:px-6 lg:px-10 lg:pb-12 lg:pt-8">
           {/* A period that isn't cached yet shows a skeleton until its data arrives, never stale numbers. */}
           {monthLoading && <PageSkeleton />}

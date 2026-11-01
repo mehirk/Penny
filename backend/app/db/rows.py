@@ -46,7 +46,16 @@ ORDERED_TABLES = frozenset(TABLE_KEYS) - {
     "learn_attempts",
 }
 
-PROFILE_COLUMNS = ("display_name", "age", "school", "city", "province", "currency", "is_fictional")
+PROFILE_COLUMNS = (
+    "display_name",
+    "age",
+    "school",
+    "city",
+    "province",
+    "currency",
+    "is_fictional",
+    "spending_from",
+)
 
 
 class _BudgetRow(BaseModel):

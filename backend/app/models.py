@@ -30,6 +30,8 @@ class DemoUser(StrictModel):
     school: str | None = None
     city: str | None = None
     province: str | None = None
+    # Which accounts count as spending money for Safe to spend.
+    spending_from: Literal["chequing", "chequing_and_savings"] = "chequing"
     currency: Literal["CAD"]
     # True for the seeded demo data set; False for a fresh account the user fills in.
     is_fictional: bool

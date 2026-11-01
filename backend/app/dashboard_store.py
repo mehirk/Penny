@@ -24,6 +24,7 @@ from app.dashboard_features import (
     score_month,
 )
 from app.dashboard_models import (
+    AccountPatch,
     AccountWrite,
     Bill,
     BillHistory,
@@ -1005,11 +1006,22 @@ class DashboardStore:
             recurring = self._recurring()
             calendar_view = self._money_calendar(month, recurring.items)
             learning = build_learning(self._learner, self._mission_xp(), self.today())
+            pool = self._spending_pool()
             safe_cents = safe_to_spend_cents(
-                cash_balance,
+                sum(a.balance_cents for a in self._accounts.values() if a.id in pool),
                 recurring.due_before_payday_cents,
                 total_budget,
                 summary.budget_remaining_cents,
+                set_aside_cents=sum(g.current_cents for g in goals if g.account_id in pool),
+                owed_on_cards_cents=liabilities,
+                spent_outside_cents=sum(
+                    t.amount_cents
+                    for t in monthly
+                    if t.kind == "spending"
+                    and t.account_id not in pool
+                    and (acct := self._accounts.get(t.account_id)) is not None
+                    and acct.account_type != "credit"
+                ),
             )
             today = self.today()
             spending_runway = (
@@ -1576,13 +1588,22 @@ class DashboardStore:
             self._accounts[account.id] = account
             return self._snapshot()
 
-    def rename_account(self, user_id: str, account_id: str, name: str) -> DashboardResponse:
+    def update_account(
+        self, user_id: str, account_id: str, request: AccountPatch
+    ) -> DashboardResponse:
         with self._lock:
             self.require_owner(user_id)
             account = self._accounts.get(account_id)
             if not account:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Account not found")
-            self._accounts[account_id] = account.model_copy(update={"name": name.strip()})
+            changes = request.model_dump(exclude_none=True)
+            if "name" in changes:
+                changes["name"] = changes["name"].strip()
+            if "credit_limit_cents" in changes and account.account_type != "credit":
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT, "Only credit cards have a limit"
+                )
+            self._accounts[account_id] = account.model_copy(update=changes)
             return self._snapshot()
 
     def delete_account(self, user_id: str, account_id: str) -> DashboardResponse:
@@ -2116,6 +2137,19 @@ class DashboardStore:
 
     # ------------------------------------------------------------------ onboarding
 
+    def _spending_pool(self) -> set[str]:
+        """Accounts the user spends from: chequing and cash, plus savings if they chose that."""
+        types = {*SPENDABLE_TYPES}
+        if self._profile.spending_from == "chequing_and_savings":
+            types.add("savings")
+        return {a.id for a in self._accounts.values() if a.account_type in types}
+
+    def set_spending_from(self, user_id: str, value: str) -> DashboardResponse:
+        with self._lock:
+            self.require_owner(user_id)
+            self._profile = self._profile.model_copy(update={"spending_from": value})
+            return self._snapshot()
+
     def _needs_onboarding(self) -> bool:
         return (
             not self._profile.is_fictional
@@ -2195,6 +2229,9 @@ class DashboardStore:
                     "Set the days between paydays only for a custom schedule",
                 )
 
+            self._profile = self._profile.model_copy(
+                update={"spending_from": answers.spending_from}
+            )
             for account_id, cents in answers.opening_balances.items():
                 self._accounts[account_id] = self._accounts[account_id].model_copy(
                     update={"balance_cents": cents}

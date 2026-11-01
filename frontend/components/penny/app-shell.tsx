@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Check, LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Settings, SlidersHorizontal, Sun } from "lucide-react";
+import { Check, LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Sun } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -113,7 +113,7 @@ export function Sidebar({ active, dashboard, collapsed, onToggle, onNavigate }: 
       <nav aria-label="Primary" className="mt-8">
         <ul className="space-y-1">
           {/* Settings opens from the header's gear menu (All settings), not the sidebar. */}
-          {NAVIGATION.filter((item) => item.id !== "settings").map(({ id, label, icon: Icon }) => (
+          {NAVIGATION.map(({ id, label, icon: Icon }) => (
             <li key={id}>
               <button type="button" title={collapsed ? label : undefined} onClick={() => onNavigate(id)} aria-current={active === id ? "page" : undefined} className={cn("relative flex min-h-11 w-full items-center rounded-xl text-sm font-medium transition-colors duration-150", collapsed ? "justify-center px-0" : "gap-3 px-3", active === id ? "bg-sage text-primary before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-full before:bg-accent" : "text-ink-muted hover:bg-sage-soft hover:text-ink")}>
                 <Icon className="size-5 shrink-0" aria-hidden="true" />{!collapsed && label}
@@ -276,52 +276,6 @@ export function SurfacePicker({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** The header's gear: theme, display settings, and a shortcut to all settings. */
-export function SettingsMenu({ onOpenDisplay, onNavigate }: { onOpenDisplay: () => void; onNavigate: (view: View) => void }) {
-  const { theme, setTheme } = usePreferences();
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const menuId = useId();
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
-  const item = "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-ink hover:bg-sage-soft";
-  return (
-    <div ref={root} className="relative" onKeyDown={(event) => { if (event.key === "Escape" && open) { event.preventDefault(); setOpen(false); } }}>
-      <button type="button" onClick={() => setOpen((value) => !value)} aria-haspopup="true" aria-expanded={open} aria-controls={open ? menuId : undefined} aria-label="Settings" title="Settings" className={cn("grid size-10 place-items-center rounded-xl border border-line bg-surface text-ink-muted shadow-[var(--shadow-card)] transition-colors hover:text-ink", open && "text-ink")}>
-        <Settings className={cn("size-[1.1rem] transition-transform duration-300 motion-reduce:transition-none", open && "rotate-45")} aria-hidden="true" />
-      </button>
-      {open && (
-        <div id={menuId} role="group" aria-label="Settings" className="absolute right-0 top-full z-40 mt-2 max-h-[calc(100dvh-6rem)] w-72 animate-enter overflow-y-auto rounded-2xl border border-line bg-surface p-2 shadow-[var(--shadow-raised)]">
-          <p className="px-2 pb-1.5 pt-1 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Appearance</p>
-          <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-1 rounded-xl bg-sage-soft p-1">
-            {THEME_OPTIONS.map((option) => {
-              const Icon = THEME_ICONS[option.value];
-              const selected = theme === option.value;
-              return (
-                <button key={option.value} type="button" role="radio" aria-checked={selected} onClick={() => setTheme(option.value)} className={cn("flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-lg text-xs font-semibold transition-colors", selected ? "bg-surface text-ink shadow-sm" : "text-ink-subtle hover:text-ink")}>
-                  <Icon className="size-4" aria-hidden="true" />{option.label}
-                </button>
-              );
-            })}
-          </div>
-          <p className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Style</p>
-          <PalettePicker compact />
-          <p className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Surface</p>
-          <SurfacePicker compact />
-          <div className="mt-2 border-t border-line pt-2">
-            <button type="button" className={item} onClick={() => { setOpen(false); onOpenDisplay(); }}><SlidersHorizontal className="size-4 text-ink-subtle" aria-hidden="true" />Display settings</button>
-            <button type="button" className={item} onClick={() => { setOpen(false); onNavigate("settings"); }}><Settings className="size-4 text-ink-subtle" aria-hidden="true" />All settings</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function DisplaySettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { theme, setTheme } = usePreferences();
   return (
@@ -373,7 +327,7 @@ export function DisplaySettingsDialog({ open, onOpenChange }: { open: boolean; o
 
 // ------------------------------------------------------------------ header
 
-export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAddTransaction, onOpenDisplay, onNavigate }: { view: View; dashboard: Dashboard; monthLoading: boolean; onChangePeriod: (range: PeriodRange) => void; onAddTransaction: () => void; onOpenDisplay: () => void; onNavigate: (view: View) => void }) {
+export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAddTransaction }: { view: View; dashboard: Dashboard; monthLoading: boolean; onChangePeriod: (range: PeriodRange) => void; onAddTransaction: () => void }) {
   const item = NAVIGATION.find((entry) => entry.id === view) ?? NAVIGATION[0];
   const firstName = dashboard.profile.display_name.split(" ")[0];
   const { period } = dashboard;
@@ -420,8 +374,6 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
                 <Plus className="size-4" aria-hidden="true" /><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add transaction</span>
               </Button>
             )}
-            {/* Below lg, Settings is under More in the tab bar; one way in, not two. */}
-            <div className="hidden lg:block"><SettingsMenu onOpenDisplay={onOpenDisplay} onNavigate={onNavigate} /></div>
           </div>
           {showMonth && (
             <div className="col-span-1 mt-3 hidden flex-wrap items-center gap-2 sm:flex">{picker}</div>

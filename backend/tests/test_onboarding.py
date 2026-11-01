@@ -72,3 +72,60 @@ def test_without_pay_the_monthly_money_is_the_base() -> None:
     store = _fresh_store(USER, None)
     plan = store.starter_plan_for(USER, _answers(income=None, monthly_money_cents=80_000, bills=[]))
     assert plan.income_cents == 80_000
+
+
+def _setup(spending_from: str = "chequing"):  # type: ignore[no-untyped-def]
+    store = _fresh_store(USER, None)
+    store.apply_onboarding(
+        USER,
+        OnboardingApply(
+            answers=_answers(
+                bills=[],
+                everyday={},
+                income=None,
+                monthly_money_cents=0,
+                spending_from=spending_from,
+                new_accounts=[
+                    {"name": "Savings", "account_type": "savings", "balance_cents": 100_000},
+                    {
+                        "name": "Card",
+                        "account_type": "credit",
+                        "balance_cents": 0,
+                        "credit_limit_cents": 100_000,
+                    },
+                ],
+            )
+        ),
+    )
+    ids = {a.account_type: a.id for a in store.dashboard_for_user(USER).accounts}
+    return store, ids
+
+
+def _spend(store, account_id: str, cents: int) -> int:  # type: ignore[no-untyped-def]
+    from app.dashboard_models import TransactionWrite
+
+    result = store.create_transaction(
+        USER,
+        TransactionWrite(
+            description="Groceries",
+            account_id=account_id,
+            category_id="cat-groceries",
+            amount_cents=cents,
+            kind="spending",
+            occurred_on=store.today(),
+        ),
+    )
+    return result.spending_power_cents
+
+
+@pytest.mark.parametrize("account_type", ["chequing", "credit", "savings"])
+def test_any_purchase_lowers_safe_to_spend(account_type: str) -> None:
+    store, ids = _setup()
+    before = store.dashboard_for_user(USER).spending_power_cents
+    assert before == 250_000
+    assert _spend(store, ids[account_type], 4_800) == before - 4_800
+
+
+def test_savings_counts_as_spending_money_when_chosen() -> None:
+    store, _ = _setup("chequing_and_savings")
+    assert store.dashboard_for_user(USER).spending_power_cents == 350_000

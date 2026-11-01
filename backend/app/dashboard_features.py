@@ -154,7 +154,7 @@ def build_recurring(
     fixed = sum(item.monthly_cents for item in items)
     subscriptions = sum(item.monthly_cents for item in items if item.kind == "subscription")
     week_end = today + timedelta(days=7)
-    payday_end = (next_payday - timedelta(days=1)) if next_payday else week_end
+    payday_end = (next_payday - timedelta(days=1)) if next_payday else max(week_end, month_end)
     return RecurringSummary(
         items=items,
         bill_count=sum(1 for item in items if item.kind == "bill"),

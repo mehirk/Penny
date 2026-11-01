@@ -1,5 +1,6 @@
 import { getSupabaseAccessToken } from "./supabase";
 
+export type SpendingFrom = "chequing" | "chequing_and_savings";
 export type AccountType = "chequing" | "savings" | "credit" | "cash" | "investment" | "other";
 export type AccountBalance = { id: string; name: string; account_type: AccountType; balance_cents: number; net_cents: number; credit_limit_cents: number | null; available_credit_cents: number | null; utilization_basis_points: number | null; goals: { id: string; name: string; current_cents: number }[]; goal_cents: number; free_cents: number | null; money_in_cents: number; money_out_cents: number; last_activity_on: string | null };
 /** Every account and how they add up, as of today (whatever period is on screen). */
@@ -51,7 +52,7 @@ export type Dashboard = {
   period: Period;
   current_month: string;
   data_months: string[];
-  profile: { display_name: string; age: number | null; school: string | null; city: string | null; province: string | null; currency: "CAD"; is_fictional: boolean };
+  profile: { display_name: string; age: number | null; school: string | null; city: string | null; province: string | null; currency: "CAD"; is_fictional: boolean; spending_from: SpendingFrom };
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
@@ -216,7 +217,8 @@ export const dashboardApi = {
   createCategory: (body: { name: string; kind: Category["kind"]; parent_id: string | null }) => request("/api/v1/categories", { method: "POST", body: JSON.stringify(body) }),
   deleteCategory: (id: string) => request(`/api/v1/categories/${id}`, { method: "DELETE" }),
   createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
-  renameAccount: (id: string, name: string) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  setSpendingFrom: (spendingFrom: SpendingFrom) => request("/api/v1/profile/spending-from", { method: "PUT", body: JSON.stringify({ spending_from: spendingFrom }) }),
   deleteAccount: (id: string) => request(`/api/v1/accounts/${id}`, { method: "DELETE" }),
   importCsv: (csv: string, account_id: string) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; ai_categorized: number; dashboard: Dashboard }>("/api/v1/transactions/import", { method: "POST", body: JSON.stringify({ csv, account_id }) }),
   suggestCategory: (description: string, kind: Transaction["kind"]) => authorizedRequest<CategorySuggestion>(`/api/v1/categorize?description=${encodeURIComponent(description)}&kind=${kind}`),
@@ -237,6 +239,7 @@ export type OnboardingAnswers = {
   bills: { name: string; amount_cents: number; category_id: string; frequency: BillFrequency; next_due: string }[];
   everyday: Record<string, number>;
   savings_basis_points: number;
+  spending_from: SpendingFrom;
 };
 export type StarterPlanLine = { category_id: string; category_name: string; fixed_cents: number; flexible_cents: number; requested_cents: number; limit_cents: number };
 export type StarterPlan = { income_cents: number; fixed_cents: number; savings_cents: number; flexible_cents: number; buffer_cents: number; status: "fits" | "trimmed" | "short"; lines: StarterPlanLine[]; summary: AssistText };

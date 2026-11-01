@@ -1,17 +1,17 @@
 "use client";
 
-import { type ChangeEvent, useState } from "react";
-import { Banknote, BellRing, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, ShieldCheck, Sparkles, Tags, Trash2, Wallet } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { type ChangeEvent, useState, useSyncExternalStore } from "react";
+import { Banknote, BellRing, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, ShieldCheck, Sparkles, Tags, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
-import { type Dashboard, dashboardApi, type PayFrequency, type PaySchedule } from "@/lib/api";
+import { type Dashboard, dashboardApi, type PayFrequency, type PaySchedule, type SpendingFrom } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, THEME_ICONS } from "./app-shell";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
+import { accountEmoji } from "./emoji";
 import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
 import { EmailReminders } from "./email-reminders";
 import { cad, Field } from "./shared";
@@ -95,6 +95,53 @@ export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: 
     { id: "security", labelId: "trust-title", group: "Privacy", icon: ShieldCheck, title: "Security and trust", summary: "How your data is protected", body: <TrustSection /> },
   ];
   const page = pages.find((item) => item.id === pageId);
+  // Laptop: the list stays on the left and the chosen section shows beside it (first by default).
+  const wide = useWideScreen();
+  const shown = page ?? (wide ? pages[0] : undefined);
+  const groups = [...new Set(pages.map((item) => item.group))];
+
+  const list = (
+    <div className="space-y-6">
+      <ProfileCard dashboard={dashboard} />
+      {groups.map((group) => (
+        <section key={group} aria-label={group}>
+          <h2 className="mb-1.5 px-4 font-sans text-xs font-semibold uppercase tracking-wider text-ink-subtle">{group}</h2>
+          <ul className="divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
+            {pages.filter((item) => item.group === group).map(({ id, icon: Icon, title, summary }) => {
+              const current = wide && shown?.id === id;
+              return (
+                <li key={id}>
+                  <button type="button" onClick={() => openPage(id, !wide)} aria-current={current ? "page" : undefined} className={cn("flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left hover:bg-sage-soft", current && "bg-primary-soft")}>
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-sage text-ink-muted" aria-hidden="true"><Icon className="size-[1.1rem]" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-ink">{title}</span>
+                      <span className="block truncate text-sm text-ink-subtle">{summary}</span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+      <SignOutRow />
+    </div>
+  );
+
+  if (wide) {
+    return (
+      <div className="mx-auto grid max-w-6xl grid-cols-[20rem_minmax(0,1fr)] items-start gap-8">
+        <div className="sticky top-6">{list}</div>
+        {shown && (
+          <section aria-labelledby={shown.labelId} className="min-w-0">
+            <h2 id={shown.labelId} className="px-1 text-2xl font-semibold tracking-tight text-ink">{shown.title}</h2>
+            <div className="mt-4 rounded-[var(--radius-card)] border border-line bg-surface p-5">{shown.body}</div>
+          </section>
+        )}
+      </div>
+    );
+  }
 
   if (page) {
     return (
@@ -105,33 +152,7 @@ export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: 
       </div>
     );
   }
-
-  const groups = [...new Set(pages.map((item) => item.group))];
-  return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <ProfileCard dashboard={dashboard} />
-      {groups.map((group) => (
-        <section key={group} aria-label={group}>
-          <h2 className="mb-1.5 px-4 font-sans text-xs font-semibold uppercase tracking-wider text-ink-subtle">{group}</h2>
-          <ul className="divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
-            {pages.filter((item) => item.group === group).map(({ id, icon: Icon, title, summary }) => (
-              <li key={id}>
-                <button type="button" onClick={() => openPage(id)} className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left hover:bg-sage-soft">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-sage text-ink-muted" aria-hidden="true"><Icon className="size-[1.1rem]" /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-semibold text-ink">{title}</span>
-                    <span className="block truncate text-sm text-ink-subtle">{summary}</span>
-                  </span>
-                  <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-      <SignOutRow />
-    </div>
-  );
+  return <div className="mx-auto max-w-2xl">{list}</div>;
 }
 
 const PAY_FREQUENCIES: { value: PayFrequency; label: string }[] = [
@@ -141,6 +162,15 @@ const PAY_FREQUENCIES: { value: PayFrequency; label: string }[] = [
   { value: "monthly", label: "Once a month" },
   { value: "custom", label: "Every … days" },
 ];
+
+/** True from the `lg` breakpoint (1024px), where Settings shows two panes. */
+function useWideScreen(): boolean {
+  return useSyncExternalStore(
+    (onChange) => { const media = window.matchMedia("(min-width: 1024px)"); media.addEventListener("change", onChange); return () => media.removeEventListener("change", onChange); },
+    () => window.matchMedia("(min-width: 1024px)").matches,
+    () => false,
+  );
+}
 
 function PayScheduleSection({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
   const current = dashboard.pay_schedule;
@@ -181,53 +211,135 @@ function PayScheduleSection({ dashboard, save }: { dashboard: Dashboard; save: S
   );
 }
 
+const SPENDING_FROM: { value: SpendingFrom; label: string; detail: string }[] = [
+  { value: "chequing", label: "Chequing only", detail: "Savings stays off-limits. Spending from it still comes off Safe to spend." },
+  { value: "chequing_and_savings", label: "Chequing and savings", detail: "You spend from both, so savings counts as spending money." },
+];
+
 function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
   const [error, setError] = useState("");
-  async function run(action: () => Promise<Dashboard>, success: string) {
-    setError((await save(action, success)) ?? "");
+  const [editing, setEditing] = useState<string | null>(null);
+  async function run(action: () => Promise<Dashboard>, success: string): Promise<boolean> {
+    const result = await save(action, success);
+    setError(result ?? "");
+    return !result;
   }
   return (
     <section className={SECTION} aria-labelledby="accounts-title">
-      <p className="mt-1 text-sm text-ink-subtle">Rename or remove accounts. Add new ones from Add transaction, or below.</p>
-      <ul className="mt-3 divide-y divide-line">
+      <fieldset>
+        <legend className="text-base font-semibold text-ink">Spending money</legend>
+        <p className="mt-1 text-sm text-ink-subtle">Which accounts does Safe to spend come from? Goal money, card balances, and upcoming bills are always taken out first.</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {SPENDING_FROM.map((option) => {
+            const selected = dashboard.profile.spending_from === option.value;
+            return (
+              <label key={option.value} className={cn("flex cursor-pointer gap-3 rounded-xl border p-3", selected ? "border-primary bg-primary-soft" : "border-line hover:border-line-strong")}>
+                <input type="radio" name="spending-from" checked={selected} onChange={() => void run(() => dashboardApi.setSpendingFrom(option.value), "Spending money updated")} className="mt-1 size-4 accent-[var(--color-primary)]" />
+                <span><span className="block text-sm font-semibold text-ink">{option.label}</span><span className="block text-xs text-ink-subtle">{option.detail}</span></span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      <h3 className="mt-6 text-base font-semibold text-ink">Your accounts</h3>
+      <ul className="mt-2 space-y-2.5">
         {dashboard.accounts.map((account) => (
-          <li key={account.id} className="flex items-center gap-3 py-2.5">
-            <Input aria-label={`Name for ${account.name}`} defaultValue={account.name} maxLength={60} className="flex-1" onBlur={(event) => { const name = event.target.value.trim(); if (name && name !== account.name) void run(() => dashboardApi.renameAccount(account.id, name), "Account renamed"); }} />
-            <Badge tone="neutral" className="shrink-0">{ACCOUNT_TYPE_LABELS[account.account_type]}</Badge>
-            <span className="tabular hidden w-28 shrink-0 text-right text-sm font-semibold text-ink sm:block">{cad(account.balance_cents)}</span>
-            <button type="button" onClick={() => void run(() => dashboardApi.deleteAccount(account.id), "Account removed")} className="grid size-11 shrink-0 place-items-center rounded-lg text-ink-subtle hover:bg-danger-soft hover:text-danger" aria-label={`Remove ${account.name}`}><Trash2 className="size-4" aria-hidden="true" /></button>
+          <li key={account.id} className="rounded-[var(--radius-card)] border border-line bg-surface">
+            {editing === account.id
+              ? <EditAccount account={account} onCancel={() => setEditing(null)} onSave={async (body) => { if (await run(() => dashboardApi.updateAccount(account.id, body), "Account updated")) setEditing(null); }} onDelete={async () => { if (await run(() => dashboardApi.deleteAccount(account.id), "Account removed")) setEditing(null); }} />
+              : (
+                <div className="flex min-h-16 items-center gap-3 px-4 py-3">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-lg" aria-hidden="true">{accountEmoji(account.name, account.account_type)}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold text-ink">{account.name}</span>
+                    <span className="block text-xs text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}{account.account_type === "credit" ? " · owed" : ""}</span>
+                  </span>
+                  <span className="tabular shrink-0 font-semibold text-ink">{cad(account.balance_cents)}</span>
+                  <Button size="sm" variant="outline" onClick={() => setEditing(account.id)} aria-label={`Edit ${account.name}`}><Pencil className="size-4" aria-hidden="true" />Edit</Button>
+                </div>
+              )}
           </li>
         ))}
       </ul>
-      <AddAccount onAdd={(body, success) => run(() => dashboardApi.createAccount(body), success)} />
       {error && <p role="alert" className="mt-3 rounded-xl bg-danger-soft p-3 text-sm text-danger">{error}</p>}
+
+      <AddAccount onAdd={(body, success) => run(() => dashboardApi.createAccount(body), success)} />
     </section>
   );
 }
 
-function AddAccount({ onAdd }: { onAdd: (body: Parameters<typeof dashboardApi.createAccount>[0], success: string) => Promise<void> }) {
-  const [name, setName] = useState("");
-  const [type, setType] = useState<keyof typeof ACCOUNT_TYPE_LABELS>("chequing");
-  const [balance, setBalance] = useState("");
-  const [limit, setLimit] = useState("");
+function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboard["accounts"][number]; onSave: (body: { name: string; balance_cents: number; credit_limit_cents?: number }) => Promise<void>; onCancel: () => void; onDelete: () => Promise<void> }) {
+  const credit = account.account_type === "credit";
+  const [name, setName] = useState(account.name);
+  const [balance, setBalance] = useState(centsToInput(String(account.balance_cents)));
+  const [limit, setLimit] = useState(account.credit_limit_cents ? centsToInput(String(account.credit_limit_cents)) : "");
   const [error, setError] = useState("");
-  async function add() {
-    if (!name.trim()) { setError("Name the account"); return; }
-    let balanceCents = 0;
-    let limitCents: number | null = null;
-    try { balanceCents = balance ? parseCadToCents(balance) : 0; if (type === "credit") limitCents = parseCadToCents(limit); } catch { setError(type === "credit" ? "Enter a balance and credit limit" : "Enter a valid balance"); return; }
-    setError("");
-    await onAdd({ name: name.trim(), account_type: type, balance_cents: balanceCents, credit_limit_cents: limitCents }, `${name.trim()} added`);
-    setName(""); setBalance(""); setLimit("");
+  const [confirming, setConfirming] = useState(false);
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!name.trim()) { setError("Give the account a name"); return; }
+    try {
+      const body: { name: string; balance_cents: number; credit_limit_cents?: number } = { name: name.trim(), balance_cents: parseCadToCents(balance || "0") };
+      if (credit) body.credit_limit_cents = parseCadToCents(limit);
+      setError("");
+      await onSave(body);
+    } catch { setError(credit ? "Enter the amount owed and the credit limit" : "Enter a valid balance"); }
   }
   return (
-    <div className="mt-3 grid gap-2 rounded-xl bg-sage-soft p-3 sm:grid-cols-[1.3fr_1fr_1fr_auto]">
-      <Input aria-label="New account name" placeholder="New account, e.g. Wallet" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} />
-      <Select aria-label="Account type" value={type} onChange={(event) => setType(event.target.value as keyof typeof ACCOUNT_TYPE_LABELS)}>{Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select>
-      <Input aria-label={type === "credit" ? "Credit limit" : "Starting balance"} placeholder={type === "credit" ? "Credit limit" : "Balance (optional)"} inputMode="decimal" value={type === "credit" ? limit : balance} onChange={(event) => (type === "credit" ? setLimit : setBalance)(event.target.value)} />
-      <Button onClick={() => void add()}>Add</Button>
-      {error && <p role="alert" className="text-sm text-danger sm:col-span-4">{error}</p>}
-    </div>
+    <form onSubmit={submit} className="space-y-3 p-4">
+      <p className="text-sm font-semibold text-ink">Edit {account.name}</p>
+      <Field label="Account name">{(props) => <Input {...props} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} className="min-h-11 text-base" />}</Field>
+      <div className={cn("grid gap-3", credit && "sm:grid-cols-2")}>
+        <Field label={credit ? "Owed now" : "Balance"} hint="Correct it to match your real account.">{(props) => <Input {...props} inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="min-h-11 text-base tabular" />}</Field>
+        {credit && <Field label="Credit limit">{(props) => <Input {...props} inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} className="min-h-11 text-base tabular" />}</Field>}
+      </div>
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit">Save</Button>
+        <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
+        <span className="flex-1" />
+        {confirming
+          ? <><span className="text-sm text-ink-muted">Delete {account.name}?</span><Button type="button" variant="outline" className="border-danger text-danger" onClick={() => void onDelete()}>Delete</Button><Button type="button" variant="ghost" onClick={() => setConfirming(false)}>Keep</Button></>
+          : <Button type="button" variant="ghost" className="text-danger" onClick={() => setConfirming(true)}><Trash2 className="size-4" aria-hidden="true" />Delete account</Button>}
+      </div>
+    </form>
+  );
+}
+
+function AddAccount({ onAdd }: { onAdd: (body: Parameters<typeof dashboardApi.createAccount>[0], success: string) => Promise<boolean> }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<keyof typeof ACCOUNT_TYPE_LABELS>("chequing");
+  const [balance, setBalance] = useState("0.00");
+  const [limit, setLimit] = useState("");
+  const [error, setError] = useState("");
+  const credit = type === "credit";
+  async function add(event: React.FormEvent) {
+    event.preventDefault();
+    if (!name.trim()) { setError("Give the account a name"); return; }
+    let balanceCents: number;
+    let limitCents: number | null = null;
+    try {
+      balanceCents = parseCadToCents(balance);
+      if (credit) limitCents = parseCadToCents(limit);
+    } catch { setError(credit ? "Enter what's owed (0.00 if nothing) and the credit limit" : "Enter the balance (0.00 if empty)"); return; }
+    setError("");
+    if (await onAdd({ name: name.trim(), account_type: type, balance_cents: balanceCents, credit_limit_cents: limitCents }, `${name.trim()} added`)) {
+      setName(""); setBalance("0.00"); setLimit("");
+    }
+  }
+  return (
+    <form onSubmit={add} className="mt-6 rounded-[var(--radius-card)] border border-dashed border-line-strong p-4">
+      <h3 className="flex items-center gap-2 text-base font-semibold text-ink"><Plus className="size-4" aria-hidden="true" />New account</h3>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Field label="Account name">{(props) => <Input {...props} placeholder="e.g. Rainy day savings" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className="min-h-11 text-base" />}</Field>
+        <Field label="Type">{(props) => <Select {...props} value={type} onChange={(e) => setType(e.target.value as keyof typeof ACCOUNT_TYPE_LABELS)} className="min-h-11 text-base">{Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select>}</Field>
+        <Field label={credit ? "Owed now" : "Balance"} hint={credit ? "0.00 if the card is paid off." : "Required. 0.00 if it's empty."}>{(props) => <Input {...props} required inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="min-h-11 text-base tabular" />}</Field>
+        {credit && <Field label="Credit limit">{(props) => <Input {...props} required inputMode="decimal" placeholder="1000.00" value={limit} onChange={(e) => setLimit(e.target.value)} className="min-h-11 text-base tabular" />}</Field>}
+      </div>
+      {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
+      <Button type="submit" className="mt-4 w-full sm:w-auto"><Plus className="size-4" aria-hidden="true" />Add account</Button>
+    </form>
   );
 }
 

@@ -39,7 +39,7 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
   if (accounts.length === 0) {
     return (
       <Card className="mx-auto max-w-xl p-5">
-        <EmptyState icon={Landmark} title="No accounts yet" description="Add a chequing, savings, or card account to see your balances here." action={<Button size="sm" onClick={() => onNavigate("settings")}>Add an account</Button>} />
+        <EmptyState icon={Landmark} title="No accounts yet" description="Add a chequing, savings, or card account to see your balances here." action={<Button size="sm" onClick={() => onNavigate("settings", "accounts")}>Add an account</Button>} />
       </Card>
     );
   }
@@ -108,7 +108,7 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
             <h2 id="accounts-list-title" className="text-lg font-semibold tracking-tight text-ink">Accounts</h2>
             <p className="text-sm text-ink-subtle"><span className="sm:hidden">Tap an account to see its activity.</span><span className="hidden sm:inline">Balances today, with money in and out so far this month.</span></p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => onNavigate("settings")}><Pencil className="size-4" aria-hidden="true" />Add or rename</Button>
+          <Button size="sm" variant="outline" onClick={() => onNavigate("settings", "accounts")}><Pencil className="size-4" aria-hidden="true" />Add or edit</Button>
         </div>
         <ul className="grid gap-3 sm:gap-4 md:grid-cols-2">
           {accounts.map((account) => <AccountCard key={account.id} account={account} onOpen={() => openAccount(account.id)} />)}
