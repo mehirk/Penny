@@ -570,6 +570,104 @@
   --chart-axis: #463e35;
   --chart-reference: #a89d8f;
 }
+:root[data-palette="graphite"] {
+  /* Minimal: black, white, and greys in the system sans. Colour is left for money in/out and warnings. */
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --radius-card: 1.25rem;
+}
+:root[data-palette="graphite"]:not([data-theme="dark"]) {
+  --color-canvas: #f4f4f4;
+  --color-surface: #ffffff;
+  --color-sage: #e9e9e9;
+  --color-sage-soft: #f0f0f0;
+  --color-line: #e0e0e0;
+  --color-line-strong: #c9c9c9;
+  --color-ink: #0b0b0b;
+  --color-ink-muted: #474747;
+  --color-ink-subtle: #666666;
+  --color-primary: #0b0b0b;
+  --color-primary-hover: #000000;
+  --color-primary-soft: #e6e6e6;
+  --color-on-primary: #ffffff;
+  --color-hero: #0b0b0b;
+  --color-accent: #3d3d3d;
+  --color-accent-strong: #1f1f1f;
+  --color-accent-soft: #ececec;
+  --color-gold: #b7791f;
+  --color-gold-strong: #7a4f0e;
+  --color-gold-soft: #f6ecdb;
+  --color-info: #3d3d3d;
+  --color-info-soft: #ececec;
+  --color-overlay: rgb(0 0 0 / 0.45);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.05);
+  --shadow-raised: 0 18px 48px rgb(0 0 0 / 0.14), 0 2px 6px rgb(0 0 0 / 0.05);
+  --chart-in: #0b0b0b;
+  --chart-out: #8a8a8a;
+  --chart-net: #0b0b0b;
+  --chart-cat-1: #0b0b0b;
+  --chart-cat-2: #3d3d3d;
+  --chart-cat-3: #6b6b6b;
+  --chart-cat-4: #8f8f8f;
+  --chart-cat-5: #b0b0b0;
+  --chart-cat-6: #cfcfcf;
+  --chart-cat-7: #545454;
+  --chart-other: #666666;
+  --chart-grid: #e0e0e0;
+  --chart-axis: #c9c9c9;
+  --chart-reference: #666666;
+}
+:root[data-palette="graphite"][data-theme="dark"] {
+  --color-canvas: #000000;
+  --color-surface: #1c1c1e;
+  --color-sage: #2c2c2e;
+  --color-sage-soft: #242426;
+  --color-line: #2e2e31;
+  --color-line-strong: #3f3f43;
+  --color-ink: #f5f5f5;
+  --color-ink-muted: #c2c2c2;
+  --color-ink-subtle: #9a9a9a;
+  --color-primary: #f5f5f5;
+  --color-primary-hover: #ffffff;
+  --color-primary-soft: #262626;
+  --color-on-primary: #0b0b0b;
+  --color-hero: #1c1c1e;
+  --color-accent: #d6d6d6;
+  --color-accent-strong: #ffffff;
+  --color-accent-soft: #262626;
+  --color-gold: #e3b45c;
+  --color-gold-strong: #f0cf8c;
+  --color-gold-soft: #2b2414;
+  --color-info: #bdbdbd;
+  --color-info-soft: #232323;
+  --color-overlay: rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.4);
+  --shadow-raised: 0 18px 48px rgb(0 0 0 / 0.7), 0 2px 6px rgb(0 0 0 / 0.4);
+  --chart-in: #f5f5f5;
+  --chart-out: #7a7a7a;
+  --chart-net: #f5f5f5;
+  --chart-cat-1: #f5f5f5;
+  --chart-cat-2: #c2c2c2;
+  --chart-cat-3: #9a9a9a;
+  --chart-cat-4: #767676;
+  --chart-cat-5: #5a5a5a;
+  --chart-cat-6: #444444;
+  --chart-cat-7: #dcdcdc;
+  --chart-other: #9a9a9a;
+  --chart-grid: #2e2e31;
+  --chart-axis: #3f3f43;
+  --chart-reference: #9a9a9a;
+}
+:root[data-palette="graphite"]:not([data-theme="dark"]) { --color-money-in: #0d7a47; --color-money-out: #c0262d; }
+:root[data-palette="graphite"][data-theme="dark"] { --color-money-in: #5fd39a; --color-money-out: #ff7b7b; }
+/* Graphite + Glass: cards stay nearly solid so they read as raised panels, with a light top edge. */
+:root[data-palette="graphite"][data-surface="glass"] .bg-surface { background-color: color-mix(in srgb, var(--color-surface) 90%, transparent); }
+:root[data-palette="graphite"][data-surface="glass"][data-theme="dark"] .bg-surface.border { border-color: rgb(255 255 255 / 0.07); }
+:root[data-palette="graphite"][data-surface="glass"][data-theme="dark"] body {
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 10px 30px rgb(0 0 0 / 0.5);
+}
+/* Graphite headings are plain sans, not a display serif. */
+:root[data-palette="graphite"] :is(h1, h2) { letter-spacing: -0.01em; }
+
 /* Headings take the palette's display face; body text stays in the readable sans. */
 :root[data-palette] h1, :root[data-palette] h2 { font-family: var(--font-display); letter-spacing: 0.005em; }
 /* A hairline of the accent on raised surfaces gives the luxury palettes a finished edge. */
@@ -602,6 +700,13 @@
     radial-gradient(38rem 30rem at 8% 38%, color-mix(in srgb, var(--color-info) 45%, transparent), transparent 70%),
     radial-gradient(34rem 28rem at 62% 102%, color-mix(in srgb, var(--color-gold) 45%, transparent), transparent 70%),
     radial-gradient(26rem 22rem at 45% 40%, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 70%),
+    var(--color-canvas);
+  background-attachment: fixed;
+}
+:root[data-palette="graphite"][data-surface="glass"] body {
+  background:
+    radial-gradient(44rem 30rem at 50% -10%, color-mix(in srgb, var(--color-ink) 16%, transparent), transparent 70%),
+    radial-gradient(30rem 24rem at 100% 60%, color-mix(in srgb, var(--color-ink) 6%, transparent), transparent 70%),
     var(--color-canvas);
   background-attachment: fixed;
 }
@@ -729,6 +834,14 @@
 
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
+/*
+ * A grid's implicit column (phones, before any sm:/md: grid-cols) may shrink below its content,
+ * like grid-cols-1. Otherwise a nowrap line such as a truncated account name widens the column
+ * past the screen and the whole page pans sideways.
+ */
+@layer base {
+  .grid { grid-auto-columns: minmax(0, 1fr); }
+}
 html { background: var(--color-canvas); -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -770,6 +883,62 @@ button, a { -webkit-tap-highlight-color: transparent; }
     border-top: 1px solid var(--color-line);
     background: var(--color-surface);
   }
+}
+
+/*
+ * Opening a page inside a view (a setting, an account) slides like an iOS push; going back
+ * slides the other way. The page content has its own transition name, so the header and tab
+ * bar (also named) stay put while it moves. See components/penny/subpage.ts.
+ */
+#main { view-transition-name: page; }
+/* An inner page (an account, a setting) shows its own "‹ Back" bar instead of the app header. */
+@media (max-width: 1023px) { :root[data-subpage] .page-header { display: none; } }
+/* Snapshots are taken with data-nav set: an opaque page, so the old one doesn't show through. */
+:root[data-nav] #main { background: var(--color-canvas); }
+.page-header { view-transition-name: page-header; }
+.mobile-tab-bar { view-transition-name: tab-bar; }
+.back-bar { view-transition-name: back-bar; }
+@keyframes nav-in-right { from { transform: translateX(100%); } }
+@keyframes nav-out-left { to { transform: translateX(-28%); opacity: 0.6; } }
+@keyframes nav-in-left { from { transform: translateX(-28%); opacity: 0.6; } }
+@keyframes nav-out-right { to { transform: translateX(100%); } }
+:root[data-nav]::view-transition-old(page), :root[data-nav]::view-transition-new(page) {
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  animation-fill-mode: both;
+  mix-blend-mode: normal;
+}
+:root[data-nav="push"]::view-transition-old(page) { animation-name: nav-out-left; }
+:root[data-nav="push"]::view-transition-new(page) { animation-name: nav-in-right; }
+:root[data-nav="pop"]::view-transition-old(page) { animation-name: nav-out-right; z-index: 1; }
+:root[data-nav="pop"]::view-transition-new(page) { animation-name: nav-in-left; }
+/* Only the sideways slide: the page area doesn't also morph when the header comes or goes. */
+:root[data-nav]::view-transition-group(page) { overflow: clip; animation: none; }
+@keyframes nav-fade-in { from { opacity: 0; } }
+@keyframes nav-fade-out { to { opacity: 0; } }
+:root[data-nav="fade"]::view-transition-old(page) { animation: nav-fade-out 180ms ease-out both; }
+:root[data-nav="fade"]::view-transition-new(page) { animation: nav-fade-in 220ms ease-out both; }
+/* The page title takes focus after a page change (for screen readers); no ring for that. */
+#page-title:focus, #page-title:focus-visible { outline: none; }
+
+/* Touch: list rows flash a soft highlight while pressed, like iOS table rows. */
+@media (hover: none) {
+  li > button:not(:disabled) { transition: background-color 120ms ease-out; }
+  li > button:not(:disabled):active { background-color: var(--color-sage-soft); }
+}
+
+/* The eye button: each amount's digits turn transparent (so nothing shifts) and dots sit on top.
+   Inputs stay readable for typing. */
+:root[data-hide-amounts] .tabular:not(input, textarea, select, output) { position: relative; -webkit-text-fill-color: transparent; }
+:root[data-hide-amounts] .tabular:not(input, textarea, select, output)::after {
+  content: "•••••";
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  text-align: inherit;
+  white-space: nowrap;
+  letter-spacing: 0.06em;
+  -webkit-text-fill-color: currentColor;
 }
 
 /* Touch: no grey flash on tap, no 300 ms double-tap wait. */

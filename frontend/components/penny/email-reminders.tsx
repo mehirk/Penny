@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useEffect, useState } from "react";
-import { BellRing, CircleAlert, Eye, LoaderCircle, Mail, MailCheck, RefreshCw, Send } from "lucide-react";
+import { CircleAlert, Eye, LoaderCircle, Mail, MailCheck, RefreshCw, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,8 @@ import { type ReminderKinds, type ReminderState, remindersApi, type SentEmail } 
 import { cn } from "@/lib/utils";
 import { describeError } from "./shared";
 
-const SECTION = "rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6";
+// Opens inside its Settings row, which supplies the frame and the title.
+const SECTION = "";
 
 const KIND_OPTIONS: { key: keyof ReminderKinds; label: string; description: string }[] = [
   { key: "bills", label: "Bills and subscriptions", description: "Up to three days before anything recurring is due." },
@@ -87,7 +88,6 @@ export function EmailReminders() {
   if (!state) {
     return (
       <section className={SECTION} aria-labelledby="reminders-title" aria-busy={!loadError}>
-        <h2 id="reminders-title" className="flex items-center gap-2 text-lg font-semibold text-ink"><BellRing className="size-5 text-gold-strong" aria-hidden="true" />Email reminders</h2>
         {loadError
           ? <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{loadError}<Button size="sm" variant="ghost" onClick={load}><RefreshCw className="size-4" aria-hidden="true" />Try again</Button></div>
           : <div className="mt-4 h-40 animate-pulse rounded-xl bg-sage-soft" />}
@@ -99,7 +99,6 @@ export function EmailReminders() {
   return (
     <section className={SECTION} aria-labelledby="reminders-title">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 id="reminders-title" className="flex items-center gap-2 text-lg font-semibold text-ink"><BellRing className="size-5 text-gold-strong" aria-hidden="true" />Email reminders</h2>
         {state.delivery === "smtp" ? <Badge><MailCheck className="mr-1 size-3.5" aria-hidden="true" />Email connected</Badge> : <Badge tone="gold"><Eye className="mr-1 size-3.5" aria-hidden="true" />Preview mode</Badge>}
       </div>
       <p className="mt-1 text-sm text-ink-subtle">

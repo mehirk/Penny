@@ -74,8 +74,12 @@ export type Dashboard = {
   accounts_overview: AccountsOverview;
   previous_month_cash_flow_cents: number | null;
   spending_power_cents: number;
+  /** How long Safe to spend has to last; null when the period shown doesn't include today. */
+  spending_runway: SpendingRunway | null;
   totals: { available_balance_cents: number; income_cents: number; spending_cents: number; cash_flow_cents: number; total_budget_cents: number; budget_remaining_cents: number; savings_contributions_cents: number; savings_rate_basis_points: number };
 };
+
+export type SpendingRunway = { until: string; until_payday: boolean; days_left: number; per_day_cents: number; status: "on_track" | "tight" | "empty" };
 
 export type HistoryMonth = { month: string; income_cents: number; spending_cents: number; cash_flow_cents: number; budget_cents: number; transaction_count: number };
 export type History = {
@@ -112,6 +116,21 @@ export type CoachSignal = { id: string; tone: "positive" | "watch" | "alert"; ti
 export type CoachBrief = { greeting: string; month_label: string; signals: CoachSignal[]; suggested_questions: string[] };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+/**
+ * FastAPI sends `detail` as a string for app errors, but as a list of {loc, msg} objects when a
+ * request fails validation. Either way, turn it into a readable sentence.
+ */
+export function errorText(detail: unknown): string | null {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => (item && typeof item === "object" && "msg" in item ? String(item.msg).replace(/^Value error, /, "") : null))
+      .filter((message): message is string => Boolean(message));
+    return messages.length ? `Penny couldn’t save that: ${messages.join("; ")}.` : null;
+  }
+  return null;
+}
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -158,8 +177,8 @@ async function authorizedRequest<T>(path: string, init?: RequestInit): Promise<T
     },
   });
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
-    throw new ApiError(payload?.detail ?? `Request failed with status ${response.status}`, response.status);
+    const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
+    throw new ApiError(errorText(payload?.detail) ?? `Request failed with status ${response.status}`, response.status);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

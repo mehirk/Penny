@@ -1,11 +1,12 @@
 "use client";
 
 import { useId } from "react";
-import { Bot, GraduationCap, Home, Landmark, ReceiptText, Settings, Target, TrendingUp, type LucideIcon } from "lucide-react";
+import { Bot, Eye, EyeOff, GraduationCap, Home, Landmark, ReceiptText, Settings, Target, TrendingUp, type LucideIcon } from "lucide-react";
 import { Label } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
 import { formatCad } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { usePreferences } from "./preferences";
 
 export type View = "today" | "spending" | "accounts" | "recurring" | "goals" | "invest" | "learn" | "ai" | "settings";
 
@@ -87,4 +88,21 @@ export function dueLabel(days: number): string {
   if (days < 0) return "Overdue";
   if (days === 0) return "Due today";
   return days === 1 ? "Due tomorrow" : `Due in ${days} days`;
+}
+
+/** "$4,631.51" as a large dollar figure with smaller cents. Display only. */
+export function BigAmount({ cents, negative = false }: { cents: number; negative?: boolean }) {
+  const [whole, fraction] = cad(cents).split(".");
+  return <span className="tabular">{negative ? "−" : ""}{whole}{fraction !== undefined && <span className="align-[0.95em] text-[0.45em] text-ink-muted">.{fraction}</span>}</span>;
+}
+
+/** The eye button: hides every balance and amount on this device (shown as dots) until tapped again. */
+export function AmountsToggle({ className }: { className?: string }) {
+  const { hideAmounts, setHideAmounts } = usePreferences();
+  const Icon = hideAmounts ? EyeOff : Eye;
+  return (
+    <button type="button" onClick={() => setHideAmounts(!hideAmounts)} aria-pressed={hideAmounts} aria-label={hideAmounts ? "Show amounts" : "Hide amounts"} title={hideAmounts ? "Show amounts" : "Hide amounts"} className={cn("grid size-11 place-items-center rounded-full text-ink-subtle transition-colors hover:bg-sage-soft hover:text-ink", className)}>
+      <Icon className="size-5" aria-hidden="true" />
+    </button>
+  );
 }

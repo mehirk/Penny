@@ -59,11 +59,12 @@ export function SpendingView(props: Props) {
         ))}
       </div>
       {tab === "transactions" ? (
-        <div id="spending-panel-transactions" role="tabpanel" aria-labelledby="spending-tab-transactions" className="space-y-8">
+        // On a phone, budgets ("Food $30 over") come before Penny's take.
+        <div id="spending-panel-transactions" role="tabpanel" aria-labelledby="spending-tab-transactions" className="flex flex-col gap-8">
           <TransactionsPanel dashboard={dashboard} onChangePeriod={props.onChangePeriod} onAdd={props.onAddTransaction} onEdit={props.onEditTransaction} onDelete={props.onDeleteTransaction} />
-          <SpendingTake dashboard={dashboard} version={props.historyVersion} onAsk={props.onAsk} />
+          <div className="max-sm:order-1"><SpendingTake dashboard={dashboard} version={props.historyVersion} onAsk={props.onAsk} /></div>
           <Budgets {...props} />
-          <Trends dashboard={dashboard} historyVersion={props.historyVersion} onSelectMonth={props.onSelectMonth} />
+          <div className="max-sm:order-2"><Trends dashboard={dashboard} historyVersion={props.historyVersion} onSelectMonth={props.onSelectMonth} /></div>
         </div>
       ) : (
         <div id="spending-panel-recurring" role="tabpanel" aria-labelledby="spending-tab-recurring">
@@ -120,7 +121,7 @@ function Budgets({ dashboard, onAddBudget, onEditBudget, onCopyBudgets, onApplyB
                 <div className="flex items-center justify-between gap-3">
                   <span className="truncate text-sm font-semibold text-ink">{budget.category_name}</span>
                   <span className="flex items-center gap-1">
-                    <span className={cn("text-sm font-medium", status.tone === "danger" ? "text-danger" : status.tone === "gold" ? "text-gold-strong" : "text-ink-muted")}>{status.label}</span>
+                    <span className={cn("tabular text-sm font-medium", status.tone === "danger" ? "text-danger" : status.tone === "gold" ? "text-gold-strong" : "text-ink-muted")}>{status.label}</span>
                     {editable && !budget.carried_over && <button type="button" onClick={() => onEditBudget(budget)} className="grid size-10 place-items-center rounded-lg text-ink-subtle hover:bg-sage-soft hover:text-ink" aria-label={`Edit ${budget.category_name} budget`}><Pencil className="size-3.5" aria-hidden="true" /></button>}
                   </span>
                 </div>

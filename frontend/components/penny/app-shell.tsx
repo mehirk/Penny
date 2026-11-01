@@ -70,6 +70,39 @@ function AccountSummary({ dashboard }: { dashboard: Dashboard }) {
   );
 }
 
+/** Settings, top: who is signed in. */
+export function ProfileCard({ dashboard }: { dashboard: Dashboard }) {
+  const email = useSignedInEmail();
+  const initials = dashboard.profile.display_name.split(" ").map((part) => part[0]).join("");
+  return (
+    <div className="flex items-center gap-3 rounded-[var(--radius-card)] border border-line bg-surface p-4">
+      <span className="grid size-12 shrink-0 place-items-center rounded-full bg-sage text-base font-semibold text-ink" aria-hidden="true">{initials}</span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-semibold text-ink">{dashboard.profile.display_name}</p>
+        <p className="truncate text-sm text-ink-subtle">{email ?? "Demo mode"}{dashboard.xp_total > 0 ? ` · ${dashboard.xp_total} XP` : ""}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Settings, end: Sign out on its own, in red, so it can't be mistaken for a setting. */
+export function SignOutRow() {
+  const router = useRouter();
+  const email = useSignedInEmail();
+  const [signingOut, setSigningOut] = useState(false);
+  if (!email) return null;
+  async function signOut() {
+    setSigningOut(true);
+    await signOutOfSupabase().catch(() => undefined);
+    router.replace("/login");
+  }
+  return (
+    <button type="button" onClick={() => void signOut()} disabled={signingOut} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-[var(--radius-card)] border border-line bg-surface font-semibold text-danger hover:bg-danger-soft disabled:opacity-60">
+      <LogOut className="size-4" aria-hidden="true" />{signingOut ? "Signing out…" : "Sign out"}
+    </button>
+  );
+}
+
 export function Sidebar({ active, dashboard, collapsed, onToggle, onNavigate }: { active: View; dashboard: Dashboard; collapsed: boolean; onToggle: () => void; onNavigate: (view: View) => void }) {
   return (
     <aside data-collapsed={collapsed} className={cn("fixed inset-y-0 left-0 z-30 hidden flex-col overflow-y-auto border-r border-line bg-canvas py-5 transition-[width] duration-200 lg:flex", collapsed ? "w-20 px-3" : "w-64 px-4")}>
@@ -99,29 +132,38 @@ export function Sidebar({ active, dashboard, collapsed, onToggle, onNavigate }: 
   );
 }
 
-export function MobileNavigation({ active, onNavigate }: { active: View; onNavigate: (view: View) => void }) {
+/**
+ * Small screens: a floating capsule of icon tabs (each names itself to screen readers); the
+ * current one sits in a soft pill. Add, where offered, is a separate circle beside it, so it's
+ * never mistaken for a tab.
+ */
+export function MobileNavigation({ active, onNavigate, onAdd }: { active: View; onNavigate: (view: View) => void; onAdd?: () => void }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const primary = NAVIGATION.filter((item) => item.primary);
-  const secondary = NAVIGATION.filter((item) => !item.primary);
+  // Accounts are listed on Home (with Net worth one tap away), so More doesn't repeat them.
+  const secondary = NAVIGATION.filter((item) => !item.primary && item.id !== "accounts");
   const moreActive = secondary.some((item) => item.id === active);
-  const tab = (selected: boolean) => cn("flex min-h-16 w-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors", selected ? "text-primary" : "text-ink-subtle hover:text-ink");
-  const pill = (selected: boolean) => cn("grid h-7 w-11 place-items-center rounded-full transition-colors duration-150", selected && "bg-sage");
+  const current = (id: View) => active === id || (id === "today" && active === "accounts");
+  const tab = (selected: boolean) => cn("grid h-12 w-12 place-items-center rounded-full transition-colors duration-200 motion-reduce:transition-none", selected ? "bg-sage text-ink" : "text-ink-subtle hover:text-ink");
+  const tabs = [...primary.map((item) => ({ ...item, selected: current(item.id), onClick: () => { if (active !== item.id) haptic("selection"); onNavigate(item.id); } })), { id: "more" as const, label: "More", icon: Menu, selected: moreActive, onClick: () => { haptic("selection"); setMoreOpen(true); } }];
   return (
-    <nav aria-label="Primary" className="mobile-tab-bar fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
-      <ul className="mx-auto flex max-w-3xl">
-        {primary.map(({ id, label, icon: Icon }) => (
-          <li key={id} className="flex-1">
-            <button type="button" onClick={() => { if (active !== id) haptic("selection"); onNavigate(id); }} aria-current={active === id ? "page" : undefined} className={tab(active === id)}>
-              <span className={pill(active === id)}><Icon className="size-5" aria-hidden="true" /></span>{label}
-            </button>
-          </li>
-        ))}
-        <li className="flex-1">
-          <button type="button" onClick={() => { haptic("selection"); setMoreOpen(true); }} aria-haspopup="dialog" className={tab(moreActive)}>
-            <span className={pill(moreActive)}><Menu className="size-5" aria-hidden="true" /></span>More
+    <nav aria-label="Primary" className="mobile-tab-bar pointer-events-none fixed inset-x-0 bottom-0 z-30 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:hidden">
+      <div className="mx-auto flex max-w-md items-center justify-center gap-2 px-4">
+        <ul className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-line bg-surface/85 p-1 shadow-[var(--shadow-raised)] backdrop-blur-xl">
+          {tabs.map(({ id, label, icon: Icon, selected, onClick }) => (
+            <li key={id}>
+              <button type="button" onClick={onClick} aria-current={id !== "more" && selected ? "page" : undefined} aria-haspopup={id === "more" ? "dialog" : undefined} className={tab(selected)}>
+                <Icon className="size-5" aria-hidden="true" /><span className="sr-only">{label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        {onAdd && (
+          <button type="button" onClick={onAdd} aria-label="Add transaction" className="pointer-events-auto grid size-14 shrink-0 place-items-center rounded-full bg-primary text-on-primary shadow-[var(--shadow-raised)] transition-transform active:scale-95">
+            <Plus className="size-6" aria-hidden="true" />
           </button>
-        </li>
-      </ul>
+        )}
+      </div>
       <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>More</DialogTitle><DialogDescription>Everything else in Penny.</DialogDescription></DialogHeader>
@@ -148,6 +190,7 @@ export function MobileNavigation({ active, onNavigate }: { active: View; onNavig
 // Heading faces per palette, mirrored from globals.css so the picker can preview them.
 const PALETTE_FONTS: Record<PaletteSetting, string> = {
   original: "var(--font-sans)",
+  graphite: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif',
   noir: '"Didot", "Bodoni 72", "Bodoni MT", Georgia, serif',
   emerald: '"Baskerville", "Libre Baskerville", Georgia, serif',
   sapphire: '"Avenir Next", "Avenir", "Segoe UI", sans-serif',
@@ -345,9 +388,20 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
   const summary = `You have ${cad(dashboard.home.available_cents)} available and ${saved} ${period.phrase}.`;
   const description = pastHome ? `Looking back at ${period.label}. Balances and goals show today’s values.` : view === "today" ? summary : item.description;
   const showMonth = MONTH_VIEWS.includes(view);
+  // Phone Home is about today: a short greeting and no period picker (it's on Spending). Looking
+  // back at a past month keeps the picker, so there's a way back.
+  const phoneToday = view === "today" && includesNow;
   const showAdd = view === "today" || view === "spending";
+  const picker = (
+    <>
+      <PeriodPicker dashboard={dashboard} loading={monthLoading} onChange={onChangePeriod} />
+      {/* Phones already say so in the line under the title. */}
+      {dashboard.profile.is_fictional && <Badge tone="gold" className="max-sm:hidden">Fictional data</Badge>}
+    </>
+  );
   return (
-    <header className="sticky top-0 z-20 border-b border-line/70 bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+    <>
+    <header className="page-header sticky top-0 z-20 border-b border-line/70 bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur-md">
       <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-10 lg:py-4">
         {/* Actions sit beside the title on phones, and centred against the whole header (title,
             description, and period picker) from the sm breakpoint. */}
@@ -355,38 +409,36 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
           <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
             <BrandMark className="size-9 lg:hidden" />
             <div className="min-w-0">
-              <h1 id="page-title" tabIndex={-1} className="truncate text-lg font-semibold tracking-tight text-ink focus:outline-none sm:text-2xl">{title}</h1>
+              <h1 id="page-title" tabIndex={-1} className="truncate text-lg font-semibold tracking-tight text-ink focus:outline-none sm:text-2xl">{phoneToday ? <><span className="sm:hidden">Hi, {firstName}</span><span className="hidden sm:inline">{title}</span></> : title}</h1>
               <p className="hidden text-sm text-ink-subtle sm:line-clamp-2">{description}</p>
             </div>
           </div>
           <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-2 self-center sm:row-span-3">
+            {/* Phones get Add as a button above the tab bar, within thumb reach. */}
             {showAdd && (
-              <Button onClick={onAddTransaction} className="shrink-0">
+              <Button onClick={onAddTransaction} className="shrink-0 max-sm:hidden">
                 <Plus className="size-4" aria-hidden="true" /><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add transaction</span>
               </Button>
             )}
-            <SettingsMenu onOpenDisplay={onOpenDisplay} onNavigate={onNavigate} />
+            {/* Below lg, Settings is under More in the tab bar; one way in, not two. */}
+            <div className="hidden lg:block"><SettingsMenu onOpenDisplay={onOpenDisplay} onNavigate={onNavigate} /></div>
           </div>
-          {showMonth ? (
-            <div className="col-span-2 mt-3 flex flex-wrap items-center gap-2 sm:col-span-1">
-              <PeriodPicker dashboard={dashboard} loading={monthLoading} onChange={onChangePeriod} />
-              {dashboard.profile.is_fictional && <Badge tone="gold">Fictional data</Badge>}
-            </div>
-          ) : (
-            <p className="col-span-2 mt-1 text-xs text-ink-subtle sm:hidden">{formatMonth(dashboard.current_month)}{dashboard.profile.is_fictional ? " · Fictional data" : ""}</p>
+          {showMonth && (
+            <div className="col-span-1 mt-3 hidden flex-wrap items-center gap-2 sm:flex">{picker}</div>
           )}
-          {pastHome && <p className="col-span-2 mt-2 text-xs text-ink-subtle sm:hidden">Looking back at a past month. Balances and goals show today’s values.</p>}
+          <p className="col-span-2 mt-1 text-xs text-ink-subtle sm:hidden">{showMonth ? period.label : formatMonth(dashboard.current_month)}{dashboard.profile.is_fictional ? " · Fictional data" : ""}</p>
         </div>
       </div>
     </header>
+    {/* Phones: the period picker sits at the top of the page and scrolls away, so the pinned
+        header stays short (like an iOS large title). The line above still names the period. */}
+    {showMonth && !phoneToday && (
+      <div className="px-4 pt-4 sm:hidden">
+        <div className="flex flex-wrap items-center gap-2">{picker}</div>
+        {pastHome && <p className="mt-2 text-xs text-ink-subtle">Looking back at a past month. Balances and goals show today’s values.</p>}
+      </div>
+    )}
+    </>
   );
 }
 
-/** Account summary for small screens, where the sidebar is hidden. */
-export function MobileAccount({ dashboard }: { dashboard: Dashboard }) {
-  return (
-    <div className="space-y-3 lg:hidden">
-      <AccountSummary dashboard={dashboard} />
-    </div>
-  );
-}

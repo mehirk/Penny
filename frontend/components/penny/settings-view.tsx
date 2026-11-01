@@ -1,24 +1,28 @@
 "use client";
 
 import { type ChangeEvent, useState } from "react";
-import { Banknote, Check, FileUp, Lock, ShieldCheck, Sparkles, Tags, Trash2, Wallet } from "lucide-react";
+import { Banknote, BellRing, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, ShieldCheck, Sparkles, Tags, Trash2, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
 import { type Dashboard, dashboardApi, type PayFrequency, type PaySchedule } from "@/lib/api";
+import { formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { THEME_ICONS } from "./app-shell";
+import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, THEME_ICONS } from "./app-shell";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
-import { THEME_OPTIONS, usePreferences } from "./preferences";
+import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
 import { EmailReminders } from "./email-reminders";
 import { cad, Field } from "./shared";
+import { BackBar } from "./back-bar";
+import { useSubpage } from "./subpage";
 
 /** Saves a change through the app's mutation runner; resolves to an error message or null. */
 export type SaveChange = (action: () => Promise<Dashboard>, success: string) => Promise<string | null>;
 
-const SECTION = "rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6";
+// Each section opens inside its Settings row, which supplies the frame and the title.
+const SECTION = "";
 
 const PROTECTIONS_TODAY = [
   "Penny uses fictional data only. It never asks for your bank username or password.",
@@ -35,41 +39,97 @@ const BANK_CONNECTION_STANDARDS = [
   "Device sign-in with passkeys, Face ID, or fingerprint.",
 ];
 
-function Preferences() {
+function AppearanceSection() {
   const { theme, setTheme } = usePreferences();
-  const section = SECTION;
   return (
-    <>
-      <section className={section}>
-        <h2 className="text-lg font-semibold text-ink">Appearance</h2>
-        <div role="radiogroup" aria-label="Theme" className="mt-4 grid grid-cols-3 gap-2">
-          {THEME_OPTIONS.map((option) => {
-            const Icon = THEME_ICONS[option.value];
-            return <button key={option.value} type="button" role="radio" aria-checked={theme === option.value} onClick={() => setTheme(option.value)} className={cn("flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border p-2 text-sm font-semibold", theme === option.value ? "border-accent bg-accent-soft text-ink" : "border-line text-ink-muted hover:bg-sage-soft")}><Icon className="size-5" aria-hidden="true" />{option.label}</button>;
-          })}
-        </div>
-      </section>
-      <EmailReminders />
-      <section className={section} aria-labelledby="trust-title">
-        <h2 id="trust-title" className="flex items-center gap-2 text-lg font-semibold text-ink"><ShieldCheck className="size-5 text-accent" aria-hidden="true" />Security and trust</h2>
-        <h3 className="mt-4 text-sm font-semibold text-ink">How Penny protects you today</h3>
-        <ul className="mt-2 space-y-2">{PROTECTIONS_TODAY.map((item) => <li key={item} className="flex gap-2 text-sm text-ink-muted"><Check className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />{item}</li>)}</ul>
-        <h3 className="mt-5 text-sm font-semibold text-ink">If Penny ever connects to your bank</h3>
-        <p className="mt-1 text-sm text-ink-subtle">These are the standards a connection would have to meet. They are commitments, not live features.</p>
-        <ul className="mt-2 space-y-2">{BANK_CONNECTION_STANDARDS.map((item) => <li key={item} className="flex gap-2 text-sm text-ink-muted"><Lock className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />{item}</li>)}</ul>
-      </section>
-    </>
+    <section aria-labelledby="appearance-title">
+      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-2">
+        {THEME_OPTIONS.map((option) => {
+          const Icon = THEME_ICONS[option.value];
+          return <button key={option.value} type="button" role="radio" aria-checked={theme === option.value} onClick={() => setTheme(option.value)} className={cn("flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border p-2 text-sm font-semibold", theme === option.value ? "border-primary bg-primary-soft text-primary" : "border-line text-ink-muted hover:border-line-strong")}><Icon className="size-5" aria-hidden="true" />{option.label}</button>;
+        })}
+      </div>
+      <h3 className="mt-5 text-sm font-semibold text-ink">Style</h3>
+      <div className="mt-2"><PalettePicker /></div>
+      <h3 className="mt-5 text-sm font-semibold text-ink">Surface</h3>
+      <div className="mt-2"><SurfacePicker /></div>
+      <p className="mt-5 text-sm text-ink-subtle">Text size follows your device: on iPhone, Settings › Display &amp; Brightness › Text Size.</p>
+    </section>
   );
 }
 
-export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
+function TrustSection() {
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <PayScheduleSection dashboard={dashboard} save={save} />
-      <AccountsSection dashboard={dashboard} save={save} />
-      <CategoriesSection dashboard={dashboard} save={save} />
-      <ImportSection dashboard={dashboard} save={save} />
-      <Preferences />
+    <section aria-labelledby="trust-title">
+      <h3 className="text-sm font-semibold text-ink">How Penny protects you today</h3>
+      <ul className="mt-2 space-y-2">{PROTECTIONS_TODAY.map((item) => <li key={item} className="flex gap-2 text-sm text-ink-muted"><Check className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />{item}</li>)}</ul>
+      <h3 className="mt-5 text-sm font-semibold text-ink">If Penny ever connects to your bank</h3>
+      <p className="mt-1 text-sm text-ink-subtle">These are the standards a connection would have to meet. They are commitments, not live features.</p>
+      <ul className="mt-2 space-y-2">{BANK_CONNECTION_STANDARDS.map((item) => <li key={item} className="flex gap-2 text-sm text-ink-muted"><Lock className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />{item}</li>)}</ul>
+    </section>
+  );
+}
+
+const PAY_SHORT: Record<PayFrequency, string> = { weekly: "Weekly", biweekly: "Every 2 weeks", semimonthly: "Twice a month", monthly: "Monthly", custom: "Custom" };
+
+type SettingsPage = { id: string; labelId: string; group: string; icon: LucideIcon; title: string; summary: string; body: React.ReactNode };
+
+/**
+ * Settings as an iPhone-style list: grouped rows with a one-line summary. A row opens its own
+ * page, with "‹ Settings" (or the device's Back) to return.
+ */
+export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
+  const { theme, palette } = usePreferences();
+  const [pageId, openPage, back] = useSubpage("settings");
+  const pay = dashboard.pay_schedule;
+  const styleName = PALETTE_OPTIONS.find((option) => option.value === palette)?.label ?? "Penny";
+  const themeName = THEME_OPTIONS.find((option) => option.value === theme)?.label ?? "";
+  const custom = dashboard.categories.filter((category) => category.custom).length;
+  const pages: SettingsPage[] = [
+    { id: "pay", labelId: "pay-title", group: "Money", icon: Banknote, title: "When you get paid", summary: pay ? `${PAY_SHORT[pay.frequency]} · next ${formatShortDate(pay.next_payday)}` : "Not set up yet", body: <PayScheduleSection dashboard={dashboard} save={save} /> },
+    { id: "accounts", labelId: "accounts-title", group: "Money", icon: Wallet, title: "Accounts", summary: `${dashboard.accounts.length} account${dashboard.accounts.length === 1 ? "" : "s"}`, body: <AccountsSection dashboard={dashboard} save={save} /> },
+    { id: "categories", labelId: "categories-title", group: "Money", icon: Tags, title: "Categories", summary: custom ? `${custom} of your own` : "Penny’s defaults", body: <CategoriesSection dashboard={dashboard} save={save} /> },
+    { id: "import", labelId: "import-title", group: "Money", icon: FileUp, title: "Import history", summary: "From a CSV file", body: <ImportSection dashboard={dashboard} save={save} /> },
+    { id: "appearance", labelId: "appearance-title", group: "App", icon: Palette, title: "Appearance", summary: `${styleName} · ${themeName}`, body: <AppearanceSection /> },
+    { id: "reminders", labelId: "reminders-title", group: "App", icon: BellRing, title: "Email reminders", summary: "Bills, budgets, and streaks", body: <EmailReminders /> },
+    { id: "security", labelId: "trust-title", group: "Privacy", icon: ShieldCheck, title: "Security and trust", summary: "How your data is protected", body: <TrustSection /> },
+  ];
+  const page = pages.find((item) => item.id === pageId);
+
+  if (page) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <BackBar label="Settings" onBack={back} />
+        <h2 id={page.labelId} className="mt-1 px-1 text-2xl font-semibold tracking-tight text-ink">{page.title}</h2>
+        <div className="mt-4 rounded-[var(--radius-card)] border border-line bg-surface p-4 sm:p-5">{page.body}</div>
+      </div>
+    );
+  }
+
+  const groups = [...new Set(pages.map((item) => item.group))];
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <ProfileCard dashboard={dashboard} />
+      {groups.map((group) => (
+        <section key={group} aria-label={group}>
+          <h2 className="mb-1.5 px-4 font-sans text-xs font-semibold uppercase tracking-wider text-ink-subtle">{group}</h2>
+          <ul className="divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
+            {pages.filter((item) => item.group === group).map(({ id, icon: Icon, title, summary }) => (
+              <li key={id}>
+                <button type="button" onClick={() => openPage(id)} className="flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left hover:bg-sage-soft">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-sage text-ink-muted" aria-hidden="true"><Icon className="size-[1.1rem]" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold text-ink">{title}</span>
+                    <span className="block truncate text-sm text-ink-subtle">{summary}</span>
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      <SignOutRow />
     </div>
   );
 }
@@ -104,7 +164,6 @@ function PayScheduleSection({ dashboard, save }: { dashboard: Dashboard; save: S
 
   return (
     <section className={SECTION} aria-labelledby="pay-title">
-      <h2 id="pay-title" className="flex items-center gap-2 text-lg font-semibold text-ink"><Banknote className="size-5 text-money-in" aria-hidden="true" />When you get paid</h2>
       <p className="mt-1 text-sm text-ink-subtle">Your payday forecast and pay cycles are built from this.</p>
       <form onSubmit={submit} onChange={() => setSaved(false)} className="mt-4 space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -129,7 +188,6 @@ function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: Save
   }
   return (
     <section className={SECTION} aria-labelledby="accounts-title">
-      <h2 id="accounts-title" className="flex items-center gap-2 text-lg font-semibold text-ink"><Wallet className="size-5 text-info" aria-hidden="true" />Accounts</h2>
       <p className="mt-1 text-sm text-ink-subtle">Rename or remove accounts. Add new ones from Add transaction, or below.</p>
       <ul className="mt-3 divide-y divide-line">
         {dashboard.accounts.map((account) => (
@@ -193,7 +251,6 @@ function CategoriesSection({ dashboard, save }: { dashboard: Dashboard; save: Sa
 
   return (
     <section className={SECTION} aria-labelledby="categories-title">
-      <h2 id="categories-title" className="flex items-center gap-2 text-lg font-semibold text-ink"><Tags className="size-5 text-[#7047b7] dark:text-[#c1a5ee]" aria-hidden="true" />Categories</h2>
       <p className="mt-1 text-sm text-ink-subtle">Money in and money out have their own categories. Group spending with subcategories, like Food › Groceries.</p>
       <div role="tablist" aria-label="Category type" className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-sage-soft p-1">
         {([["spending", "Money out"], ["income", "Money in"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={kind === value} onClick={() => setKind(value)} className={cn("min-h-10 rounded-lg text-sm font-semibold", kind === value ? (value === "income" ? "bg-zone-green-soft text-ink shadow-sm" : "bg-danger-soft text-ink shadow-sm") : "text-ink-subtle")}>{label}</button>)}
@@ -251,7 +308,6 @@ function ImportSection({ dashboard, save }: { dashboard: Dashboard; save: SaveCh
 
   return (
     <section className={SECTION} aria-labelledby="import-title">
-      <h2 id="import-title" className="flex items-center gap-2 text-lg font-semibold text-ink"><FileUp className="size-5 text-accent" aria-hidden="true" />Bring your history</h2>
       <p className="mt-1 text-sm text-ink-subtle">Import a CSV from your bank or another app. Needs Date (YYYY-MM-DD), Description, and Amount (negative for money out) columns. Duplicates are skipped and balances don’t change. Export anytime from Spending.</p>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
         <Select aria-label="Import into account" value={account} onChange={(event) => setAccount(event.target.value)} className="sm:max-w-xs">{dashboard.accounts.map((item) => <option key={item.id} value={item.id}>Into {item.name}</option>)}</Select>

@@ -13,7 +13,12 @@ export function formatMonth(value: string): string {
 }
 
 /** Today's local date (YYYY-MM-DD) if it falls in the active month, otherwise the month's first day. */
-export function defaultTransactionDate(activeMonth: string, now = new Date()): string {
+/**
+ * A new transaction's date: the app's "today" (from the API, which keeps the demo inside its own
+ * month) when it falls in the month shown, else the device's date, else the month's first day.
+ */
+export function defaultTransactionDate(activeMonth: string, appToday: string | null = null, now = new Date()): string {
+  if (appToday?.slice(0, 7) === activeMonth.slice(0, 7)) return appToday;
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   return today.slice(0, 7) === activeMonth.slice(0, 7) ? today : activeMonth;
 }

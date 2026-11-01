@@ -8,11 +8,12 @@ export type ThemeSetting = "light" | "dark" | "system";
 const THEME_KEY = "penny-theme";
 const PALETTE_KEY = "penny-palette";
 
-export type PaletteSetting = "original" | "noir" | "emerald" | "sapphire" | "bordeaux" | "pearl";
+export type PaletteSetting = "original" | "graphite" | "noir" | "emerald" | "sapphire" | "bordeaux" | "pearl";
 
 /** Colour styles. Tokens live in globals.css under [data-palette]; swatches are canvas, primary, accent, gold. */
 export const PALETTE_OPTIONS: { value: PaletteSetting; label: string; description: string; font: string; swatches: { light: string[]; dark: string[] } }[] = [
   { value: "original", label: "Penny", description: "Calm teal and navy. The original look.", font: "Inter", swatches: { light: ["#f6f8fb", "#173f5f", "#15977f", "#efad3d"], dark: ["#0d1720", "#81b9e6", "#4bc2a8", "#e8b95f"] } },
+  { value: "graphite", label: "Graphite", description: "Black, white, and grey. Quiet and minimal.", font: "SF Pro", swatches: { light: ["#f4f4f4", "#0b0b0b", "#666666", "#c9c9c9"], dark: ["#000000", "#f5f5f5", "#9a9a9a", "#3b3b3b"] } },
   { value: "noir", label: "Noir & Gold", description: "Black lacquer, ivory, and champagne gold.", font: "Didot", swatches: { light: ["#f7f4ee", "#16130e", "#a8842c", "#c9a24a"], dark: ["#0b0a08", "#d4af5a", "#d4af5a", "#d4af5a"] } },
   { value: "emerald", label: "Emerald Club", description: "Deep emerald with antique brass.", font: "Baskerville", swatches: { light: ["#f5f3ec", "#0f4c3a", "#1f7a5c", "#b8913f"], dark: ["#08140f", "#c9a85a", "#4cb88f", "#c9a85a"] } },
   { value: "sapphire", label: "Midnight Sapphire", description: "Ink navy with sapphire and platinum.", font: "Avenir Next", swatches: { light: ["#f3f5f9", "#14245c", "#2f56c4", "#c7a35a"], dark: ["#070b1a", "#a9bdf2", "#7d9cf0", "#d8bc7c"] } },
@@ -22,6 +23,8 @@ export const PALETTE_OPTIONS: { value: PaletteSetting; label: string; descriptio
 const PALETTE_VALUES = PALETTE_OPTIONS.map((option) => option.value);
 
 const SURFACE_KEY = "penny-surface";
+/** "1" hides balances and amounts on this device (the eye button), for privacy in public. */
+const HIDE_AMOUNTS_KEY = "penny-hide-amounts";
 export type SurfaceSetting = "classic" | "glass" | "soft" | "clay" | "flat" | "halo";
 
 /** How cards and panels are built. Rules live in globals.css under [data-surface]. */
@@ -54,6 +57,7 @@ export const PREFERENCES_BOOT_SCRIPT = `(() => {
     theme = localStorage.getItem("${THEME_KEY}") || theme;
     palette = localStorage.getItem("${PALETTE_KEY}") || palette;
     surface = localStorage.getItem("${SURFACE_KEY}") || surface;
+    if (localStorage.getItem("${HIDE_AMOUNTS_KEY}") === "1") root.dataset.hideAmounts = "";
   } catch {}
   const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   root.dataset.theme = dark ? "dark" : "light";
@@ -69,6 +73,8 @@ type Preferences = {
   setPalette: (palette: PaletteSetting) => void;
   surface: SurfaceSetting;
   setSurface: (surface: SurfaceSetting) => void;
+  hideAmounts: boolean;
+  setHideAmounts: (hide: boolean) => void;
 };
 
 const PreferencesContext = createContext<Preferences | null>(null);
@@ -109,7 +115,16 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
 
   const [palette, setPaletteState] = useState<PaletteSetting>(() => (typeof window === "undefined" ? "original" : read(PALETTE_KEY, PALETTE_VALUES, "original")));
   const [surface, setSurfaceState] = useState<SurfaceSetting>(() => (typeof window === "undefined" ? "classic" : read(SURFACE_KEY, SURFACE_VALUES, "classic")));
+  const [hideAmounts, setHideAmountsState] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.localStorage.getItem(HIDE_AMOUNTS_KEY) === "1"; } catch { return false; }
+  });
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (hideAmounts) root.dataset.hideAmounts = ""; else delete root.dataset.hideAmounts;
+  }, [hideAmounts]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -134,8 +149,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const setTheme = useCallback((value: ThemeSetting) => { write(THEME_KEY, value); setThemeState(value); }, []);
   const setPalette = useCallback((value: PaletteSetting) => { write(PALETTE_KEY, value); setPaletteState(value); }, []);
   const setSurface = useCallback((value: SurfaceSetting) => { write(SURFACE_KEY, value); setSurfaceState(value); }, []);
+  const setHideAmounts = useCallback((value: boolean) => { write(HIDE_AMOUNTS_KEY, value ? "1" : "0"); setHideAmountsState(value); }, []);
 
-  const value = useMemo(() => ({ theme, resolvedTheme, setTheme, palette, setPalette, surface, setSurface }), [theme, resolvedTheme, setTheme, palette, setPalette, surface, setSurface]);
+  const value = useMemo(() => ({ theme, resolvedTheme, setTheme, palette, setPalette, surface, setSurface, hideAmounts, setHideAmounts }), [theme, resolvedTheme, setTheme, palette, setPalette, surface, setSurface, hideAmounts, setHideAmounts]);
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;
 }
 

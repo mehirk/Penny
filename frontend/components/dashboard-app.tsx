@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
 import { Bot, CloudOff, LogIn, RefreshCw } from "lucide-react";
-import { DisplaySettingsDialog, MobileAccount, MobileNavigation, PageHeader, Sidebar } from "@/components/penny/app-shell";
+import { DisplaySettingsDialog, MobileNavigation, PageHeader, Sidebar } from "@/components/penny/app-shell";
 import { SettingsView } from "@/components/penny/settings-view";
+import { slide } from "@/components/penny/subpage";
 import { CoachView, useCoachChat } from "@/components/penny/coach-view";
 import { AddMoneyDialog, BudgetDialog, ConfirmDialog, type ConfirmRequest, GoalDialog, type InlineCreate, TransactionDialog } from "@/components/penny/dialogs";
 import { AccountsView } from "@/components/penny/accounts-view";
@@ -57,8 +58,9 @@ function spotlight(id: string, attempt = 0) {
 
 /** Runs a UI update inside a view transition where supported (and motion is allowed). */
 function withViewTransition(update: () => void) {
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduce || !("startViewTransition" in document)) { update(); return; }
+  // After a back swipe (see BackBar) the page has already slid away by hand. The default
+  // transition is a short cross-fade, which suits Reduce Motion too.
+  if ("swiping" in document.documentElement.dataset || !("startViewTransition" in document)) { update(); return; }
   const transition = document.startViewTransition(() => flushSync(update));
   // The browser cancels the animation if the viewport changes mid-switch (a resize, the phone
   // keyboard opening). The view still updates; only the cross-fade is skipped, so swallow it.
@@ -147,7 +149,8 @@ function PennyApp() {
 
   useEffect(() => {
     const fromHash = () => {
-      const hash = window.location.hash.slice(1);
+      // "#settings/appearance" opens a page inside a view; the view is the part before "/".
+      const hash = window.location.hash.slice(1).split("/")[0];
       // Recurring lives inside Spending; old #recurring links open that tab.
       if (hash === "recurring") { setSpendingTab("recurring"); setView("spending"); }
       else if (isView(hash)) setView(hash);
@@ -162,13 +165,20 @@ function PennyApp() {
     return () => { active = false; window.removeEventListener("hashchange", fromHash); };
   }, [prefetch, remember]);
 
-  /** Opens a view; with `anchor`, scrolls to that section and briefly highlights it. */
-  const navigate = useCallback((target: View, anchor?: string) => {
+  /**
+   * Opens a view; with `anchor`, scrolls to that section and briefly highlights it. `motion`
+   * "push"/"pop" slides like an inner page (e.g. Home ⇄ Net worth) instead of cross-fading.
+   */
+  const navigate = useCallback((target: View, anchor?: string, motion?: "push" | "pop") => {
     const next = target === "recurring" ? "spending" : target;
     if (target === "recurring") setSpendingTab("recurring");
     else if (target === "spending" && anchor) setSpendingTab("transactions");
-    withViewTransition(() => setView(next));
-    if (window.location.hash !== `#${next}`) window.history.pushState(null, "", `#${next}`);
+    if (motion) slide(motion, () => setView(next)); else withViewTransition(() => setView(next));
+    if (window.location.hash !== `#${next}`) {
+      window.history.pushState(null, "", `#${next}`);
+      // pushState fires no event; views with pages of their own (Settings) listen for this.
+      window.dispatchEvent(new Event("penny:navigate"));
+    }
     window.scrollTo({ top: 0 });
     window.requestAnimationFrame(() => document.getElementById("page-title")?.focus({ preventScroll: true }));
     if (anchor) spotlight(anchor);
@@ -369,8 +379,10 @@ function PennyApp() {
       <div className={cn("transition-[padding] duration-200", sidebarCollapsed ? "lg:pl-20" : "lg:pl-64")}>
         <PageHeader view={view} dashboard={dashboard} monthLoading={monthLoading} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onOpenDisplay={() => setDisplayOpen(true)} onNavigate={navigate} />
         <main id="main" tabIndex={-1} className="mx-auto max-w-7xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-5 focus:outline-none sm:px-6 lg:px-10 lg:pb-12 lg:pt-8">
-          <div key={view} className={monthLoading ? "animate-fade opacity-70 transition-opacity duration-200" : "animate-fade transition-opacity duration-200"} aria-busy={monthLoading}>
-            {view === "today" && <TodayView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
+          {/* A period that isn't cached yet shows a skeleton until its data arrives, never stale numbers. */}
+          {monthLoading && <PageSkeleton />}
+          <div key={view} className={monthLoading ? "hidden" : "animate-fade"} aria-busy={monthLoading}>
+            {view === "today" && <TodayView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} onEditTransaction={setTransactionTarget} />}
             {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: markBillPaid, onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} />}
             {view === "accounts" && <AccountsView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
             {view === "goals" && <GoalsView dashboard={dashboard} onAsk={askPenny} onAdd={() => setGoalTarget("new")} onEdit={setGoalTarget} onAddMoney={setAddMoneyTarget} onComplete={(goal) => void mutate(() => dashboardApi.updateGoal(goal.id, { status: "completed" }, month), `${goal.name} reached`)} />}
@@ -379,10 +391,9 @@ function PennyApp() {
             {view === "ai" && <CoachView chat={coachChat} dashboard={dashboard} onDashboardChange={applyChange} onApproved={(message) => toast({ title: "Change applied", description: message })} />}
             {view === "settings" && <SettingsView dashboard={dashboard} save={mutate} />}
           </div>
-          <div className="mt-8"><MobileAccount dashboard={dashboard} /></div>
         </main>
       </div>
-      <MobileNavigation active={view} onNavigate={navigate} />
+      <MobileNavigation active={view} onNavigate={navigate} onAdd={view === "today" || view === "spending" ? () => setTransactionTarget("new") : undefined} />
       <PullToRefresh onRefresh={refresh} />
       {/* Desktop only: on phones Penny AI is in the tab bar, and a floating button covered content. */}
       {view !== "ai" && <button type="button" onClick={() => navigate("ai")} className="fixed bottom-6 right-6 z-20 hidden min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-on-primary shadow-[var(--shadow-raised)] transition-transform hover:-translate-y-0.5 motion-reduce:transform-none lg:inline-flex"><Bot className="size-4" />Ask Penny</button>}
@@ -487,6 +498,18 @@ function EditDialogs({ dashboard, mutate, onCreate, onOpenMonth, transaction, bu
         onSubmit={(goalItem, amount, fromAccountId) => saveAndClose(mutate(() => dashboardApi.contributeToGoal(goalItem.id, amount, fromAccountId, month), (data) => contributionSaved(goalItem, data)), () => setAddMoneyTarget(null))}
       />
     </>
+  );
+}
+
+/** The standard loading state inside a page: shapes where the numbers and cards will be. */
+function PageSkeleton() {
+  return (
+    <div className="mx-auto max-w-2xl animate-pulse space-y-4" aria-busy="true">
+      <div className="mx-auto h-14 w-56 rounded-2xl bg-sage" />
+      <div className="mx-auto h-4 w-40 rounded-full bg-sage" />
+      {["a", "b", "c", "d"].map((key) => <div key={key} className="h-[4.5rem] rounded-[var(--radius-card)] border border-line bg-surface" />)}
+      <output className="sr-only">Loading</output>
+    </div>
   );
 }
 
