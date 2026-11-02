@@ -12,7 +12,6 @@ export function formatMonth(value: string): string {
   return new Intl.DateTimeFormat("en-CA", { month: "long", year: "numeric", timeZone: "UTC" }).format(utc(value));
 }
 
-/** Today's local date (YYYY-MM-DD) if it falls in the active month, otherwise the month's first day. */
 /**
  * A new transaction's date: the app's "today" (from the API, which keeps the demo inside its own
  * month) when it falls in the month shown, else the device's date, else the month's first day.

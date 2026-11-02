@@ -24,7 +24,7 @@ from app.coach.models import (
 from app.coach.proposals import proposal_store
 from app.coach.tools import TOOL_SPECS, check_affordability, propose_budget_plan, run_tool
 from app.config import Settings
-from app.dashboard_store import DashboardStore
+from app.store import DashboardStore
 
 logger = logging.getLogger(__name__)
 

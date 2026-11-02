@@ -10,8 +10,8 @@ from typing import Literal
 from app.coach.facts import FactBook
 from app.coach.models import BudgetPlanCard, Proposal, Signal, ToolUse
 from app.dashboard_models import DashboardResponse, Goal, HistoryResponse, MonthlyBudget
-from app.dashboard_store import DashboardStore
 from app.domain.finance import COMMON_UTILIZATION_GUIDELINE_BASIS_POINTS, add_months
+from app.store import DashboardStore
 
 PRIOR_MONTHS = 3
 # A category is "running hot" when this month is at least 125% of its recent average.
@@ -104,10 +104,10 @@ def goal_monthly_needed(goal: Goal) -> int | None:
 
 def pay_cycle_snapshot(ctx: CoachContext) -> dict[str, object] | None:
     """Next payday and the lowest projected balance before it (bills only)."""
-    if not ctx.dashboard.pay_schedule:
+    if not ctx.dashboard.pay:
         return None
     f = ctx.facts
-    view = ctx.store.forecast(ctx.user_id, 0, "bills")
+    view = ctx.store.pay_cycle_outlook(ctx.user_id)
     return {
         "next_payday": view.next_payday.isoformat(),
         "days_until_payday": view.days_until_payday,
@@ -298,7 +298,6 @@ def build_snapshot(ctx: CoachContext) -> dict[str, object]:
             if d.credit
             else None
         ),
-        "net_worth": f.money("Net worth", d.net_worth.net_worth_cents, "accounts"),
         "financial_health_score": {
             "score_out_of_100": d.financial_health.score,
             "factors": [

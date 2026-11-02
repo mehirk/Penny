@@ -14,7 +14,7 @@ Next.js App Router client
   |                       |-- deterministic Python financial domain
   |                       |-- per-request unit of work (load, run domain code, save changes)
   |                       |-- authenticated, bounded Penny AI coach
-  |                       |     |-- five deterministic financial tools
+  |                       |     |-- deterministic financial tools
   |                       |     |-- verified structured recommendations
   |                       |     +-- optional OpenAI explanation adapter
   |                       +-- owner-bound approval command
@@ -30,11 +30,12 @@ Penny AI chats (messages and the verified replies shown with them) and proposals
 
 ## Boundaries
 
-- `frontend/` owns presentation, accessibility, Supabase sign-in, and mutation forms. It never calculates financial totals; editable CAD strings are converted to cents with `BigInt` before requests.
-- `backend/app/domain/finance.py` is the authoritative calculation layer. Pure functions accept and return Python integers representing cents.
-- `backend/app/dashboard_store.py` owns each user's financial state and returns a complete authoritative snapshot after each create, update, or delete. It knows nothing about the database: `snapshot()` and `restore()` hand its state to `backend/app/db/`, which loads it per request in one query and saves only changed rows, guarded by a version number (409 on a conflicting edit). Without `PENNY_DATABASE_URL` the state is in memory.
-- `backend/app/main.py` exposes typed health, dashboard, calculation, CRUD, Penny AI, and approval responses. Every financial endpoint validates the bearer identity (Supabase JWT via JWKS, or the development-only demo token) and passes the user id to the store, which rejects non-owners with 403.
+- `frontend/` owns presentation, accessibility, Supabase sign-in, and mutation forms. It never calculates financial totals; editable CAD strings are converted to cents with `BigInt` before requests. `components/dashboard-app.tsx` orchestrates views and dialogs; `components/penny/use-dashboard.ts` owns loading, period caching, and applying each change's fresh snapshot.
+- `backend/app/domain/` is the authoritative calculation layer. Pure functions accept and return Python integers representing cents, and each has unit tests.
+- `backend/app/store/` owns each user's financial state and returns a complete authoritative snapshot after each create, update, or delete. `DashboardStore` is assembled from one module per area (`transactions`, `budgets`, `goals`, `bills`, `accounts`, `pay`, `planning`, `learning`, `reports`) on top of `state` (data, lookups, validation) and `dashboard`/`insights` (the snapshot). `seed.py` holds the fictional demo and a fresh account's starting point; `registry.py` picks the store for a signed-in user. The store knows nothing about the database: `snapshot()` and the constructor hand its state to `backend/app/db/`, which loads it per request in one query and saves only changed rows, guarded by a version number (409 on a conflicting edit). Without `PENNY_DATABASE_URL` the state is in memory.
+- `backend/app/api/` exposes typed routes, one router per area; `backend/app/main.py` only wires the app (per-request save, CORS, routers). Every financial endpoint validates the bearer identity (Supabase JWT via JWKS, or the development-only demo token) and passes the user id to the store, which rejects non-owners with 403.
 - `backend/app/coach/` owns the financial snapshot, check-in signals, deterministic tools, prompt-injection filtering, number grounding, provider fallback, and single-use goal proposals. Provider output cannot mutate state.
+- `backend/app/assist/` holds the smaller AI helpers (quick add, search, statement reading, budget suggestions, setup, and short explanations). Each has a built-in fallback, quotes only verified figures, and saves nothing.
 - `supabase/migrations/` owns schema evolution. The browser receives only the publishable key; service-role credentials must remain server-side.
 
 ## Database model and authorization

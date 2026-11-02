@@ -12,7 +12,7 @@ import { centsToInput, parseCadToCents } from "@/lib/money";
 import { createSupabaseBrowserClient, getSupabaseUserEmail } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, THEME_ICONS } from "./app-shell";
-import { ACCOUNT_TYPE_LABELS } from "./dialogs";
+import { ACCOUNT_TYPE_LABELS } from "./labels";
 import { accountEmoji } from "./emoji";
 import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
 import { cad, DueDaySelect, Field } from "./shared";

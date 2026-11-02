@@ -33,7 +33,7 @@ type Props = {
   onDeleteTransaction: (item: Transaction) => void;
 };
 
-export function budgetStatus(budget: Budget): { label: string; tone: "danger" | "gold" | "accent"; bar: string } {
+function budgetStatus(budget: Budget): { label: string; tone: "danger" | "gold" | "accent"; bar: string } {
   if (budget.remaining_cents < 0) return { label: `${cad(-budget.remaining_cents)} over`, tone: "danger", bar: "bg-danger" };
   if (budget.usage_basis_points >= 9_000) return { label: `${cad(budget.remaining_cents)} left`, tone: "gold", bar: "bg-gold" };
   return { label: `${cad(budget.remaining_cents)} left`, tone: "accent", bar: "bg-accent" };

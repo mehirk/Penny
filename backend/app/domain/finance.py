@@ -24,7 +24,6 @@ class FinancialSummary:
     spending_cents: int
     cash_flow_cents: int
     budget_remaining_cents: int
-    savings_contributions_cents: int
 
 
 def _require_non_negative_cents(value: int, field: str) -> None:
@@ -56,28 +55,15 @@ def budget_remaining(budget_cents: int, spent_cents: int) -> int:
     return budget_cents - spent_cents
 
 
-def savings_contribution_total(contributions_cents: Iterable[int]) -> int:
-    contributions = tuple(contributions_cents)
-    for contribution in contributions:
-        _require_non_negative_cents(contribution, "contribution_cents")
-    return sum(contributions)
-
-
-def build_summary(
-    transactions: Iterable[TransactionAmount],
-    budget_cents: int,
-    contributions_cents: Iterable[int],
-) -> FinancialSummary:
+def build_summary(transactions: Iterable[TransactionAmount], budget_cents: int) -> FinancialSummary:
     materialized_transactions = tuple(transactions)
     income = income_total(materialized_transactions)
     spending = spending_total(materialized_transactions)
-    contributions = savings_contribution_total(contributions_cents)
     return FinancialSummary(
         income_cents=income,
         spending_cents=spending,
         cash_flow_cents=income - spending,
         budget_remaining_cents=budget_remaining(budget_cents, spending),
-        savings_contributions_cents=contributions,
     )
 
 
@@ -108,38 +94,6 @@ def average_cents(total_cents: int, count: int) -> int:
     if isinstance(count, bool) or not isinstance(count, int) or count < 0:
         raise ValueError("count must be a non-negative integer")
     return total_cents // count if count else 0
-
-
-MAX_PROJECTION_YEARS = 50
-
-
-def growth_projection(
-    initial_cents: int,
-    monthly_cents: int,
-    years: int,
-    annual_return_basis_points: int,
-    annual_fee_basis_points: int,
-) -> list[tuple[int, int, int]]:
-    """Illustrative month-end compounding: (year, total contributed, balance) for each year.
-
-    The net monthly rate is (return - fee) / 12 and growth is floored to whole cents each
-    month. This illustrates compounding with an assumed rate; it is not a forecast.
-    """
-    _require_non_negative_cents(initial_cents, "initial_cents")
-    _require_non_negative_cents(monthly_cents, "monthly_cents")
-    if not 1 <= years <= MAX_PROJECTION_YEARS:
-        raise ValueError(f"years must be between 1 and {MAX_PROJECTION_YEARS}")
-    if not 0 <= annual_return_basis_points <= 2_000 or not 0 <= annual_fee_basis_points <= 500:
-        raise ValueError("return must be 0-20% and fee 0-5%")
-    net = annual_return_basis_points - annual_fee_basis_points
-    balance = contributed = initial_cents
-    points = [(0, contributed, balance)]
-    for month in range(1, years * 12 + 1):
-        balance += balance * net // (12 * BASIS_POINTS) + monthly_cents
-        contributed += monthly_cents
-        if month % 12 == 0:
-            points.append((month // 12, contributed, balance))
-    return points
 
 
 def ceil_div(numerator: int, denominator: int) -> int:

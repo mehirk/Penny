@@ -35,6 +35,35 @@ export function enter(kind: "push" | "pop" | "fade") {
   page.animate([from, { transform: "none", opacity: 1 }], { duration: kind === "fade" ? 200 : 340, easing: "cubic-bezier(0.32, 0.72, 0, 1)" });
 }
 
+/** Runs a UI update inside a view transition where supported (and motion is allowed). */
+export function withViewTransition(update: () => void) {
+  // After a back swipe (see BackBar) the page has already slid away by hand. The default
+  // transition is a short cross-fade, which suits Reduce Motion too.
+  if ("swiping" in document.documentElement.dataset || !("startViewTransition" in document)) { update(); return; }
+  const transition = document.startViewTransition(() => flushSync(update));
+  // The browser cancels the animation if the viewport changes mid-switch (a resize, the phone
+  // keyboard opening). The view still updates; only the cross-fade is skipped, so swallow it.
+  const ignore = () => undefined;
+  transition.ready.catch(ignore);
+  transition.finished.catch(ignore);
+  transition.updateCallbackDone.catch(ignore);
+}
+
+/** Scrolls to a section once it has rendered, and rings it briefly so the eye lands on it. */
+export function spotlight(id: string, attempt = 0) {
+  const element = document.getElementById(id);
+  if (!element) {
+    if (attempt < 20) window.setTimeout(() => spotlight(id, attempt + 1), 100);
+    return;
+  }
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  element.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  element.classList.remove("penny-spotlight");
+  void element.offsetWidth;
+  element.classList.add("penny-spotlight");
+  window.setTimeout(() => element.classList.remove("penny-spotlight"), 1800);
+}
+
 /**
  * A page inside a view, kept in the address ("#settings/appearance", "#today/acct-1") so the
  * device's Back returns to the list and a link can open the page directly.

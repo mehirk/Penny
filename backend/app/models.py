@@ -67,33 +67,8 @@ class Transaction(StrictModel):
     unusual: bool = False
 
 
-class Budget(StrictModel):
-    category: str
-    limit_cents: int = Field(ge=0)
-    spent_cents: int = Field(ge=0)
-    remaining_cents: int
-
-
-class SavingsGoal(StrictModel):
-    name: str
-    target_cents: int = Field(gt=0)
-    current_cents: int = Field(ge=0)
-    contribution_this_month_cents: int = Field(ge=0)
-    target_date: date
-
-
 class Summary(StrictModel):
     income_cents: int
     spending_cents: int
     cash_flow_cents: int
     budget_remaining_cents: int
-    savings_contributions_cents: int
-
-
-class DemoDashboardResponse(StrictModel):
-    profile: DemoUser
-    accounts: list[Account]
-    transactions: list[Transaction]
-    budgets: list[Budget]
-    savings_goal: SavingsGoal
-    summary: Summary

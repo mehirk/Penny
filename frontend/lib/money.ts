@@ -1,4 +1,4 @@
-export type Cents = string;
+type Cents = string;
 
 export function formatCad(cents: Cents, showSign = false): string {
   const value = BigInt(cents);

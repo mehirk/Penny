@@ -9,8 +9,8 @@ from typing import Literal
 
 from fastapi import HTTPException, status
 
-from app.dashboard_store import stores
 from app.db.pool import connection, database_enabled
+from app.store import stores
 
 ProposalKind = Literal["goal_contribution", "budget_limit"]
 

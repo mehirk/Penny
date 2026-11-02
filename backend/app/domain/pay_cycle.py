@@ -2,8 +2,7 @@
 
 A pay cycle runs from one payday to the day before the next. Each day's balance is:
 - for days up to today: reconstructed from the current balance and the actual transactions;
-- for later days: carried forward, adding projected paydays and subtracting scheduled bills
-  (and, in "budget" mode, the daily flexible allowance).
+- for later days: carried forward, adding projected paydays and subtracting scheduled bills.
 
 Everything is integer cents. Nothing here reads a database or calls a model.
 """
@@ -137,30 +136,22 @@ def forecast(
     actual: Sequence[Event],
     projected: Sequence[Event],
     paydays_in_cycle: set[date],
-    daily_budget_cents: int,
 ) -> list[DayBalance]:
     """Balances for each day of `cycle`.
 
     `balance_today_cents` is the spendable balance after today's recorded transactions.
     `actual` are recorded transactions; `projected` are paydays and bills not yet recorded,
-    dated today or later. In budget mode, `daily_budget_cents` is subtracted for each day after
-    today to stand in for everyday spending.
+    dated today or later.
     """
 
     def end_of(day: date) -> int:
         if day < today:
             return balance_today_cents - sum(e.amount_cents for e in actual if day < e.day <= today)
-        future_days = (day - today).days
-        upcoming = sum(e.amount_cents for e in projected if today <= e.day <= day)
-        return balance_today_cents + upcoming - daily_budget_cents * future_days
+        return balance_today_cents + sum(e.amount_cents for e in projected if today <= e.day <= day)
 
     result = []
     for day in _days(cycle.start, cycle.end):
         events = [e for e in (*actual, *projected) if e.day == day]
-        if day > today and daily_budget_cents > 0:
-            events.append(
-                Event(day, "Everyday spending", -daily_budget_cents, "daily_budget", True)
-            )
         end = end_of(day)
         result.append(
             DayBalance(

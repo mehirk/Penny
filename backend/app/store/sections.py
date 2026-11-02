@@ -1,7 +1,7 @@
-"""Builders for the dashboard's derived features. Pure functions over plain store data."""
+"""Builders for sections of the dashboard snapshot. Pure functions over plain store data."""
 
 import calendar
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import date, timedelta
 
 from app.dashboard_models import (
@@ -9,12 +9,8 @@ from app.dashboard_models import (
     AccountGoal,
     AccountsOverview,
     Bill,
-    FoundationCheck,
     Goal,
-    LearningProgress,
-    Lesson,
     MoneyCalendar,
-    MoneyDay,
     MoneyStreaks,
     RecurringExpense,
     RecurringMonth,
@@ -24,10 +20,8 @@ from app.dashboard_models import (
     UpcomingPayment,
 )
 from app.domain.categorize import necessity
-from app.domain.finance import format_cad
 from app.domain.money_days import DayInput, DayScore, daily_allowance_cents, score_days, streaks
 from app.domain.recurring import RecurringSeries, detect_fixed_series, next_due, series_key
-from app.learning.engine import Learner
 from app.models import Account, Transaction
 
 # ------------------------------------------------------------------ recurring expenses
@@ -73,7 +67,6 @@ def build_recurring(
     category_names: dict[str, str],
     active_month: date,
     today: date,
-    next_payday: date | None,
     typical_income_cents: int,
 ) -> RecurringSummary:
     items = []
@@ -107,7 +100,6 @@ def build_recurring(
                 auto_record=bill.auto_record,
                 last_paid_on=last.occurred_on if last else bill.last_paid_on,
                 payment_count=len(history),
-                last_paid_cents=last.amount_cents if last else None,
                 total_paid_cents=sum(t.amount_cents for t in history),
                 paid_this_month=any(in_month(t.occurred_on) for t in history),
                 status="overdue" if days < 0 else "due_soon" if days <= 7 else "later",
@@ -127,23 +119,27 @@ def build_recurring(
         if series.key not in known and series.amount_cents not in known_amounts
     ]
     kinds = {item.id: item.kind for item in items}
-    horizon = today + timedelta(days=UPCOMING_DAYS)
-    upcoming = sorted(
-        (
-            UpcomingPayment(
-                bill_id=bill.id,
-                name=bill.name,
-                due_on=due,
-                days_until_due=(due - today).days,
-                amount_cents=bill.amount_cents,
-                auto_record=bill.auto_record,
-                kind=kinds[bill.id],
-            )
-            for bill in bills
-            for due in bill_due_dates(bill, today, horizon)
-        ),
-        key=lambda item: (item.due_on, item.name),
-    )
+
+    def due_dates(start: Callable[[Bill], date], end: date) -> list[UpcomingPayment]:
+        """Every due date of every bill from `start(bill)` through `end`, soonest first."""
+        return sorted(
+            (
+                UpcomingPayment(
+                    bill_id=bill.id,
+                    name=bill.name,
+                    due_on=due,
+                    days_until_due=(due - today).days,
+                    amount_cents=bill.amount_cents,
+                    auto_record=bill.auto_record,
+                    kind=kinds[bill.id],
+                )
+                for bill in bills
+                for due in bill_due_dates(bill, start(bill), end)
+            ),
+            key=lambda item: (item.due_on, item.name),
+        )
+
+    upcoming = due_dates(lambda _: today, today + timedelta(days=UPCOMING_DAYS))
     month_payments = [t for rows in paid.values() for t in rows if in_month(t.occurred_on)]
     left = [(bill, due) for bill in bills for due in bill_due_dates(bill, today, month_end)]
     overdue = [bill for bill in bills if bill.next_due < today]
@@ -153,27 +149,10 @@ def build_recurring(
     names = {bill.id: bill.name for bill in bills}
     fixed = sum(item.monthly_cents for item in items)
     subscriptions = sum(item.monthly_cents for item in items if item.kind == "subscription")
-    week_end = today + timedelta(days=7)
-    payday_end = (next_payday - timedelta(days=1)) if next_payday else max(week_end, month_end)
     # Unpaid bills (overdue ones too) through the end of this month: the month's budget has to
     # cover them. A paid bill has moved on to its next due date, so it isn't counted again.
     reserve_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
-    unpaid = sorted(
-        (
-            UpcomingPayment(
-                bill_id=bill.id,
-                name=bill.name,
-                due_on=due,
-                days_until_due=(due - today).days,
-                amount_cents=bill.amount_cents,
-                auto_record=bill.auto_record,
-                kind=kinds[bill.id],
-            )
-            for bill in bills
-            for due in bill_due_dates(bill, bill.next_due, reserve_end)
-        ),
-        key=lambda item: (item.due_on, item.name),
-    )
+    unpaid = due_dates(lambda bill: bill.next_due, reserve_end)
     return RecurringSummary(
         items=items,
         bill_count=sum(1 for item in items if item.kind == "bill"),
@@ -200,15 +179,8 @@ def build_recurring(
         suggestions=suggestions,
         fixed_monthly_cents=fixed,
         subscriptions_monthly_cents=subscriptions,
-        due_next_7_days_cents=sum(
-            bill.amount_cents * len(bill_due_dates(bill, today, week_end)) for bill in bills
-        ),
-        due_before_payday_cents=sum(
-            bill.amount_cents * len(bill_due_dates(bill, today, payday_end)) for bill in bills
-        ),
         unpaid_bills_cents=sum(item.amount_cents for item in unpaid),
         unpaid=unpaid,
-        unpaid_until=reserve_end,
         share_of_income_basis_points=(
             fixed * 10_000 // typical_income_cents if typical_income_cents > 0 else None
         ),
@@ -258,43 +230,19 @@ def score_month(
 def build_calendar(
     month: date,
     today: date | None,
-    month_transactions: Sequence[Transaction],
     scores: Sequence[DayScore],
     history: Sequence[DayScore],
     flexible_budget: int,
-    due_by_day: dict[date, list[str]],
 ) -> MoneyCalendar:
+    """Today's Money Score and the streaks; `history` adds the months before for streaks."""
     days_in_month = calendar.monthrange(month.year, month.month)[1]
-    by_day = {score.day: score for score in scores}
-    days = []
-    for day_number in range(1, days_in_month + 1):
-        day = month.replace(day=day_number)
-        score = by_day.get(day_number)
-        days.append(
-            MoneyDay(
-                day=day,
-                future=score is None,
-                score=score.score if score else None,
-                zone=score.zone if score else None,
-                pace_points=score.pace_points if score else None,
-                day_points=score.day_points if score else None,
-                flexible_spent_cents=score.flexible_spent_cents if score else 0,
-                total_spent_cents=score.total_spent_cents if score else 0,
-                income_cents=score.income_cents if score else 0,
-                transaction_count=sum(1 for t in month_transactions if t.occurred_on == day),
-                due=due_by_day.get(day, []),
-            )
-        )
     latest = scores[-1] if scores and today else None
     summary = streaks(history, scores)
     return MoneyCalendar(
-        month=month,
         today=today,
         today_score=latest.score if latest else None,
         today_zone=latest.zone if latest else None,
-        flexible_budget_cents=flexible_budget,
         daily_allowance_cents=daily_allowance_cents(flexible_budget, days_in_month),
-        days=days,
         streaks=MoneyStreaks(
             current_green=summary.current_green,
             best_green=summary.best_green,
@@ -308,7 +256,8 @@ def build_calendar(
 
 # ------------------------------------------------------------------ accounts
 
-SPENDING_ACCOUNT_TYPES = ("chequing", "cash")
+# Account types whose balance is money you can spend day to day.
+SPENDABLE_TYPES = ("chequing", "cash")
 
 
 def build_accounts_overview(
@@ -370,108 +319,11 @@ def build_accounts_overview(
     owed = total("credit")
     return AccountsOverview(
         accounts=rows,
-        spending_cents=total(*SPENDING_ACCOUNT_TYPES),
+        spending_cents=total(*SPENDABLE_TYPES),
         savings_cents=total("savings"),
-        investments_cents=total("investment"),
-        other_cents=total("other"),
         assets_cents=assets,
         owed_cents=owed,
         net_worth_cents=assets - owed,
         goal_cents=sum(row.goal_cents for row in rows),
         goal_shortfall_cents=shortfall,
     )
-
-
-# ------------------------------------------------------------------ learning
-
-
-def build_learning(learner: Learner, mission_xp: int, today: date) -> LearningProgress:
-    """The dashboard's learning summary (Home's streak card), from the learning game's state."""
-    state = learner.state(mission_xp, today)
-    monday = today - timedelta(days=today.weekday())
-    lessons = [
-        Lesson(
-            id=card.id,
-            track=card.topic,
-            difficulty=card.tier,
-            title=card.title,
-            xp_reward=card.xp_max,
-            completed=card.passed,
-        )
-        for path in state.topics
-        for card in path.lessons
-    ]
-    upcoming = learner.next_lesson()
-    return LearningProgress(
-        xp_total=state.xp_total,
-        level=state.level,
-        level_xp=state.level_xp,
-        level_size_xp=state.level_size_xp,
-        streak_days=state.streak_days,
-        completed_today=state.completed_today,
-        week_activity=[
-            monday + timedelta(days=offset) in learner.activity_days for offset in range(7)
-        ],
-        next_lesson=next(
-            (lesson for lesson in lessons if upcoming and lesson.id == upcoming.id), None
-        ),
-        lessons=lessons,
-    )
-
-
-# ------------------------------------------------------------------ investing foundations
-
-EMERGENCY_MONTHS = 3
-
-
-def build_foundations(
-    savings_cents: int,
-    fixed_monthly_cents: int,
-    card_balance_cents: int,
-    typical_surplus_cents: int,
-    goals_due_within_year: int,
-) -> list[FoundationCheck]:
-    """Common pre-investing foundations from Canadian education material. Not advice."""
-    cushion = fixed_monthly_cents * EMERGENCY_MONTHS
-    checks = [
-        FoundationCheck(
-            id="emergency",
-            title="An emergency cushion",
-            status="met"
-            if savings_cents >= cushion
-            else "in_progress"
-            if savings_cents
-            else "not_met",
-            detail=f"{format_cad(savings_cents)} saved vs {format_cad(cushion)}, about "
-            f"{EMERGENCY_MONTHS} months of your fixed costs.",
-        ),
-        FoundationCheck(
-            id="card",
-            title="No card balance carried",
-            status="met" if card_balance_cents == 0 else "not_met",
-            detail=(
-                "Your card is paid off."
-                if card_balance_cents == 0
-                else f"{format_cad(card_balance_cents)} on your card. Card interest is often "
-                "around 20% a year, which is more than investments typically return."
-            ),
-        ),
-        FoundationCheck(
-            id="surplus",
-            title="Money left over each month",
-            status="met" if typical_surplus_cents > 0 else "not_met",
-            detail=f"Your typical monthly surplus is {format_cad(typical_surplus_cents)}.",
-        ),
-        FoundationCheck(
-            id="short-term",
-            title="Short-term goals kept safe",
-            status="met" if goals_due_within_year == 0 else "in_progress",
-            detail=(
-                "No goals are due within a year."
-                if goals_due_within_year == 0
-                else f"{goals_due_within_year} goal(s) are due within a year. Money needed soon "
-                "usually stays in savings rather than investments."
-            ),
-        ),
-    ]
-    return checks

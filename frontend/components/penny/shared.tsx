@@ -10,9 +10,9 @@ import { usePreferences } from "./preferences";
 
 export type View = "today" | "spending" | "charts" | "accounts" | "recurring" | "goals" | "budgets" | "learn" | "ai" | "settings";
 
-/** `primary` items sit in the phone tab bar; the rest live under "More". */
 /**
- * Every view. `inMenu: false` keeps a view out of the sidebar and tab bar: Accounts opens from
+ * Every view. `primary` items sit in the phone tab bar; the rest live under "More".
+ * `inMenu: false` keeps a view out of the sidebar and tab bar: Accounts opens from
  * Home ("Net worth ›"), and each account from its row on Home.
  */
 export const NAVIGATION: { id: View; label: string; title: string; description: string; icon: LucideIcon; primary: boolean; inMenu?: boolean }[] = [
@@ -28,7 +28,7 @@ export const NAVIGATION: { id: View; label: string; title: string; description: 
 ];
 
 /** 1st, 2nd, 3rd, 4th … 31st. */
-export function ordinal(day: number): string {
+function ordinal(day: number): string {
   const tail = day % 100 >= 11 && day % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[day % 10] ?? "th";
   return `${day}${tail}`;
 }

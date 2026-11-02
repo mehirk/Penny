@@ -29,7 +29,7 @@ function useWidth<T extends HTMLElement>() {
 }
 
 /** Clean axis ticks over [min, max] cents: steps of 1, 2, 2.5 or 5 × 10^n dollars. */
-export function niceTicks(minCents: number, maxCents: number, count = 4): number[] {
+function niceTicks(minCents: number, maxCents: number, count = 4): number[] {
   const span = Math.max(maxCents - minCents, 100);
   const rough = span / count;
   const power = 10 ** Math.floor(Math.log10(rough));
@@ -42,7 +42,7 @@ export function niceTicks(minCents: number, maxCents: number, count = 4): number
 }
 
 /** Axis label: $0, $500, $1.5K, $12K. Display only. */
-export function compactCad(cents: number): string {
+function compactCad(cents: number): string {
   const dollars = cents / 100;
   const sign = dollars < 0 ? "−" : "";
   const absolute = Math.abs(dollars);
