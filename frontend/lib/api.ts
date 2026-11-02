@@ -87,6 +87,10 @@ export type Dashboard = {
   safe_to_spend: SafeToSpendBreakdown | null;
   card_payments: CardPayment[];
   budget_plan: BudgetPlan | null;
+  /** Accounts that can't cover the bills still due from them this month (a heads-up only). */
+  cash_warnings: CashWarning[];
+  /** Transfers and card payments in the period on screen, newest first. */
+  transfers: Transfer[];
   /** A real account with no budget, bills, or pay schedule yet: offer the setup. */
   needs_onboarding: boolean;
   /** How long Safe to spend has to last; null when the period shown doesn't include today. */
@@ -95,6 +99,10 @@ export type Dashboard = {
 };
 
 /** Each step of Safe to spend, as the API computed it. */
+/** Money the user moved between their own accounts in their bank (Penny records it; it never moves money). */
+export type TransferWrite = { from_account_id: string; to_account_id: string; amount_cents: number; occurred_on: string; note: string | null };
+export type Transfer = TransferWrite & { id: string; kind: "transfer" | "card_payment" };
+export type CashWarning = { account_id: string; account_name: string; due_cents: number; balance_cents: number; short_cents: number; bill_names: string[]; first_due_on: string; cover_account_id: string | null; cover_account_name: string | null };
 /** One recurring bill's share of the month's budget: paid so far plus what's still due. */
 export type FixedCost = { bill_id: string; name: string; category_id: string | null; kind: "bill" | "subscription"; amount_cents: number; paid_cents: number; due_cents: number; next_due_on: string | null };
 /** The month's budget: recurring bills (fixed) plus the category budgets (variable). */
@@ -128,6 +136,7 @@ export type CoachReply = {
   facts: CoachFact[];
   tools_used: { name: string; label: string }[];
   proposal: CoachProposal | null;
+  budget_plan?: CoachBudgetPlan | null;
   source: "ai" | "built_in";
   fallback_reason: "no_api_key" | "model_error" | "timeout" | "unverified_numbers" | null;
   model: string | null;
@@ -229,7 +238,9 @@ export const dashboardApi = {
   contributeToGoal: (id: string, amount_cents: number, fromAccountId: string, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}/contributions`, month), { method: "POST", body: JSON.stringify({ amount_cents, from_account_id: fromAccountId }) }),
   completeMission: (id: string, month?: string) => request(inMonth(`/api/v1/missions/${id}/complete`, month), { method: "POST" }),
   billHistory: (id: string) => authorizedRequest<BillHistory>(`/api/v1/bills/${id}/history`),
-  markBillPaid: (id: string, month?: string) => request(inMonth(`/api/v1/bills/${id}/mark-paid`, month), { method: "POST" }),
+  markBillPaid: (id: string, month?: string, accountId?: string) => request(inMonth(`/api/v1/bills/${id}/mark-paid${accountId ? `?account_id=${encodeURIComponent(accountId)}` : ""}`, month), { method: "POST" }),
+  addTransfer: (body: TransferWrite, month?: string) => request(inMonth("/api/v1/transfers", month), { method: "POST", body: JSON.stringify(body) }),
+  deleteTransfer: (id: string, month?: string) => request(inMonth(`/api/v1/transfers/${id}`, month), { method: "DELETE" }),
   createBill: (body: Omit<Bill, "id" | "last_paid_on">, month?: string) => request(inMonth("/api/v1/bills", month), { method: "POST", body: JSON.stringify(body) }),
   updateBill: (id: string, body: Partial<Omit<Bill, "id" | "last_paid_on">>, month?: string) => request(inMonth(`/api/v1/bills/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
   deleteBill: (id: string, month?: string) => request(inMonth(`/api/v1/bills/${id}`, month), { method: "DELETE" }),
@@ -265,7 +276,11 @@ export type StatementDraft = {
   balance_difference_cents: number | null;
   rows: StatementRow[]; problems: string[];
 };
-export type BudgetSuggestions = { month: string; suggestions: BudgetSuggestion[]; summary: AssistText };
+/** The whole picture behind suggested budgets (backend app/domain/smart_budget.py). */
+export type BudgetPlanSummary = { income_cents: number; income_source: "stated" | "pay" | "history" | "none"; fixed_cents: number; savings_cents: number; everyday_cents: number; planned_cents: number; buffer_cents: number; status: "fits" | "trimmed" | "short" | "no_income" };
+export type BudgetSuggestions = { month: string; suggestions: BudgetSuggestion[]; summary: AssistText; plan: (BudgetPlanSummary & { history_months: number }) | null };
+/** A whole budget Penny AI built in chat; "Add to my budgets" applies its lines like suggestions. */
+export type CoachBudgetPlan = BudgetPlanSummary & { month: string; summary: string; lines: BudgetSuggestion[] };
 
 export type OnboardingAnswers = {
   opening_balances: Record<string, number>;

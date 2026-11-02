@@ -11,7 +11,7 @@ from typing import Any
 from app.coach import calculations as calc
 from app.coach.context import CoachContext
 from app.coach.facts import parse_cad
-from app.coach.models import Proposal, ToolUse
+from app.coach.models import BudgetPlanCard, BudgetPlanLine, Proposal, ToolUse
 from app.coach.proposals import proposal_store
 from app.domain.finance import add_months
 
@@ -357,6 +357,45 @@ def propose_budget_limit(
     return {"status": "awaiting_user_approval", "title": ctx.proposal.title}
 
 
+def propose_budget_plan(ctx: CoachContext, monthly_income: str | None) -> dict[str, Any]:
+    """A whole month's budget from everything known (plus income the user stated), shown as a
+    card the user can add. Nothing is applied here."""
+    from app.coach.assist import smart_suggestions  # assist imports this package's context
+
+    stated = _amount(monthly_income, "monthly_income") if monthly_income else None
+    suggestions, plan, summary = smart_suggestions(ctx.store, ctx.user_id, ctx.facts, stated)
+    ctx.budget_plan = BudgetPlanCard(
+        month=ctx.dashboard.current_month.isoformat(),
+        **plan.model_dump(exclude={"history_months"}),
+        summary=summary[0],
+        lines=[BudgetPlanLine(**item.model_dump()) for item in suggestions],
+    )
+    ctx.tools_used.append(ToolUse(name="propose_budget_plan", label="Built a budget plan"))
+    f = ctx.facts
+    return {
+        "status": plan.status,
+        "income_source": plan.income_source,
+        "monthly_income": f.money("Monthly income", plan.income_cents, "pay"),
+        "recurring_bills": f.money("Recurring bills", plan.fixed_cents, "bills"),
+        "savings": f.money("Savings", plan.savings_cents, "goals"),
+        "everyday_room": f.money("Everyday room", plan.everyday_cents, "budgets"),
+        "left_unassigned": f.money("Buffer", plan.buffer_cents, "budgets"),
+        "categories": [
+            {
+                "name": item.category_name,
+                "suggested": f.money(
+                    f"Suggested {item.category_name} budget", item.suggested_cents, "budgets"
+                ),
+                "usually_spends": f.money(
+                    f"{item.category_name} usual", item.average_cents, "history"
+                ),
+            }
+            for item in suggestions
+        ],
+        "shown_to_user": "a card with every line and an 'Add to my budgets' button",
+    }
+
+
 _NULLABLE_GOAL = {"type": ["string", "null"], "description": "Savings goal id, or null"}
 _AMOUNT = {"type": "string", "description": "CAD amount exactly as the user gave it, e.g. 1299.99"}
 
@@ -432,6 +471,19 @@ TOOL_SPECS = [
         {"goal_id": {"type": "string"}, "amount": _AMOUNT, "reason": {"type": "string"}},
     ),
     _spec(
+        "propose_budget_plan",
+        "Build a whole monthly budget (bills, savings, and a limit per category) from the user's "
+        "income, bills, goals, and usual spending, shown as a card they can add with one tap. "
+        "Use when they ask you to make, plan, or set up a budget. Never applied automatically.",
+        {
+            "monthly_income": {
+                "type": ["string", "null"],
+                "description": "Monthly take-home income in CAD exactly as the user stated it, "
+                "or null to use their pay in Penny",
+            }
+        },
+    ),
+    _spec(
         "propose_budget_limit",
         "Prepare a new monthly budget limit for the user to approve. Never applied automatically.",
         {"category": {"type": "string"}, "new_limit": _AMOUNT, "reason": {"type": "string"}},
@@ -448,6 +500,7 @@ _HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
     "list_transactions": list_transactions,
     "propose_goal_contribution": propose_goal_contribution,
     "propose_budget_limit": propose_budget_limit,
+    "propose_budget_plan": propose_budget_plan,
 }
 
 

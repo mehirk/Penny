@@ -51,6 +51,35 @@ class Proposal(CoachModel):
     proposed_cents: int
 
 
+class BudgetPlanLine(CoachModel):
+    """Same shape as a budget suggestion, so the app applies it the same way."""
+
+    category_id: str
+    category_name: str
+    budget_id: str | None  # this month's budget to update, or None to create one
+    current_limit_cents: int | None
+    suggested_cents: int
+    average_cents: int
+    reason: str
+
+
+class BudgetPlanCard(CoachModel):
+    """A whole budget Penny built (app.domain.smart_budget) for the user to add. Nothing
+    changes until they choose "Add to my budgets"; each line is then a normal budget change."""
+
+    month: str
+    income_cents: int
+    income_source: Literal["stated", "pay", "history", "none"]
+    fixed_cents: int
+    savings_cents: int
+    everyday_cents: int
+    planned_cents: int
+    buffer_cents: int
+    status: Literal["fits", "trimmed", "short", "no_income"]
+    summary: str
+    lines: list[BudgetPlanLine]
+
+
 class ToolUse(CoachModel):
     name: str
     label: str
@@ -68,6 +97,7 @@ class ChatResponse(CoachModel):
     facts: list[Fact]
     tools_used: list[ToolUse]
     proposal: Proposal | None
+    budget_plan: BudgetPlanCard | None = None
     source: Literal["ai", "built_in"]
     fallback_reason: Literal["no_api_key", "model_error", "timeout", "unverified_numbers"] | None
     model: str | None

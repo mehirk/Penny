@@ -1,7 +1,8 @@
 "use client";
 
 import { createElement } from "react";
-import { ArrowDownLeft, ArrowUpRight, CalendarClock } from "lucide-react";
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarClock, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type { AccountBalance, Dashboard } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
@@ -11,6 +12,7 @@ import { categoryIcon } from "./category-icons";
 import { ACCOUNT_TYPE_LABELS } from "./dialogs";
 import { accountEmoji } from "./emoji";
 import { BigAmount, cad } from "./shared";
+import { useTransfers } from "./transfer-dialog";
 
 const GROUP = "overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface";
 
@@ -26,6 +28,9 @@ export function AccountDetail({ dashboard, account, backLabel, onBack }: { dashb
   const rows = dashboard.transactions.filter((item) => item.account_id === account.id).slice(0, 20);
   const { phrase } = dashboard.period;
   const card = dashboard.card_payments.find((item) => item.account_id === account.id);
+  const transfers = useTransfers();
+  const moved = dashboard.transfers.filter((t) => t.from_account_id === account.id || t.to_account_id === account.id);
+  const nameOf = (id: string) => dashboard.accounts.find((a) => a.id === id)?.name ?? "a deleted account";
   return (
     <div className="mx-auto max-w-2xl">
       <BackBar label={backLabel} onBack={onBack} />
@@ -36,6 +41,11 @@ export function AccountDetail({ dashboard, account, backLabel, onBack }: { dashb
         <p className="text-sm text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}</p>
         <p className={cn("mt-4 text-5xl font-semibold leading-none tracking-tight", owed ? "text-danger" : "text-ink")}><BigAmount cents={Math.abs(account.balance_cents)} negative={owed || account.balance_cents < 0} /></p>
         <p className="mt-2 text-sm text-ink-muted">{credit ? "Owed on this card" : "Balance today"}</p>
+        {transfers && (credit ? owed : true) && (
+          <Button variant="outline" className="mt-4" onClick={() => transfers.openTransfer(credit ? { to: account.id, amountCents: account.balance_cents } : { from: account.id })}>
+            <ArrowLeftRight className="size-4" aria-hidden="true" />{credit ? "Pay card" : "Move money"}
+          </Button>
+        )}
       </section>
 
       {credit && account.credit_limit_cents !== null && used !== null && (
@@ -70,6 +80,28 @@ export function AccountDetail({ dashboard, account, backLabel, onBack }: { dashb
             <ul className={cn(GROUP, "divide-y divide-line")}>
               {account.goals.map((goal) => <li key={goal.id} className="flex min-h-14 items-center justify-between gap-3 px-4"><span className="min-w-0 truncate text-sm text-ink">{goal.name}</span><span className="tabular shrink-0 font-semibold text-ink">{cad(goal.current_cents)}</span></li>)}
               <li className="flex min-h-14 items-center justify-between gap-3 px-4"><span className="text-sm font-semibold text-ink">Free to use</span><span className="tabular font-semibold text-ink">{cad(account.free_cents ?? 0)}</span></li>
+            </ul>
+          </section>
+        )}
+
+        {moved.length > 0 && (
+          <section aria-labelledby="account-transfers">
+            <h3 id="account-transfers" className="mb-1 px-1 text-base font-semibold text-ink">{credit ? "Payments" : "Transfers"} {phrase}</h3>
+            <ul className={cn(GROUP, "divide-y divide-line")}>
+              {moved.map((t) => {
+                const out = t.from_account_id === account.id;
+                return (
+                  <li key={t.id} className="flex min-h-14 items-center gap-3 px-4 py-2">
+                    <ArrowLeftRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-ink">{t.kind === "card_payment" ? (out ? `Paid ${nameOf(t.to_account_id)}` : `Payment from ${nameOf(t.from_account_id)}`) : out ? `To ${nameOf(t.to_account_id)}` : `From ${nameOf(t.from_account_id)}`}</span>
+                      <span className="block text-xs text-ink-subtle">{formatShortDate(t.occurred_on)}{t.note ? ` · ${t.note}` : ""}</span>
+                    </span>
+                    <span className="tabular shrink-0 font-semibold text-ink">{out || credit ? "−" : "+"}{cad(t.amount_cents)}</span>
+                    {transfers && <button type="button" aria-label="Remove" onClick={() => transfers.deleteTransfer(t)} className="grid size-10 shrink-0 place-items-center rounded-lg text-ink-subtle hover:bg-danger-soft hover:text-danger"><Trash2 className="size-4" aria-hidden="true" /></button>}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}

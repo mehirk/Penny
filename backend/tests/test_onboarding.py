@@ -366,3 +366,21 @@ def test_demo_reset_restores_the_demo_data() -> None:
     restored = demo.reset(owner)
     assert {g.id for g in restored.savings_goals} == before
     assert not restored.needs_onboarding
+
+
+def test_heads_up_when_chequing_cannot_cover_rent() -> None:
+    from app.dashboard_models import AccountPatch
+
+    store, ids = _setup()
+    store.update_account(USER, ids["chequing"], AccountPatch(balance_cents=0))
+    _add_rent(store, ids["chequing"], store.today())
+    d = store.dashboard_for_user(USER)
+    [warning] = d.cash_warnings
+    assert (warning.account_id, warning.short_cents, warning.bill_names) == (
+        ids["chequing"],
+        10_000,
+        ["Rent"],
+    )
+    assert warning.cover_account_id == ids["savings"]
+    # Safe to spend is about the budget, so it doesn't change.
+    assert d.spending_power_cents == 50_000

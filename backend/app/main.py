@@ -67,6 +67,7 @@ from app.dashboard_models import (
     SplitTransactionWrite,
     TransactionPatch,
     TransactionWrite,
+    TransferWrite,
 )
 from app.dashboard_store import DashboardStore, stores
 from app.db import pool
@@ -386,11 +387,37 @@ def bill_history(bill_id: str, current_user: AuthenticatedUser) -> BillHistory:
 
 @app.post("/api/v1/bills/{bill_id}/mark-paid", response_model=DashboardResponse, tags=["bills"])
 def mark_bill_paid(
-    bill_id: str, current_user: AuthenticatedUser, month: ViewMonth = None
+    bill_id: str,
+    current_user: AuthenticatedUser,
+    month: ViewMonth = None,
+    account_id: str | None = None,
 ) -> DashboardResponse:
-    """Record this payment as a transaction and move the bill to its next due date."""
+    """Record this payment as a transaction and move the bill to its next due date.
+    `account_id` pays it from a different account this time."""
     return _in_view(
-        _store(current_user).mark_bill_paid(current_user.id, bill_id), current_user, month
+        _store(current_user).mark_bill_paid(current_user.id, bill_id, account_id),
+        current_user,
+        month,
+    )
+
+
+@app.post("/api/v1/transfers", response_model=DashboardResponse, tags=["accounts"])
+def add_transfer(
+    request: TransferWrite, current_user: AuthenticatedUser, month: ViewMonth = None
+) -> DashboardResponse:
+    """Record money moved between the user's own accounts, or a credit card payment. Penny
+    never moves real money; this records what the user did in their bank."""
+    return _in_view(
+        _store(current_user).add_transfer(current_user.id, request), current_user, month
+    )
+
+
+@app.delete("/api/v1/transfers/{transfer_id}", response_model=DashboardResponse, tags=["accounts"])
+def delete_transfer(
+    transfer_id: str, current_user: AuthenticatedUser, month: ViewMonth = None
+) -> DashboardResponse:
+    return _in_view(
+        _store(current_user).delete_transfer(current_user.id, transfer_id), current_user, month
     )
 
 

@@ -459,6 +459,9 @@ function PlanReview({ plan, limits, onLimit }: { plan: StarterPlan; limits: Reco
         <p className="mt-1 text-sm text-ink">{plan.summary.items[0]}</p>
       </div>
       {planned > plan.income_cents && <IncomeWarning check={{ ...plan, planned_cents: planned, over_income_cents: planned - plan.income_cents }} />}
+      {everyday.reduce((sum, l) => sum + (toCents(limits[l.category_id] ?? "") ?? l.flexible_cents), 0) === 0 && (
+        <p role="status" className="mt-4 rounded-xl border border-line bg-surface p-3 text-sm text-ink-muted">You haven’t set anything for everyday spending, so Safe to spend will start at <span className="tabular font-semibold text-ink">$0.00</span>. You can continue and add category budgets later in Budgets.</p>
+      )}
 
       {fixed.length > 0 && (
         <>

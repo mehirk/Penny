@@ -22,7 +22,7 @@ from app.coach.models import (
     Usage,
 )
 from app.coach.proposals import proposal_store
-from app.coach.tools import TOOL_SPECS, check_affordability, run_tool
+from app.coach.tools import TOOL_SPECS, check_affordability, propose_budget_plan, run_tool
 from app.config import Settings
 from app.dashboard_store import DashboardStore
 
@@ -57,6 +57,12 @@ credit_card_payment. Details on spending: list_transactions.
 - When a specific change to a goal contribution or budget limit would clearly help, call \
 propose_goal_contribution or propose_budget_limit, then tell the user they can review and \
 approve it below. Never say a change was made; nothing changes without their approval.
+- When they ask you to make, plan, or redo a budget (for example "I make $2,000 a month, make \
+me a budget"), call propose_budget_plan with their stated monthly income (or null to use their \
+pay in Penny). Then give an actionable plan: where the money goes (bills, savings, everyday), \
+the two or three category limits that matter most, and one habit to make it work. Say the \
+full plan is in the card below and "Add to my budgets" puts it in place. If they gave pay per \
+paycheque or per week, ask how often or use their pay in Penny instead of converting it.
 
 Boundaries:
 - This is educational guidance with fictional data. Do not recommend specific investments, \
@@ -143,6 +149,7 @@ class Coach:
             facts=ctx.facts.cited_in(reply),
             tools_used=ctx.tools_used,
             proposal=ctx.proposal,
+            budget_plan=ctx.budget_plan,
             source="ai",
             fallback_reason=None,
             model=session.model,
@@ -183,8 +190,13 @@ class Coach:
     ) -> ChatResponse:
         """A deterministic answer from the same verified data, used when the model can't be."""
         ctx.proposal = None
+        ctx.budget_plan = None
         ctx.tools_used.clear()
-        reply = _purchase_reply(ctx, question) or _signals_reply(question, signals)
+        reply = (
+            _budget_plan_reply(ctx, question)
+            or _purchase_reply(ctx, question)
+            or _signals_reply(question, signals)
+        )
         used_ids = {s.id for s in _relevant_signals(question, signals)}
         return ChatResponse(
             reply=reply,
@@ -192,6 +204,7 @@ class Coach:
             facts=ctx.facts.cited_in(reply),
             tools_used=ctx.tools_used,
             proposal=None,
+            budget_plan=ctx.budget_plan,
             source="built_in",
             fallback_reason=reason,  # type: ignore[arg-type]
             model=model,
@@ -246,6 +259,35 @@ def _signals_reply(question: str, signals: list[Signal]) -> str:
     lines = [f"**{lead.title}.** {lead.detail}"]
     lines.extend(f"- **{s.title}.** {s.detail}" for s in relevant[1:])
     return "\n\n".join([lines[0], "\n".join(lines[1:])]) if len(lines) > 1 else lines[0]
+
+
+_PLAN_WORDS = re.compile(r"\b(make|build|create|plan|set up|setup|redo|give)\b.*\bbudget", re.I)
+
+
+def _budget_plan_reply(ctx: CoachContext, question: str) -> str | None:
+    """ "Make me a budget" without the model: the same plan and card, in built-in words."""
+    if not _PLAN_WORDS.search(question):
+        return None
+    match = _PRICE.search(question)
+    try:
+        result = propose_budget_plan(ctx, match.group(1) if match else None)
+    except ValueError:
+        return None
+    plan = ctx.budget_plan
+    if plan is None:
+        return None
+    top = result["categories"][:3]
+    lines = [
+        plan.summary,
+        "",
+        f"- Recurring bills: {result['recurring_bills']}",
+        f"- Savings: {result['savings']}",
+        f"- Everyday spending: {result['everyday_room']}",
+        *(f"- {item['name']}: {item['suggested']} a month" for item in top),
+        "",
+        "The full plan is in the card below. **Add to my budgets** puts it in place.",
+    ]
+    return "\n".join(lines)
 
 
 def _purchase_reply(ctx: CoachContext, question: str) -> str | None:

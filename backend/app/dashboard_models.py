@@ -438,6 +438,37 @@ class BudgetPlan(DashboardModel):
     fixed: list[FixedCost]
 
 
+class TransferWrite(DashboardModel):
+    """Money the user moved between their own accounts in their bank, or a card payment."""
+
+    from_account_id: str
+    to_account_id: str
+    amount_cents: int = Field(gt=0)
+    occurred_on: date
+    note: str | None = Field(default=None, max_length=120)
+
+
+class Transfer(TransferWrite):
+    id: str = Field(min_length=1, max_length=80)
+    # "card_payment" when it pays down a credit card. Neither is spending or income.
+    kind: Literal["transfer", "card_payment"]
+
+
+class CashWarning(DashboardModel):
+    """An account that can't cover the bills still due from it this month (app.domain.cash_check).
+    A heads-up only: Safe to spend follows the budget, and Penny never moves money."""
+
+    account_id: str
+    account_name: str
+    due_cents: int = Field(ge=0)
+    balance_cents: int
+    short_cents: int = Field(gt=0)
+    bill_names: list[str]
+    first_due_on: date
+    cover_account_id: str | None
+    cover_account_name: str | None
+
+
 class SafeToSpendBreakdown(DashboardModel):
     """Each step of Safe to spend (app.domain.runway.safe_to_spend), so the app can show it."""
 
@@ -493,6 +524,9 @@ class DashboardResponse(DashboardModel):
     # Credit cards with a payment due day, soonest first.
     card_payments: list[CardPayment] = Field(default_factory=list)
     budget_plan: BudgetPlan | None = None
+    cash_warnings: list[CashWarning] = Field(default_factory=list)
+    # Transfers and card payments in the period on screen, newest first.
+    transfers: list[Transfer] = Field(default_factory=list)
     # A real (non-demo) account with no budget, bills, or pay schedule yet: offer the setup.
     needs_onboarding: bool = False
     # Only while the period shown includes today.

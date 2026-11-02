@@ -1,14 +1,15 @@
 "use client";
 
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, Bot, Check, ChevronRight, History, LoaderCircle, LockKeyhole, RotateCcw, ShieldCheck, Sparkles, SquarePen, Trash2, Wrench } from "lucide-react";
+import { ArrowUp, Bot, Check, ChevronRight, History, LoaderCircle, LockKeyhole, PiggyBank, Plus, RotateCcw, ShieldCheck, Sparkles, SquarePen, Trash2, Wrench } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { coachApi, type CoachBrief, type CoachProposal, type CoachReply, type CoachRole, type Dashboard, type SavedConversation } from "@/lib/api";
+import { type BudgetSuggestion, coachApi, type CoachBrief, type CoachBudgetPlan, type CoachProposal, type CoachReply, type CoachRole, type Dashboard, type SavedConversation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { cad, describeError } from "./shared";
+import { PlanBreakdown } from "./smart-cards";
 
 /** Messages sent per request; the API accepts at most 12, ending with the new question. */
 const HISTORY_LIMIT = 11;
@@ -180,7 +181,7 @@ export function useCoachChat() {
 
 export type CoachChat = ReturnType<typeof useCoachChat>;
 
-export function CoachView({ chat, dashboard, onDashboardChange, onApproved }: { chat: CoachChat; dashboard: Dashboard; onDashboardChange: (dashboard: Dashboard) => void; onApproved: (message: string) => void }) {
+export function CoachView({ chat, dashboard, onDashboardChange, onApproved, onApplyBudgets }: { chat: CoachChat; dashboard: Dashboard; onDashboardChange: (dashboard: Dashboard) => void; onApproved: (message: string) => void; onApplyBudgets: (month: string, picked: BudgetSuggestion[]) => Promise<string | null> }) {
   const [brief, setBrief] = useState<CoachBrief | null>(null);
   const [approvalError, setApprovalError] = useState<ChatError | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -240,6 +241,13 @@ export function CoachView({ chat, dashboard, onDashboardChange, onApproved }: { 
                 key={message.id}
                 reply={message.reply!}
                 proposalState={message.reply?.proposal ? chat.proposals[message.reply.proposal.id] : undefined}
+                planState={chat.proposals[`plan:${message.id}`]}
+                onAddPlan={async (month, picked) => {
+                  chat.setProposal(`plan:${message.id}`, "approving");
+                  const failed = await onApplyBudgets(month, picked);
+                  chat.setProposal(`plan:${message.id}`, failed ? null : "approved");
+                  return failed;
+                }}
                 showFollowUps={message === lastAssistant && !pending}
                 disabled={pending}
                 onAsk={(text) => void chat.send(text)}
@@ -384,7 +392,7 @@ function Avatar() {
   return <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent text-white" aria-hidden="true"><Bot className="size-5" /></span>;
 }
 
-function AssistantMessage({ reply, proposalState, showFollowUps, disabled, onAsk, onApprove, onDismiss }: { reply: CoachReply; proposalState: ProposalState | undefined; showFollowUps: boolean; disabled: boolean; onAsk: (text: string) => void; onApprove: (proposal: CoachProposal) => void; onDismiss: (proposal: CoachProposal) => void }) {
+function AssistantMessage({ reply, proposalState, planState, showFollowUps, disabled, onAsk, onApprove, onDismiss, onAddPlan }: { reply: CoachReply; proposalState: ProposalState | undefined; planState: ProposalState | undefined; showFollowUps: boolean; disabled: boolean; onAsk: (text: string) => void; onApprove: (proposal: CoachProposal) => void; onDismiss: (proposal: CoachProposal) => void; onAddPlan: (month: string, picked: BudgetSuggestion[]) => Promise<string | null> }) {
   return (
     <article className="flex gap-3" aria-label="Penny AI reply">
       <Avatar />
@@ -401,6 +409,7 @@ function AssistantMessage({ reply, proposalState, showFollowUps, disabled, onAsk
           <SourceLine reply={reply} />
         </div>
         {reply.proposal && proposalState !== "dismissed" && <ProposalCard proposal={reply.proposal} state={proposalState} onApprove={onApprove} onDismiss={onDismiss} />}
+        {reply.budget_plan && reply.budget_plan.lines.length > 0 && <BudgetPlanCard plan={reply.budget_plan} state={planState} onAdd={onAddPlan} />}
         {showFollowUps && reply.follow_ups.length > 0 && (
           <div className="flex flex-wrap gap-2" aria-label="Follow-up questions">
             {reply.follow_ups.map((question) => <Chip key={question} disabled={disabled} onClick={() => onAsk(question)}>{question}</Chip>)}
@@ -460,6 +469,55 @@ function ProposalCard({ proposal, state, onApprove, onDismiss }: { proposal: Coa
           {approved ? "Approved" : "Approve"}
         </Button>
         {!approved && <Button variant="ghost" onClick={() => onDismiss(proposal)} disabled={state === "approving"}>Not now</Button>}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * A whole budget Penny AI built: where the money goes, then a limit per category the user can
+ * untick. "Add to my budgets" applies the ticked ones as normal budget changes; nothing changes
+ * before that. Every figure comes from the API (app/domain/smart_budget.py).
+ */
+function BudgetPlanCard({ plan, state, onAdd }: { plan: CoachBudgetPlan; state: ProposalState | undefined; onAdd: (month: string, picked: BudgetSuggestion[]) => Promise<string | null> }) {
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  const [error, setError] = useState("");
+  const added = state === "approved";
+  const picked = plan.lines.filter((line) => !skipped.has(line.category_id));
+  async function add() {
+    setError("");
+    const failed = await onAdd(plan.month, picked);
+    if (failed) setError(failed);
+  }
+  return (
+    <Card className="border-accent/30 bg-accent-soft/50 p-4">
+      <div className="flex items-center gap-2"><PiggyBank className="size-4 text-accent-strong" aria-hidden="true" /><h3 className="font-semibold text-ink">{added ? "Added to your budgets" : "Your budget plan"}</h3></div>
+      <p className="mt-1 text-sm text-ink-muted">{plan.summary}</p>
+      <div className="mt-3"><PlanBreakdown plan={plan} /></div>
+      <ul className="mt-3 divide-y divide-line rounded-xl border border-line bg-surface" aria-label="Category budgets">
+        {plan.lines.map((line) => {
+          const on = !skipped.has(line.category_id);
+          return (
+            <li key={line.category_id}>
+              <label className={cn("flex min-h-12 cursor-pointer items-center gap-3 px-3 py-2", (!on || added) && "opacity-70")}>
+                <input type="checkbox" checked={on} disabled={added || state === "approving"} onChange={() => setSkipped((current) => { const next = new Set(current); if (next.has(line.category_id)) next.delete(line.category_id); else next.add(line.category_id); return next; })} className="size-5 shrink-0 accent-[var(--color-accent)]" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-ink">{line.category_name}</span>
+                  <span className="tabular block text-xs text-ink-subtle">Usually {cad(line.average_cents)}{line.current_limit_cents !== null && <> · now {cad(line.current_limit_cents)}</>}</span>
+                </span>
+                <span className="tabular shrink-0 text-sm font-semibold text-ink">{cad(line.suggested_cents)}</span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      {error && <p role="alert" className="mt-2 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button onClick={() => void add()} disabled={added || state === "approving" || picked.length === 0}>
+          {state === "approving" ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : added ? <Check className="size-4" aria-hidden="true" /> : <Plus className="size-4" aria-hidden="true" />}
+          {added ? "Added" : `Add to my budgets${picked.length < plan.lines.length ? ` (${picked.length})` : ""}`}
+        </Button>
+        {!added && <span className="text-xs text-ink-subtle">Nothing changes until you add it. You can edit any budget later.</span>}
       </div>
     </Card>
   );

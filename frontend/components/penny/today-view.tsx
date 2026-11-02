@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { BarChart3, ChevronRight, CreditCard, Home, PiggyBank, ShoppingCart, Sparkles, TrendingUp, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BarChart3, ChevronRight, CreditCard, Home, PiggyBank, ShoppingCart, Sparkles, TrendingUp, type LucideIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import type { AccountType, Dashboard, SpendingRunway, Transaction } from "@/lib/api";
@@ -15,6 +15,7 @@ import { ACCOUNT_TYPE_LABELS } from "./dialogs";
 import { accountEmoji } from "./emoji";
 import { AmountsToggle, BigAmount, cad, type View } from "./shared";
 import { useSubpage } from "./subpage";
+import { useTransfers } from "./transfer-dialog";
 
 // Accounts read like the sum: what you have, then what you owe.
 const ACCOUNT_ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "credit"];
@@ -106,7 +107,8 @@ function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp
           <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
         </button>
       )}
-      <SafeToSpendHero dashboard={dashboard} onOpen={() => onOpenPage("safe")} />
+      <SafeToSpendHero dashboard={dashboard} onOpen={() => onOpenPage("safe")} onSetBudgets={() => onNavigate("budgets")} />
+      {dashboard.cash_warnings.length > 0 && <CashHeadsUp dashboard={dashboard} onOpenAccount={onOpenPage} />}
       <div className="grid gap-6 lg:grid-cols-2 lg:gap-8 [&>*]:min-w-0">
       <div className="space-y-6">
 
@@ -145,13 +147,16 @@ function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp
 }
 
 /** The one big number, centred like a bank app's balance: what's safe to spend and per day until payday. */
-function SafeToSpendHero({ dashboard, onOpen }: Pick<Props, "dashboard"> & { onOpen: () => void }) {
+function SafeToSpendHero({ dashboard, onOpen, onSetBudgets }: Pick<Props, "dashboard"> & { onOpen: () => void; onSetBudgets: () => void }) {
   const { totals, period } = dashboard;
   const runway = dashboard.spending_runway;
   const safe = dashboard.safe_to_spend;
   const cents = dashboard.spending_power_cents;
   const over = cents < 0;
   const used = totals.total_budget_cents ? Math.min(100, (totals.spending_cents * 100) / totals.total_budget_cents) : 0;
+  // Bills but no category budgets: the whole budget is bills, so nothing is left to spend yet.
+  const onlyBills = !!safe && safe.has_budget && safe.fixed_cents > 0 && safe.variable_cents === 0;
+  const billShare = safe && safe.budget_cents ? (safe.fixed_cents * 100) / safe.budget_cents : 0;
   return (
   <section aria-labelledby="safe-title" className="pb-2 pt-4 text-center">
     <p className={cn("text-[3.5rem] font-semibold leading-none tracking-tight", over ? "text-danger" : "text-ink")}>
@@ -165,6 +170,11 @@ function SafeToSpendHero({ dashboard, onOpen }: Pick<Props, "dashboard"> & { onO
     </div>
     {safe && !safe.has_budget ? (
       <p className="text-sm text-ink-muted">Set a monthly budget to see what’s safe to spend.</p>
+    ) : onlyBills && !over ? (
+      <div className="mx-auto max-w-sm">
+        <p className="text-sm text-ink-muted">All of your <span className="tabular font-semibold text-ink">{cad(safe.budget_cents)}</span> budget goes to bills. Set budgets for groceries, food, and fun to see what’s safe to spend.</p>
+        <button type="button" onClick={onSetBudgets} className="mt-3 inline-flex min-h-11 items-center gap-1 rounded-full bg-primary px-5 text-sm font-semibold text-on-primary">Set budgets<ChevronRight className="size-4" aria-hidden="true" /></button>
+      </div>
     ) : over ? (
       <p role="status" className="text-sm font-semibold text-danger">You’re <span className="tabular">{cad(-cents)}</span> over your budget {period.phrase}</p>
     ) : runway && (
@@ -173,13 +183,59 @@ function SafeToSpendHero({ dashboard, onOpen }: Pick<Props, "dashboard"> & { onO
         {" · "}about <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} day{runway.days_left === 1 ? "" : "s"}
       </p>
     )}
-    {totals.total_budget_cents > 0 && (
-      <div className="mx-auto mt-5 max-w-60">
-        <Progress value={used} className="h-1.5" indicatorClassName={over ? "bg-danger" : runway ? RUNWAY_STYLE[runway.status].bar : "bg-ink-subtle"} aria-label={`${Math.round(used)}% of the budget used ${period.phrase}`} />
-        <p className="mt-2 text-xs text-ink-subtle">{Math.round(used)}% of your <span className="tabular">{cad(totals.total_budget_cents)}</span> budget used · unpaid bills set aside</p>
+    {safe && safe.budget_cents > 0 && (
+      <div className="mx-auto mt-5 max-w-72">
+        {/* What the budget is made of: bills (blue) and everyday spending, then how much is used. */}
+        <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full" aria-hidden="true">
+          {safe.fixed_cents > 0 && <span className="rounded-full bg-recurring" style={{ width: `${billShare}%` }} />}
+          {safe.variable_cents > 0 && <span className="flex-1 rounded-full bg-primary/70" />}
+        </div>
+        <p className="mt-2 text-xs text-ink-subtle">
+          <span className="tabular font-semibold text-ink-muted">{cad(safe.budget_cents)}</span> budget ·{" "}
+          <span className="inline-flex items-center gap-1"><span className="size-1.5 rounded-full bg-recurring" aria-hidden="true" /><span className="tabular">{cad(safe.fixed_cents)}</span> bills</span> ·{" "}
+          <span className="inline-flex items-center gap-1"><span className="size-1.5 rounded-full bg-primary/70" aria-hidden="true" /><span className="tabular">{cad(safe.variable_cents)}</span> category budgets</span>
+        </p>
+        <Progress value={used} className="mt-3 h-1" indicatorClassName={over ? "bg-danger" : runway ? RUNWAY_STYLE[runway.status].bar : "bg-ink-subtle"} aria-label={`${Math.round(used)}% of the budget used ${period.phrase}`} />
+        <p className="mt-1.5 text-xs text-ink-subtle">{Math.round(used)}% used {period.phrase}</p>
       </div>
     )}
   </section>
+  );
+}
+
+/**
+ * Heads-up: an account can't cover the bills still due from it this month (for example $0 in
+ * Chequing with rent due). Safe to spend doesn't change; Penny never moves money.
+ */
+function CashHeadsUp({ dashboard, onOpenAccount }: Pick<Props, "dashboard"> & { onOpenAccount: (id: string) => void }) {
+  const transfers = useTransfers();
+  return (
+    <ul className="space-y-2.5" aria-label="Heads-up">
+      {dashboard.cash_warnings.map((w) => {
+        const bills = w.bill_names.length === 1 ? w.bill_names[0] : `${w.bill_names.length} bills`;
+        return (
+          <li key={w.account_id} role="alert" className="rounded-[var(--radius-card)] border border-gold/50 bg-gold-soft p-4">
+            <p className="flex items-start gap-2 text-sm text-ink">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-gold-strong" aria-hidden="true" />
+              <span>
+                <span className="font-semibold">{bills} (<span className="tabular">{cad(w.due_cents)}</span>) {w.bill_names.length === 1 ? "is" : "are"} due {formatShortDate(w.first_due_on)}, but {w.account_name} has <span className="tabular">{cad(Math.max(0, w.balance_cents))}</span>.</span>{" "}
+                {w.cover_account_name
+                  ? <>Move <span className="tabular font-semibold">{cad(w.short_cents)}</span> from {w.cover_account_name} to cover it.</>
+                  : <>You’re <span className="tabular font-semibold">{cad(w.short_cents)}</span> short.</>}
+              </span>
+            </p>
+            <div className="mt-3 ml-6 flex flex-wrap items-center gap-2">
+              {w.cover_account_id && transfers && (
+                <button type="button" onClick={() => transfers.openTransfer({ from: w.cover_account_id!, to: w.account_id, amountCents: w.short_cents })} className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-on-primary">
+                  <ArrowLeftRight className="size-4" aria-hidden="true" />Move <span className="tabular">{cad(w.short_cents)}</span> from {w.cover_account_name}
+                </button>
+              )}
+              <button type="button" onClick={() => onOpenAccount(w.account_id)} className="inline-flex min-h-11 items-center gap-1 px-2 text-sm font-semibold text-ink underline-offset-2 hover:underline">Open {w.account_name}<ChevronRight className="size-4" aria-hidden="true" /></button>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

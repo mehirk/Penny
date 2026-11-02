@@ -2,7 +2,7 @@ import calendar
 import copy
 import re
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from threading import RLock
 from typing import Any, Literal
@@ -34,6 +34,7 @@ from app.dashboard_models import (
     BudgetPlan,
     BudgetWrite,
     CardPayment,
+    CashWarning,
     Category,
     CategorySpending,
     CategoryWrite,
@@ -83,9 +84,12 @@ from app.dashboard_models import (
     TransactionPatch,
     TransactionRepeat,
     TransactionWrite,
+    Transfer,
+    TransferWrite,
     UpcomingPay,
 )
 from app.domain.card_due import next_card_due
+from app.domain.cash_check import Cash, Due, shortfalls
 from app.domain.categorize import categorize, necessity
 from app.domain.chart_series import ChartTransaction, build_series
 from app.domain.chart_series import Filters as ChartFilters
@@ -114,7 +118,9 @@ from app.domain.pay_cycle import Event as CycleEvent
 from app.domain.periods import describe_period, month_end, months_between
 from app.domain.recurring import detect_fixed_series, series_key
 from app.domain.runway import runway, safe_to_spend
+from app.domain.smart_budget import CategoryBase, SmartPlan, smart_budget
 from app.domain.starter_budget import StarterPlan, monthly_income_cents, starter_plan
+from app.domain.transfers import move, undo
 from app.fixtures import build_demo_dashboard
 from app.history_fixtures import build_history_budgets, build_history_transactions
 from app.learning.content import LESSONS_BY_ID, TOPICS, LessonContent
@@ -272,9 +278,21 @@ class StoreSnapshot:
     bills: list[Bill]
     pay_schedules: list[PaySchedule]
     learner: Learner
+    transfers: list[Transfer] = field(default_factory=list)
 
 
 MAX_PAY_SCHEDULES = 8
+# Smart budgets trim these first when money is tight (app.domain.smart_budget).
+WANT_CATEGORIES = frozenset({"cat-fun", "cat-eating-out"})
+# Typical monthly student amounts, used when there's no spending history yet (as in setup).
+TYPICAL_EVERYDAY_CENTS = {
+    "cat-groceries": 25_000,
+    "cat-eating-out": 10_000,
+    "cat-transport": 4_000,
+    "cat-fun": 8_000,
+    "cat-health": 3_000,
+    "cat-school": 2_000,
+}
 
 
 class DashboardStore:
@@ -424,9 +442,18 @@ class DashboardStore:
                 account_id="acct-chequing",
                 frequency="monthly",
                 next_payday=date(2026, 11, 25),
-            )
+            ),
+            "pay-tutoring": PaySchedule(
+                id="pay-tutoring",
+                name="Campus tutoring",
+                amount_cents=7_500,
+                account_id="acct-chequing",
+                frequency="weekly",
+                next_payday=date(2026, 11, 6),
+            ),
         }
         self._contributions: list[GoalContribution] = []
+        self._transfers: dict[str, Transfer] = {}
         # Fictional learning history so the demo opens with a streak in progress. The learner
         # still chooses a country and topics the first time they open Learn.
         self._learner = Learner()
@@ -458,6 +485,7 @@ class DashboardStore:
         self._missions = _starter_missions()
         self._bills = {}
         self._pay_schedules = {}
+        self._transfers = {}
         self._contributions = []
         self._learner = Learner()
         self._lock = RLock()
@@ -477,6 +505,7 @@ class DashboardStore:
                 bills=list(self._bills.values()),
                 pay_schedules=list(self._pay_schedules.values()),
                 learner=copy.deepcopy(self._learner),
+                transfers=list(self._transfers.values()),
             )
 
     @classmethod
@@ -499,6 +528,7 @@ class DashboardStore:
         store._missions = list(snapshot.missions)
         store._bills = {item.id: item for item in snapshot.bills}
         store._pay_schedules = {item.id: item for item in snapshot.pay_schedules}
+        store._transfers = {item.id: item for item in snapshot.transfers}
         store._learner = copy.deepcopy(snapshot.learner)
         store._lock = RLock()
         return store
@@ -688,6 +718,63 @@ class DashboardStore:
             spending = sum(t.amount_cents for t in rows if t.kind == "spending")
             totals.append(income if field == "income" else income - spending)
         return sum(totals) // len(totals) if totals else 0
+
+    def everyday_averages(self, month: date) -> tuple[dict[str, int], int]:
+        """Average monthly everyday spending per top-level category over the 3 months before
+        `month` that have activity (bill payments left out: they're the fixed budget), and
+        how many months that was."""
+        totals: dict[str, int] = {}
+        months = 0
+        for offset in range(1, 4):
+            rows = self._monthly_transactions(add_months(month, -offset))
+            if not rows:
+                continue
+            months += 1
+            for t in rows:
+                key = self._top_level(t.category_id)
+                if t.kind == "spending" and not t.bill_id and key:
+                    totals[key] = totals.get(key, 0) + t.amount_cents
+        return ({key: value // months for key, value in totals.items()} if months else {}), months
+
+    def smart_budget_plan(
+        self, user_id: str, stated_income_cents: int | None = None
+    ) -> tuple[SmartPlan, str]:
+        """A suggested budget from everything known (app.domain.smart_budget), and where the
+        income figure came from: "stated" (given in chat), "pay" (every source of pay, even
+        before any has arrived), "history" (what came in over recent months), or "none"."""
+        with self._lock:
+            self.require_owner(user_id)
+            month = self.active_month
+            pay = self._pay_overview()
+            if stated_income_cents is not None:
+                income, source = stated_income_cents, "stated"
+            elif pay and pay.monthly_cents:
+                income, source = pay.monthly_cents, "pay"
+            elif typical := self._typical(month, "income"):
+                income, source = typical, "history"
+            else:
+                income, source = 0, "none"
+            averages, months = self.everyday_averages(month)
+            spending_ids = {c.id for c in self._categories.values() if c.kind == "spending"}
+            if months:
+                bases = [
+                    CategoryBase(key, cents, key in WANT_CATEGORIES, "history")
+                    for key, cents in sorted(averages.items())
+                    if key in spending_ids
+                ]
+            else:
+                bases = [
+                    CategoryBase(key, cents, key in WANT_CATEGORIES, "typical")
+                    for key, cents in TYPICAL_EVERYDAY_CENTS.items()
+                    if key in spending_ids
+                ]
+            goals_need = sum(
+                goal.monthly_needed_cents or 0
+                for goal in (self._goal(item) for item in self._goals.values())
+                if goal.status == "active"
+            )
+            plan = smart_budget(income, self._recurring().fixed_monthly_cents, goals_need, bases)
+            return plan, source
 
     def _health_score(self, month: date) -> int:
         rows = self._monthly_transactions(month)
@@ -1000,6 +1087,56 @@ class DashboardStore:
                 )
         return sorted(lines, key=lambda line: (-line.amount_cents, line.name))
 
+    def _cash_warnings(self, recurring: RecurringSummary) -> list[CashWarning]:
+        """Accounts short of the bills still due from them this month (overdue included)."""
+        bills = {
+            item.bill_id: self._bills[item.bill_id]
+            for item in recurring.unpaid
+            if item.bill_id in self._bills
+        }
+        dues = [
+            Due(bills[item.bill_id].account_id, item.amount_cents)
+            for item in recurring.unpaid
+            if item.bill_id in bills
+        ]
+        # A card payment due this month is usually paid from chequing.
+        chequing = next(iter(self._accounts_of("chequing")), None)
+        today = self.today()
+        cards = [
+            (account, due)
+            for account in self._accounts_of("credit")
+            if account.payment_due_day
+            and account.balance_cents > 0
+            and (due := next_card_due(today, account.payment_due_day)) <= month_end(today)
+        ]
+        if chequing:
+            dues += [Due(chequing.id, account.balance_cents) for account, _ in cards]
+        cash = [Cash(a.id, a.account_type, a.balance_cents) for a in self._accounts.values()]
+        warnings = []
+        for short in shortfalls(cash, dues):
+            mine = [
+                (item.name, item.due_on)
+                for item in recurring.unpaid
+                if item.bill_id in bills and bills[item.bill_id].account_id == short.account_id
+            ]
+            if chequing and short.account_id == chequing.id:
+                mine += [(f"{account.name} payment", due) for account, due in cards]
+            cover = self._accounts.get(short.cover_from) if short.cover_from else None
+            warnings.append(
+                CashWarning(
+                    account_id=short.account_id,
+                    account_name=self._accounts[short.account_id].name,
+                    due_cents=short.due_cents,
+                    balance_cents=short.balance_cents,
+                    short_cents=short.short_cents,
+                    bill_names=list(dict.fromkeys(name for name, _ in mine)),
+                    first_due_on=min(due for _, due in mine),
+                    cover_account_id=cover.id if cover else None,
+                    cover_account_name=cover.name if cover else None,
+                )
+            )
+        return warnings
+
     @staticmethod
     def _budget_plan(
         fixed: list[FixedCost], variable_cents: int, variable_spent_cents: int
@@ -1255,6 +1392,8 @@ class DashboardStore:
                     key=lambda item: (item.due_on, item.account_name),
                 ),
                 budget_plan=plan,
+                cash_warnings=self._cash_warnings(recurring) if month == month_start(today) else [],
+                transfers=self._transfers_between(month, month_end(month)),
                 needs_onboarding=self._needs_onboarding(),
                 spending_runway=spending_runway,
                 totals=DashboardTotals(
@@ -1544,13 +1683,15 @@ class DashboardStore:
 
     # ------------------------------------------------------------------ bills
 
-    def _record_bill(self, bill: Bill, on: date, automatically: bool) -> None:
+    def _record_bill(
+        self, bill: Bill, on: date, automatically: bool, account_id: str | None = None
+    ) -> None:
         """Record one payment of a bill as a transaction and move it to its next due date."""
         transaction = Transaction(
             id=f"tx-{uuid4().hex[:12]}",
             description=bill.name,
             category=self._category_name(bill.category_id),
-            account_id=bill.account_id,
+            account_id=account_id or bill.account_id,
             category_id=bill.category_id,
             amount_cents=bill.amount_cents,
             kind="spending",
@@ -1574,13 +1715,85 @@ class DashboardStore:
                 except HTTPException:
                     break  # Not enough money in the account: leave it for the user.
 
-    def mark_bill_paid(self, user_id: str, bill_id: str) -> DashboardResponse:
+    def mark_bill_paid(
+        self, user_id: str, bill_id: str, account_id: str | None = None
+    ) -> DashboardResponse:
+        """Records this payment. `account_id` pays it from another account this time (the bill
+        keeps its usual account)."""
         with self._lock:
             self.require_owner(user_id)
             bill = self._bills.get(bill_id)
             if not bill:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Bill not found")
-            self._record_bill(bill, min(self.today(), bill.next_due), automatically=False)
+            if account_id is not None:
+                account = self._accounts.get(account_id)
+                if account is None:
+                    raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown account")
+            on = min(self.today(), bill.next_due)
+            self._record_bill(bill, on, automatically=False, account_id=account_id)
+            return self._snapshot()
+
+    # ------------------------------------------------------------------ transfers
+
+    def _transfers_between(self, start: date, end: date) -> list[Transfer]:
+        return sorted(
+            (t for t in self._transfers.values() if start <= t.occurred_on <= end),
+            key=lambda t: (t.occurred_on, t.id),
+            reverse=True,
+        )
+
+    def _move(self, transfer: TransferWrite, *, reverse: bool) -> None:
+        source = self._accounts[transfer.from_account_id]
+        target = self._accounts[transfer.to_account_id]
+        try:
+            new_from, new_to = (undo if reverse else move)(
+                source.account_type,
+                source.balance_cents,
+                target.account_type,
+                target.balance_cents,
+                transfer.amount_cents,
+            )
+        except ValueError as error:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+        self._accounts[source.id] = source.model_copy(update={"balance_cents": new_from})
+        self._accounts[target.id] = target.model_copy(update={"balance_cents": new_to})
+
+    def add_transfer(self, user_id: str, request: TransferWrite) -> DashboardResponse:
+        """Records money moved between the user's own accounts (or a card payment). Balances
+        change; budgets and Safe to spend don't (app.domain.transfers)."""
+        with self._lock:
+            self.require_owner(user_id)
+            for account_id in (request.from_account_id, request.to_account_id):
+                if account_id not in self._accounts:
+                    raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown account")
+            if request.from_account_id == request.to_account_id:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT, "Pick two different accounts"
+                )
+            if request.occurred_on > self.today():
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT, "Record a transfer once it's made"
+                )
+            self._move(request, reverse=False)
+            to_card = self._accounts[request.to_account_id].account_type == "credit"
+            transfer = Transfer(
+                id=f"transfer-{uuid4().hex[:10]}",
+                kind="card_payment" if to_card else "transfer",
+                **request.model_dump(),
+            )
+            self._transfers[transfer.id] = transfer
+            return self._snapshot()
+
+    def delete_transfer(self, user_id: str, transfer_id: str) -> DashboardResponse:
+        with self._lock:
+            self.require_owner(user_id)
+            transfer = self._transfers.get(transfer_id)
+            if transfer is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Transfer not found")
+            if {transfer.from_account_id, transfer.to_account_id} - set(self._accounts):
+                raise HTTPException(status.HTTP_409_CONFLICT, "One of its accounts was deleted")
+            self._move(transfer, reverse=True)
+            del self._transfers[transfer_id]
             return self._snapshot()
 
     def bill_history(self, user_id: str, bill_id: str) -> BillHistory:
@@ -1883,7 +2096,11 @@ class DashboardStore:
             in_use = any(t.account_id == account_id for t in self._transactions.values()) or any(
                 b.account_id == account_id for b in self._bills.values()
             )
-            pays_here = any(p.account_id == account_id for p in self._pay_schedules.values())
+            pays_here = any(
+                p.account_id == account_id for p in self._pay_schedules.values()
+            ) or any(
+                account_id in (t.from_account_id, t.to_account_id) for t in self._transfers.values()
+            )
             if in_use or pays_here:
                 raise HTTPException(
                     status.HTTP_409_CONFLICT,
