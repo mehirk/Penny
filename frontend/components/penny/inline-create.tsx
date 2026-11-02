@@ -62,7 +62,7 @@ export function NewAccount({ onCreate, onDone }: { onCreate: InlineCreate; onDon
       <div className="grid gap-2 sm:grid-cols-2">
         <Input aria-label="Account name" placeholder="e.g. Wallet cash" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} autoFocus />
         <Select aria-label="Account type" value={type} onChange={(event) => setType(event.target.value as AccountType)}>
-          {Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          {Object.entries(ACCOUNT_TYPE_LABELS).filter(([value]) => value !== "person").map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </Select>
         {type === "credit" && <Input aria-label="Credit limit (CAD)" inputMode="decimal" placeholder="Credit limit, e.g. 1500" value={limit} onChange={(event) => setLimit(event.target.value)} />}
       </div>

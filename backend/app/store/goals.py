@@ -51,7 +51,7 @@ class GoalOps(DashboardViews):
         Total cash is unchanged, but the money is no longer available to spend.
         """
         source_account = self._accounts.get(from_account_id)
-        if not source_account or source_account.account_type == "credit":
+        if not source_account or source_account.account_type in ("credit", "person"):
             raise invalid("Choose a chequing, savings, or cash account")
         if source_account.balance_cents < amount_cents:
             raise invalid(

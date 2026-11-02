@@ -23,7 +23,7 @@ from app.dashboard_models import (
     Transfer,
     UpcomingPay,
 )
-from app.domain.card_due import next_card_due
+from app.domain.card_due import card_cycle
 from app.domain.cash_check import Cash, Due, due_soon, shortfalls
 from app.domain.finance import add_months, ceil_div, months_until
 from app.domain.financial_health import METHODOLOGY, health_factors, health_score
@@ -282,18 +282,23 @@ class StoreInsights(StoreState):
             for item in unpaid
             if item.bill_id in bills
         ]
-        # A card payment due this month is usually paid from chequing.
+        # A card payment due soon (and not paid yet this cycle) is usually paid from chequing.
         chequing = next(iter(self._accounts_of("chequing")), None)
         cards = [
-            (account, due)
-            for account in self._accounts_of("credit")
-            if account.payment_due_day
-            and account.balance_cents > 0
-            and due_soon(due := next_card_due(today, account.payment_due_day), today)
+            (payment.account_name, payment.due_on, payment.owed_cents)
+            for payment in self._card_payments()
+            if payment.owed_cents > 0
+            and payment.paid_on is None
+            and due_soon(payment.due_on, today)
         ]
         if chequing:
-            dues += [Due(chequing.id, account.balance_cents) for account, _ in cards]
-        cash = [Cash(a.id, a.account_type, a.balance_cents) for a in self._accounts.values()]
+            dues += [Due(chequing.id, owed) for _, _, owed in cards]
+        # Money a friend owes isn't there to move, so it's never suggested as cover.
+        cash = [
+            Cash(a.id, a.account_type, a.balance_cents)
+            for a in self._accounts.values()
+            if a.account_type != "person"
+        ]
         warnings = []
         for short in shortfalls(cash, dues):
             mine = [
@@ -302,7 +307,7 @@ class StoreInsights(StoreState):
                 if item.bill_id in bills and bills[item.bill_id].account_id == short.account_id
             ]
             if chequing and short.account_id == chequing.id:
-                mine += [(f"{account.name} payment", due) for account, due in cards]
+                mine += [(f"{name} payment", due) for name, due, _ in cards]
             cover = self._accounts.get(short.cover_from) if short.cover_from else None
             warnings.append(
                 CashWarning(
@@ -320,22 +325,28 @@ class StoreInsights(StoreState):
         return warnings
 
     def _card_payments(self) -> list[CardPayment]:
-        """Credit cards with a payment due day, soonest first."""
+        """Credit cards with a payment due day, soonest first. A card payment recorded since its
+        previous due date pays the coming one, so the card shows the following month's."""
         today = self.today()
-        return sorted(
-            (
+        payments: list[CardPayment] = []
+        for account in self._accounts_of("credit"):
+            if not account.payment_due_day:
+                continue
+            paid_dates = [
+                t.occurred_on for t in self._transfers.values() if t.to_account_id == account.id
+            ]
+            due, paid_on = card_cycle(today, account.payment_due_day, paid_dates)
+            payments.append(
                 CardPayment(
                     account_id=account.id,
                     account_name=account.name,
-                    due_on=(due := next_card_due(today, account.payment_due_day)),
+                    due_on=due,
                     days_until_due=(due - today).days,
                     owed_cents=account.balance_cents,
+                    paid_on=paid_on,
                 )
-                for account in self._accounts_of("credit")
-                if account.payment_due_day
-            ),
-            key=lambda item: (item.due_on, item.account_name),
-        )
+            )
+        return sorted(payments, key=lambda item: (item.due_on, item.account_name))
 
     @staticmethod
     def _credit_snapshot(account: Account | None) -> CreditSnapshot | None:

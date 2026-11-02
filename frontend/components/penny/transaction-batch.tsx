@@ -9,7 +9,7 @@ import { type BillFrequency, type Dashboard, dashboardApi, type ParsedTransactio
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { FREQUENCIES, nextAfter } from "./bill-options";
-import { categoryOptions } from "./labels";
+import { categoryOptions, isOwnAccount } from "./labels";
 import { cad } from "./shared";
 
 export type Draft = {
@@ -191,7 +191,7 @@ function DraftRow({ index, draft, dashboard, error, onChange, onSuggest, onRemov
           {draft.categoryBy && draft.categoryBy !== "user" && draft.category_id && <p id={`${draft.key}-category-hint`} className="mt-1 flex items-center gap-1 text-[11px] text-ink-subtle">{draft.categoryBy === "ai" && <Sparkles className="size-3 text-accent-strong" aria-hidden="true" />}{draft.categoryBy === "ai" ? "Picked by Penny AI" : "Picked automatically"}</p>}
         </div>
         <Select aria-label={`${label}: account`} value={draft.account_id} onChange={(event) => onChange({ account_id: event.target.value })}>
-          {dashboard.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+          {dashboard.accounts.filter(isOwnAccount).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
         </Select>
         <div className="sm:col-span-2"><DatePicker value={draft.occurred_on} onChange={(value) => onChange({ occurred_on: value, repeat: draft.repeat ? { ...draft.repeat, next_due: nextAfter(value, draft.repeat.frequency) } : null })} /></div>
       </div>

@@ -21,12 +21,12 @@ from app.dashboard_models import (
     Transfer,
 )
 from app.domain.categorize import necessity
-from app.domain.finance import share_basis_points
+from app.domain.finance import OVERDRAWABLE_TYPES, share_basis_points
 from app.domain.pay_cycle import paydays
 from app.domain.starter_budget import monthly_income_cents
 from app.learning.engine import Learner
 from app.models import Account, DemoUser, Transaction
-from app.store.sections import SPENDABLE_TYPES, next_due_after
+from app.store.sections import SPENDABLE_TYPES, following_due
 
 # The fictional demo's current month. Past months come from the demo history.
 DEMO_MONTH = date(2026, 10, 1)
@@ -282,23 +282,51 @@ class StoreState:
             if kind and category.kind != kind:
                 raise invalid(f"“{category.name}” is a {category.kind} category")
 
-    def _apply_account_effect(self, transaction: Transaction, multiplier: Literal[1, -1]) -> None:
-        """Applies (1) or reverses (-1) a transaction on its account's balance."""
-        account = self._accounts[transaction.account_id]
-        direction = 1 if transaction.kind == "income" else -1
-        if account.account_type == "credit":
-            direction *= -1
-        new_balance = account.balance_cents + transaction.amount_cents * direction * multiplier
-        if new_balance < 0:
+    def _apply_account_effect(
+        self, transaction: Transaction, multiplier: Literal[1, -1], *, allow_overdraft: bool = False
+    ) -> None:
+        """Applies (1) or reverses (-1) a transaction on its account's balance.
+
+        Something the user recorded already happened, so with `allow_overdraft` chequing and cash
+        may go below $0 (Penny's balance is behind theirs). Payments Penny records for a bill
+        don't, so the app can offer to move money in first."""
+        signed = (
+            transaction.amount_cents if transaction.kind == "income" else -transaction.amount_cents
+        )
+        self._change_balance(
+            transaction.account_id, signed * multiplier, allow_overdraft=allow_overdraft
+        )
+
+    def _change_balance(
+        self, account_id: str, money_in_cents: int, *, allow_overdraft: bool = False
+    ) -> None:
+        """Adds money to an account, or takes it out when negative. On a card, money spent with
+        it raises what's owed. Only chequing, cash, and friends may go below $0, and only with
+        `allow_overdraft`."""
+        account = self._accounts[account_id]
+        delta = -money_in_cents if account.account_type == "credit" else money_in_cents
+        new_balance = account.balance_cents + delta
+        overdraft_ok = allow_overdraft and account.account_type in OVERDRAWABLE_TYPES
+        if new_balance < 0 and not overdraft_ok:
             raise invalid("Transaction would make the account balance negative")
-        self._accounts[account.id] = account.model_copy(update={"balance_cents": new_balance})
+        self._accounts[account_id] = account.model_copy(update={"balance_cents": new_balance})
 
     # ------------------------------------------------------------------ bills paid on their own
 
     def _record_bill(
-        self, bill: Bill, on: date, automatically: bool, account_id: str | None = None
+        self,
+        bill: Bill,
+        on: date,
+        automatically: bool,
+        account_id: str | None = None,
+        *,
+        affect_balance: bool = True,
+        allow_overdraft: bool = False,
     ) -> None:
-        """Record one payment of a bill as a transaction and move it to its next due date."""
+        """Record one payment of a bill as a transaction and move it to its next due date.
+
+        Without `affect_balance` it goes into history only: the user paid it before telling
+        Penny, and the balance they entered already reflects it."""
         transaction = Transaction(
             id=new_id("tx"),
             description=bill.name,
@@ -311,11 +339,20 @@ class StoreState:
             bill_id=bill.id,
             paid_automatically=automatically,
         )
-        self._apply_account_effect(transaction, 1)
+        if affect_balance:
+            self._apply_account_effect(transaction, 1, allow_overdraft=allow_overdraft)
         self._transactions[transaction.id] = transaction
         self._bills[bill.id] = bill.model_copy(
-            update={"last_paid_on": on, "next_due": next_due_after(bill.next_due, bill.frequency)}
+            update={"last_paid_on": on, "next_due": following_due(bill), "usual_due": None}
         )
+
+    def _caught_up(self, bill: Bill) -> Bill:
+        """The bill moved on to its latest due date that's today or earlier (for a bill the user
+        has already paid; earlier missed dates aren't recorded)."""
+        today = self.today()
+        while (after := following_due(bill)) <= today:
+            bill = bill.model_copy(update={"next_due": after, "usual_due": None})
+        return bill
 
     def _auto_record_due_bills(self) -> None:
         """Auto-record bills are paid on their due date without the user having to tap."""

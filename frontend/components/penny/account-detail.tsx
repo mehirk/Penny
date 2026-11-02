@@ -22,7 +22,13 @@ const GROUP = "overflow-hidden rounded-[var(--radius-card)] border border-line b
  */
 export function AccountDetail({ dashboard, account, backLabel, onBack }: { dashboard: Dashboard; account: AccountBalance; backLabel: string; onBack: () => void }) {
   const credit = account.account_type === "credit";
+  const friend = account.account_type === "person";
   const owed = credit && account.balance_cents > 0;
+  const overdrawn = !friend && account.balance_cents < 0;
+  const youOwe = friend && account.balance_cents < 0;
+  // Settling up with a friend: pay them what you owe, or record them paying you back.
+  const home = dashboard.accounts.find((a) => a.account_type === "chequing")?.id;
+  const settle = account.balance_cents < 0 ? { from: home, to: account.id, amountCents: -account.balance_cents } : { from: account.id, to: home, amountCents: account.balance_cents };
   const used = account.utilization_basis_points;
   const categories = new Map(dashboard.categories.map((category) => [category.id, category]));
   const rows = dashboard.transactions.filter((item) => item.account_id === account.id).slice(0, 20);
@@ -39,9 +45,16 @@ export function AccountDetail({ dashboard, account, backLabel, onBack }: { dashb
         <span className="mx-auto grid size-14 place-items-center rounded-full bg-sage text-3xl" aria-hidden="true">{accountEmoji(account.name, account.account_type)}</span>
         <h2 id="account-title" className="mt-3 text-lg font-semibold text-ink">{account.name}</h2>
         <p className="text-sm text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}</p>
-        <p className={cn("mt-4 text-5xl font-semibold leading-none tracking-tight", owed ? "text-danger" : "text-ink")}><BigAmount cents={Math.abs(account.balance_cents)} negative={owed || account.balance_cents < 0} /></p>
-        <p className="mt-2 text-sm text-ink-muted">{credit ? "Owed on this card" : "Balance today"}</p>
-        {transfers && (credit ? owed : true) && (
+        <p className={cn("mt-4 text-5xl font-semibold leading-none tracking-tight", owed || overdrawn || youOwe ? "text-danger" : "text-ink")}><BigAmount cents={Math.abs(account.balance_cents)} negative={owed || overdrawn} /></p>
+        <p className="mt-2 text-sm text-ink-muted">{credit ? "Owed on this card" : friend ? (account.balance_cents > 0 ? `${account.name} owes you` : account.balance_cents < 0 ? `You owe ${account.name}` : "All settled up") : overdrawn ? "Overdrawn today" : "Balance today"}</p>
+        {overdrawn && <p className="mx-auto mt-2 max-w-sm text-xs text-ink-subtle">Penny keeps every purchase you record, even past $0. If your bank shows more, update the balance in Settings › Accounts, or move money in.</p>}
+        {friend && <p className="mx-auto mt-2 max-w-sm text-xs text-ink-subtle">From purchases you split. Settling up is a transfer, not spending: your share already counted.</p>}
+        {transfers && friend && account.balance_cents !== 0 && (
+          <Button variant="outline" className="mt-4" onClick={() => transfers.openTransfer(settle)}>
+            <ArrowLeftRight className="size-4" aria-hidden="true" />Settle up
+          </Button>
+        )}
+        {transfers && !friend && (credit ? owed : true) && (
           <Button variant="outline" className="mt-4" onClick={() => transfers.openTransfer(credit ? { to: account.id, amountCents: account.balance_cents } : { from: account.id })}>
             <ArrowLeftRight className="size-4" aria-hidden="true" />{credit ? "Pay card" : "Move money"}
           </Button>

@@ -9,12 +9,15 @@ from app.dashboard_models import (
     Bill,
     DashboardResponse,
     ImportRow,
+    SharedPurchaseWrite,
     SplitTransactionWrite,
     TransactionPatch,
     TransactionRepeat,
     TransactionWrite,
+    Transfer,
 )
 from app.domain.categorize import categorize
+from app.domain.transfers import FRIEND
 from app.models import Transaction
 from app.store.dashboard import DashboardViews
 from app.store.sections import next_due_after
@@ -65,6 +68,8 @@ class TransactionOps(DashboardViews):
             next_due=next_due,
             auto_record=repeat.auto_record,
             last_paid_on=transaction.occurred_on,
+            # Paid on the 31st with no next date given: keep the 31st, not November's 30th.
+            due_day=None if repeat.next_due else transaction.occurred_on.day,
         )
 
     def create_transaction(self, user_id: str, request: TransactionWrite) -> DashboardResponse:
@@ -79,7 +84,7 @@ class TransactionOps(DashboardViews):
                 request.occurred_on,
             )
             bill = self._bill_from(transaction, request.repeat) if request.repeat else None
-            self._apply_account_effect(transaction, 1)
+            self._apply_account_effect(transaction, 1, allow_overdraft=True)
             if bill:
                 self._bills[bill.id] = bill
                 transaction = transaction.model_copy(update={"bill_id": bill.id})
@@ -106,11 +111,61 @@ class TransactionOps(DashboardViews):
             accounts_before = self._accounts.copy()
             try:
                 for transaction in transactions:
-                    self._apply_account_effect(transaction, 1)
+                    self._apply_account_effect(transaction, 1, allow_overdraft=True)
             except HTTPException:
                 self._accounts = accounts_before
                 raise
             self._transactions.update({item.id: item for item in transactions})
+            return self._snapshot()
+
+    def create_shared_purchase(
+        self, user_id: str, request: SharedPurchaseWrite
+    ) -> DashboardResponse:
+        """A purchase split with friends, all or nothing. The user's share is their spending.
+        If a friend paid, the user now owes them that share; if the user paid, each friend's
+        share left the user's account and that friend now owes it (a transfer to the friend,
+        which can be removed like any other)."""
+        with self._lock:
+            self.require_owner(user_id)
+            payer = self._require_account(request.paid_from)
+            friends = [self._require_account(share.account_id) for share in request.owed_by]
+            if any(friend.account_type != FRIEND for friend in friends):
+                raise invalid("Only friends can owe you a share")
+            if payer.account_type == FRIEND and friends:
+                raise invalid("When a friend paid, record just your share")
+            if payer.account_type != FRIEND and not friends:
+                raise invalid("Pick who you split it with")
+            transaction = self._new_transaction(
+                request.description,
+                request.category_id,
+                payer.id,
+                request.my_share_cents,
+                "spending",
+                request.occurred_on,
+            )
+            accounts_before = self._accounts.copy()
+            try:
+                self._apply_account_effect(transaction, 1, allow_overdraft=True)
+                lent = []
+                for share in request.owed_by:
+                    self._change_balance(payer.id, -share.amount_cents, allow_overdraft=True)
+                    self._change_balance(share.account_id, share.amount_cents)
+                    lent.append(
+                        Transfer(
+                            id=new_id("transfer", 10),
+                            kind="transfer",
+                            from_account_id=payer.id,
+                            to_account_id=share.account_id,
+                            amount_cents=share.amount_cents,
+                            occurred_on=request.occurred_on,
+                            note=f"Their share: {request.description}"[:120],
+                        )
+                    )
+            except HTTPException:
+                self._accounts = accounts_before
+                raise
+            self._transactions[transaction.id] = transaction
+            self._transfers.update({item.id: item for item in lent})
             return self._snapshot()
 
     def update_transaction(
@@ -128,11 +183,11 @@ class TransactionOps(DashboardViews):
             )
             accounts_before = self._accounts.copy()
             try:
-                self._apply_account_effect(existing, -1)
+                self._apply_account_effect(existing, -1, allow_overdraft=True)
                 updated = existing.model_copy(
                     update={**values, "category": self._category_name(category_id)}
                 )
-                self._apply_account_effect(updated, 1)
+                self._apply_account_effect(updated, 1, allow_overdraft=True)
             except HTTPException:
                 self._accounts = accounts_before
                 raise
@@ -143,7 +198,7 @@ class TransactionOps(DashboardViews):
         with self._lock:
             self.require_owner(user_id)
             existing = self._transaction(transaction_id)
-            self._apply_account_effect(existing, -1)
+            self._apply_account_effect(existing, -1, allow_overdraft=True)
             del self._transactions[transaction_id]
             return self._snapshot()
 

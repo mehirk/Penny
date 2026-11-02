@@ -7,6 +7,7 @@ import { AddMoneyDialog, GoalDialog } from "./goal-dialogs";
 import type { InlineCreate } from "./inline-create";
 import { cad } from "./shared";
 import { TransactionDialog } from "./transaction-dialog";
+import type { TransactionBody } from "./transaction-form";
 import type { Mutate, ToastMessage } from "./use-dashboard";
 
 type DialogSlot<T> = [target: T | null, setTarget: (target: T | null) => void, requestDelete: (item: Exclude<T, "new">) => void];
@@ -33,6 +34,13 @@ export function EditDialogs({ dashboard, mutate, onCreate, onOpenMonth, transact
     const error = await save;
     if (!error) close();
     return error;
+  }
+
+  /** Saves the form: one transaction (new or edited), a split across accounts, or a purchase shared with friends. */
+  function saveTransaction(id: string | null, body: TransactionBody): Promise<Dashboard> {
+    if ("paid_from" in body) return dashboardApi.createSharedPurchase(body, month);
+    if ("splits" in body) return dashboardApi.createSplitTransaction(body, month);
+    return id ? dashboardApi.updateTransaction(id, body, month) : dashboardApi.createTransaction(body, month);
   }
 
   function transactionSaved(id: string | null, occurredOn: string): ToastMessage {
@@ -70,7 +78,7 @@ export function EditDialogs({ dashboard, mutate, onCreate, onOpenMonth, transact
           if (!error) setTransactionTarget(null);
           return { error, saved };
         }}
-        onSubmit={(id, body) => saveAndClose(mutate(() => ("splits" in body ? dashboardApi.createSplitTransaction(body, month) : id ? dashboardApi.updateTransaction(id, body, month) : dashboardApi.createTransaction(body, month)), () => transactionSaved(id, body.occurred_on)), () => setTransactionTarget(null))}
+        onSubmit={(id, body) => saveAndClose(mutate(() => saveTransaction(id, body), () => transactionSaved(id, body.occurred_on)), () => setTransactionTarget(null))}
       />
       <BudgetDialog
         target={budgetTarget}

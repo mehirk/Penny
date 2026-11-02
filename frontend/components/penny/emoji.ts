@@ -24,6 +24,7 @@ const BY_TYPE: Record<AccountType, string> = {
   investment: "📈",
   credit: "💳",
   other: "🗂️",
+  person: "🤝",
 };
 
 const fromName = (name: string) => BY_NAME.find(([pattern]) => pattern.test(name))?.[1];

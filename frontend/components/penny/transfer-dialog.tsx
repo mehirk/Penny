@@ -42,6 +42,7 @@ function TransferForm({ dashboard, prefill, onClose, onSave }: { dashboard: Dash
   const source = accounts.find((a) => a.id === from);
   const target = accounts.find((a) => a.id === to);
   const card = target?.account_type === "credit";
+  const friend = [source, target].find((account) => account?.account_type === "person");
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,8 +60,8 @@ function TransferForm({ dashboard, prefill, onClose, onSave }: { dashboard: Dash
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{card ? `Pay ${target?.name}` : "Move money"}</DialogTitle>
-        <DialogDescription>{card ? "A card payment lowers what you owe. Your purchases already counted as spending, so this doesn’t count again." : "Between your own accounts. It isn’t spending, so your budget and Safe to spend don’t change."}</DialogDescription>
+        <DialogTitle>{friend ? `Settle up with ${friend.name}` : card ? `Pay ${target?.name}` : "Move money"}</DialogTitle>
+        <DialogDescription>{friend ? "Paying a friend back, or being paid back, isn’t spending: your share of what you split already counted." : card ? "A card payment lowers what you owe. Your purchases already counted as spending, so this doesn’t count again." : "Between your own accounts. It isn’t spending, so your budget and Safe to spend don’t change."}</DialogDescription>
       </DialogHeader>
       <form onSubmit={submit} className="space-y-4">
         <Field label="From">{(props) => (
@@ -89,7 +90,7 @@ function TransferForm({ dashboard, prefill, onClose, onSave }: { dashboard: Dash
           </button>
         )}
         <Field label="Note (optional)">{(props) => <Input {...props} value={note} onChange={(e) => setNote(e.target.value)} maxLength={120} placeholder={card ? "e.g. November statement" : "e.g. For rent"} className="min-h-11 text-base" />}</Field>
-        <p className="flex gap-2 rounded-xl bg-sage-soft p-3 text-xs text-ink-muted"><Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />Penny records this so your balances stay right. It doesn’t move real money: make the {card ? "payment" : "transfer"} in your bank app too.</p>
+        <p className="flex gap-2 rounded-xl bg-sage-soft p-3 text-xs text-ink-muted"><Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />Penny records this so your balances stay right. It doesn’t move real money: make the {card || friend ? "payment" : "transfer"} in your bank app too.</p>
         {error && <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button>

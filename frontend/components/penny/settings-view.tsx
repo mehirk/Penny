@@ -11,8 +11,8 @@ import { formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { createSupabaseBrowserClient, getSupabaseUserEmail } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, THEME_ICONS } from "./app-shell";
-import { ACCOUNT_TYPE_LABELS } from "./labels";
+import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, ThemePicker } from "./app-shell";
+import { ACCOUNT_TYPE_LABELS, friendStatus } from "./labels";
 import { accountEmoji } from "./emoji";
 import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
 import { cad, DueDaySelect, Field } from "./shared";
@@ -43,15 +43,9 @@ const BANK_CONNECTION_STANDARDS = [
 ];
 
 function AppearanceSection() {
-  const { theme, setTheme } = usePreferences();
   return (
     <section aria-labelledby="appearance-title">
-      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-2">
-        {THEME_OPTIONS.map((option) => {
-          const Icon = THEME_ICONS[option.value];
-          return <button key={option.value} type="button" role="radio" aria-checked={theme === option.value} onClick={() => setTheme(option.value)} className={cn("flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border p-2 text-sm font-semibold", theme === option.value ? "border-primary bg-primary-soft text-primary" : "border-line text-ink-muted hover:border-line-strong")}><Icon className="size-5" aria-hidden="true" />{option.label}</button>;
-        })}
-      </div>
+      <ThemePicker />
       <h3 className="mt-5 text-sm font-semibold text-ink">Style</h3>
       <div className="mt-2"><PalettePicker /></div>
       <h3 className="mt-5 text-sm font-semibold text-ink">Surface</h3>
@@ -301,9 +295,9 @@ function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: Save
                   <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-lg" aria-hidden="true">{accountEmoji(account.name, account.account_type)}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-semibold text-ink">{account.name}</span>
-                    <span className="block text-xs text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}{account.account_type === "credit" ? " · owed" : ""}</span>
+                    <span className="block text-xs text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}{account.account_type === "credit" ? " · owed" : account.account_type === "person" ? ` · ${friendStatus(account.balance_cents).toLowerCase()}` : account.balance_cents < 0 ? " · overdrawn" : ""}</span>
                   </span>
-                  <span className="tabular shrink-0 font-semibold text-ink">{cad(account.balance_cents)}</span>
+                  <span className={cn("tabular shrink-0 font-semibold", account.balance_cents < 0 ? "text-danger" : "text-ink")}>{cad(account.balance_cents)}</span>
                   <Button size="sm" variant="outline" onClick={() => setEditing(account.id)} aria-label={`Edit ${account.name}`}><Pencil className="size-4" aria-hidden="true" />Edit</Button>
                 </div>
               )}
@@ -326,10 +320,11 @@ function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: Save
   );
 }
 
-function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboard["accounts"][number]; onSave: (body: { name: string; balance_cents: number; credit_limit_cents?: number; payment_due_day?: number }) => Promise<void>; onCancel: () => void; onDelete: () => Promise<void> }) {
+function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboard["accounts"][number]; onSave: (body: { name: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number }) => Promise<void>; onCancel: () => void; onDelete: () => Promise<void> }) {
   const credit = account.account_type === "credit";
   const [name, setName] = useState(account.name);
-  const [balance, setBalance] = useState(centsToInput(String(account.balance_cents)));
+  const savedBalance = centsToInput(String(account.balance_cents));
+  const [balance, setBalance] = useState(savedBalance);
   const [limit, setLimit] = useState(account.credit_limit_cents ? centsToInput(String(account.credit_limit_cents)) : "");
   const [dueDay, setDueDay] = useState(account.payment_due_day ? String(account.payment_due_day) : "");
   const [error, setError] = useState("");
@@ -339,7 +334,8 @@ function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboa
     if (!name.trim()) { setError("Give the account a name"); return; }
     if (credit && !dueDay) { setError("Pick the day your card payment is due"); return; }
     try {
-      const body: { name: string; balance_cents: number; credit_limit_cents?: number; payment_due_day?: number } = { name: name.trim(), balance_cents: parseCadToCents(balance || "0") };
+      // The balance is sent only when changed, so an overdrawn account can still be renamed.
+      const body: { name: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number } = { name: name.trim(), ...(balance === savedBalance ? {} : { balance_cents: parseCadToCents(balance || "0") }) };
       if (credit) { body.credit_limit_cents = parseCadToCents(limit); body.payment_due_day = Number(dueDay); }
       setError("");
       await onSave(body);

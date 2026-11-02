@@ -7,6 +7,7 @@ import { Input, Select } from "@/components/ui/input";
 import { type AccountType, assistApi, type Dashboard, dashboardApi, type StatementDraft, type StatementRow } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { isOwnAccount } from "./labels";
 import type { SaveChange } from "./settings-view";
 import { cad, describeError } from "./shared";
 import { SourceBadge } from "./smart-cards";
@@ -194,7 +195,7 @@ function Review({ dashboard, name, draft, rows, account, onAccount, updateBalanc
         <label className="block text-sm font-semibold text-ink">
           Add to account
           <Select className="mt-1" value={account} onChange={(event) => onAccount(event.target.value)}>
-            {dashboard.accounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            {dashboard.accounts.filter(isOwnAccount).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             <option value={NEW_ACCOUNT}>{newLabel}</option>
           </Select>
         </label>

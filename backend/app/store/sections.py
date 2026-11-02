@@ -35,7 +35,9 @@ def monthly_equivalent_cents(amount_cents: int, frequency: str) -> int:
     return amount_cents * per_year // 12
 
 
-def next_due_after(due: date, frequency: str) -> date:
+def next_due_after(due: date, frequency: str, day: int | None = None) -> date:
+    """The payment after one due on `due`. Monthly and yearly bills land on `day` (default:
+    the same day), or the month's last day when it's shorter."""
     if frequency == "weekly":
         return due + timedelta(days=7)
     if frequency == "biweekly":
@@ -43,17 +45,25 @@ def next_due_after(due: date, frequency: str) -> date:
     months = 12 if frequency == "yearly" else 1
     index = due.year * 12 + due.month - 1 + months
     year, month = index // 12, index % 12 + 1
-    return date(year, month, min(due.day, calendar.monthrange(year, month)[1]))
+    return date(year, month, min(day or due.day, calendar.monthrange(year, month)[1]))
+
+
+def following_due(bill: Bill) -> date:
+    """When the payment after the next one is due. A payment moved just this once doesn't move
+    the schedule: it carries on from the date it would usually have been due."""
+    return next_due_after(bill.usual_due or bill.next_due, bill.frequency, bill.due_day)
 
 
 def bill_due_dates(bill: Bill, start: date, end: date) -> list[date]:
     """Due dates of an unpaid bill from its next due date through `end`."""
     dates = []
     due = bill.next_due
+    usual = bill.usual_due or bill.next_due
     while due <= end:
         if due >= start:
             dates.append(due)
-        due = next_due_after(due, bill.frequency)
+        usual = next_due_after(usual, bill.frequency, bill.due_day)
+        due = usual
     return dates
 
 
@@ -286,7 +296,7 @@ def build_accounts_overview(
         credit = account.account_type == "credit"
         held = [g for g in goals if g.account_id == account.id and g.current_cents > 0]
         claimed = sum(g.current_cents for g in held)
-        goal_cents = 0 if credit else min(claimed, account.balance_cents)
+        goal_cents = 0 if credit else min(claimed, max(0, account.balance_cents))
         shortfall += 0 if credit else claimed - goal_cents
         limit = account.credit_limit_cents if credit else None
         rows.append(

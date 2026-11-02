@@ -16,7 +16,7 @@ from app.domain.starter_budget import StarterPlan, monthly_income_cents, starter
 from app.models import Account
 from app.store.accounts import require_card_for_due_day
 from app.store.budgets import BudgetOps
-from app.store.sections import monthly_equivalent_cents
+from app.store.sections import following_due, monthly_equivalent_cents
 from app.store.state import conflict, invalid, new_id
 
 IncomeSource = Literal["stated", "pay", "history", "none"]
@@ -189,8 +189,14 @@ class PlanningOps(BudgetOps):
                         id=new_id("bill", 10),
                         account_id=home.id,
                         auto_record=True,
-                        **item.model_dump(),
+                        **item.model_dump(exclude={"already_paid"}),
                     )
+                    if item.already_paid and bill.next_due <= self.today():
+                        # Setup's balances already include it: start from the next payment.
+                        bill = self._caught_up(bill)
+                        bill = bill.model_copy(
+                            update={"last_paid_on": bill.next_due, "next_due": following_due(bill)}
+                        )
                     self._bills[bill.id] = bill
             # Bills are the fixed part of the budget on their own; category budgets are only the
             # everyday (variable) amounts.

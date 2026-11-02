@@ -38,8 +38,8 @@ export const SURFACE_OPTIONS: { value: SurfaceSetting; label: string; descriptio
 ];
 const SURFACE_VALUES = SURFACE_OPTIONS.map((option) => option.value);
 // What someone sees before choosing: the Graphite style on the Clay surface.
-const DEFAULT_PALETTE: PaletteSetting = "graphite";
-const DEFAULT_SURFACE: SurfaceSetting = "clay";
+export const DEFAULT_PALETTE: PaletteSetting = "graphite";
+export const DEFAULT_SURFACE: SurfaceSetting = "clay";
 
 export const THEME_OPTIONS: { value: ThemeSetting; label: string }[] = [
   { value: "light", label: "Light" },

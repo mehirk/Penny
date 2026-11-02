@@ -24,16 +24,38 @@ class BillOps(DashboardViews):
             self.require_owner(user_id)
             self._validate_bill(request.account_id, request.category_id)
             category_id = request.category_id or categorize(request.name, "spending").category_id
-            bill = Bill(
-                id=new_id("bill", 10), **{**request.model_dump(), "category_id": category_id}
-            )
+            values = request.model_dump(exclude={"already_paid"})
+            bill = Bill(id=new_id("bill", 10), **{**values, "category_id": category_id})
             self._bills[bill.id] = bill
+            if request.already_paid and bill.next_due <= self.today():
+                # Paid before Penny knew: record the latest payment and move on to the next one.
+                bill = self._caught_up(bill)
+                self._record_bill(
+                    bill,
+                    bill.next_due,
+                    automatically=False,
+                    affect_balance=request.already_paid == "balance",
+                    allow_overdraft=True,
+                )
             return self._snapshot()
 
     def update_bill(self, user_id: str, bill_id: str, request: BillPatch) -> DashboardResponse:
         with self._lock:
             self.require_owner(user_id)
-            updated = self._bill(bill_id).model_copy(update=request.model_dump(exclude_unset=True))
+            bill = self._bill(bill_id)
+            changes = request.model_dump(exclude_unset=True)
+            move_once = changes.pop("move_once", False)
+            new_due = changes.get("next_due")
+            if new_due and new_due != bill.next_due:
+                if move_once:
+                    # Only this payment moves; the schedule carries on from its usual date.
+                    usual = bill.usual_due or bill.next_due
+                    changes["usual_due"] = None if usual == new_due else usual
+                else:
+                    changes |= {"usual_due": None, "due_day": None}  # the new day becomes usual
+            if "frequency" in changes:
+                changes["due_day"] = None
+            updated = Bill.model_validate({**bill.model_dump(), **changes})
             self._validate_bill(updated.account_id, updated.category_id)
             self._bills[bill_id] = updated
             return self._snapshot()
@@ -46,17 +68,22 @@ class BillOps(DashboardViews):
             return self._snapshot()
 
     def mark_bill_paid(
-        self, user_id: str, bill_id: str, account_id: str | None = None
+        self, user_id: str, bill_id: str, account_id: str | None = None, record_only: bool = False
     ) -> DashboardResponse:
         """Records this payment. `account_id` pays it from another account this time (the bill
-        keeps its usual account)."""
+        keeps its usual account). `record_only` adds it to history without changing a balance,
+        for a bill the user already paid and whose balance already reflects it."""
         with self._lock:
             self.require_owner(user_id)
             bill = self._bill(bill_id)
             if account_id is not None:
                 self._require_account(account_id)
             self._record_bill(
-                bill, min(self.today(), bill.next_due), automatically=False, account_id=account_id
+                bill,
+                min(self.today(), bill.next_due),
+                automatically=False,
+                account_id=account_id,
+                affect_balance=not record_only,
             )
             return self._snapshot()
 

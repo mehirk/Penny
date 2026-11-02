@@ -12,7 +12,8 @@ class DashboardModel(BaseModel):
 
 BillFrequency = Literal["weekly", "biweekly", "monthly", "yearly"]
 PayFrequency = Literal["weekly", "biweekly", "semimonthly", "monthly", "custom"]
-AccountType = Literal["chequing", "savings", "credit", "cash", "investment", "other"]
+# "person": a friend you share costs with. Positive, they owe the user; negative, the user owes.
+AccountType = Literal["chequing", "savings", "credit", "cash", "investment", "other", "person"]
 
 
 class Category(DashboardModel):
@@ -119,10 +120,23 @@ class Bill(DashboardModel):
     category_id: str | None
     account_id: str
     frequency: BillFrequency
+    # The next payment's due date.
     next_due: date
     # Auto-recorded bills are marked paid on their due date; others wait for the user.
     auto_record: bool
     last_paid_on: date | None = None
+    # Monthly and yearly bills: the day of the month they're usually due, so a bill due on the
+    # 31st is due on the 31st again after February's 28th.
+    due_day: int | None = Field(default=None, ge=1, le=31)
+    # Set when only the next payment was moved: the date it would usually have been due. The
+    # schedule carries on from this date, not the moved one.
+    usual_due: date | None = None
+
+    @model_validator(mode="after")
+    def _usual_day(self) -> "Bill":
+        if self.due_day is None and self.frequency in ("monthly", "yearly"):
+            self.due_day = (self.usual_due or self.next_due).day
+        return self
 
 
 class PayScheduleWrite(DashboardModel):
@@ -170,9 +184,10 @@ class AccountGoal(DashboardModel):
 class AccountBalance(DashboardModel):
     id: str
     name: str
-    account_type: Literal["chequing", "savings", "credit", "cash", "investment", "other"]
-    balance_cents: int = Field(ge=0)
-    # What the account adds to net worth: negative for a card balance owed.
+    account_type: AccountType
+    # Negative for an overdrawn chequing or cash account, or money the user owes a friend.
+    balance_cents: int
+    # What the account adds to net worth: negative for a card balance owed or an overdraft.
     net_cents: int
     credit_limit_cents: int | None
     available_credit_cents: int | None
@@ -190,9 +205,9 @@ class AccountsOverview(DashboardModel):
     """Every account and how they add up. Balances are as of today, whatever period is shown."""
 
     accounts: list[AccountBalance]
-    spending_cents: int = Field(ge=0)  # chequing and cash
+    spending_cents: int  # chequing and cash; negative when overdrawn overall
     savings_cents: int = Field(ge=0)
-    assets_cents: int = Field(ge=0)
+    assets_cents: int
     owed_cents: int = Field(ge=0)
     net_worth_cents: int
     goal_cents: int = Field(ge=0)
@@ -331,13 +346,16 @@ class SpendingRunway(DashboardModel):
 
 
 class CardPayment(DashboardModel):
-    """A credit card's next payment: when it's due and what's owed on it now."""
+    """A credit card's next payment that isn't paid yet: when it's due, what's owed now, and when
+    the last cycle was paid (app.domain.card_due.card_cycle)."""
 
     account_id: str
     account_name: str
     due_on: date
     days_until_due: int = Field(ge=0)
     owed_cents: int = Field(ge=0)
+    # A payment recorded since the previous due date paid this cycle; `due_on` is then next month's.
+    paid_on: date | None = None
 
 
 class FixedCost(DashboardModel):
@@ -491,6 +509,28 @@ class SplitTransactionWrite(DashboardModel):
         accounts = [split.account_id for split in self.splits]
         if len(set(accounts)) != len(accounts):
             raise ValueError("Each account can appear only once in a split")
+        return self
+
+
+class SharedPurchaseWrite(DashboardModel):
+    """A purchase split with friends (each friend is a "person" account), like Splitwise.
+
+    Only the user's share is their spending. When a friend paid (`paid_from` is their account),
+    the user now owes them that share. When the user paid, each friend in `owed_by` now owes
+    them their share; that money is the user's, not spending."""
+
+    description: str = Field(min_length=1, max_length=160)
+    category_id: str | None = None
+    occurred_on: date
+    paid_from: str
+    my_share_cents: int = Field(gt=0)
+    owed_by: list[TransactionSplit] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def _one_share_per_friend(self) -> "SharedPurchaseWrite":
+        friends = [share.account_id for share in self.owed_by]
+        if len(set(friends)) != len(friends) or self.paid_from in friends:
+            raise ValueError("Each friend can appear only once, and not as the one who paid")
         return self
 
 
@@ -661,6 +701,9 @@ class BillWrite(DashboardModel):
     frequency: BillFrequency = "monthly"
     next_due: date
     auto_record: bool = True
+    # When `next_due` is today or earlier and the user says it's already paid: record that payment
+    # in history only ("history": their balance already reflects it) or against the balance too.
+    already_paid: Literal["history", "balance"] | None = None
 
 
 class BillPatch(DashboardModel):
@@ -671,6 +714,9 @@ class BillPatch(DashboardModel):
     frequency: BillFrequency | None = None
     next_due: date | None = None
     auto_record: bool | None = None
+    # With a new `next_due`: move only the next payment and keep the schedule (True), or move
+    # every payment from now on (False).
+    move_once: bool = False
 
 
 class CategoryWrite(DashboardModel):
@@ -753,6 +799,8 @@ class OnboardingBill(DashboardModel):
     category_id: str
     frequency: BillFrequency = "monthly"
     next_due: date
+    # Due today and already paid: start from the next payment. Setup's balances already include it.
+    already_paid: bool = False
 
 
 class OnboardingAnswers(DashboardModel):

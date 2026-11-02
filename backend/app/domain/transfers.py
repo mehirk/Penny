@@ -9,8 +9,14 @@ Balances: chequing, savings, and cash hold money (a transfer out lowers them, in
 a credit card's balance is what's owed (a payment lowers it). Money can't come from a card (no
 cash advances), no balance can go below zero, and a card can't be paid more than is owed.
 
+The exception is a friend ("person") account, which tracks money between the user and a friend:
+positive, they owe the user; negative, the user owes them. It can go either way, so paying a
+friend back or being paid back is a transfer like any other.
+
 Integer cents only. Nothing here reads a database or calls a model.
 """
+
+FRIEND = "person"
 
 
 def move(
@@ -22,7 +28,7 @@ def move(
     if from_type == "credit":
         raise ValueError("Move money from a chequing, savings, or cash account")
     new_from = from_cents - amount_cents
-    if new_from < 0:
+    if new_from < 0 and from_type != FRIEND:
         raise ValueError("There isn't enough in that account")
     if to_type == "credit":
         new_to = to_cents - amount_cents
@@ -36,12 +42,13 @@ def move(
 def undo(
     from_type: str, from_cents: int, to_type: str, to_cents: int, amount_cents: int
 ) -> tuple[int, int]:
-    """The two balances after removing a recorded transfer (the reverse of `move`)."""
+    """The two balances after removing a recorded transfer (the reverse of `move`). One from a
+    card is a friend's share of a purchase put on it, so removing it lowers what's owed."""
     if amount_cents <= 0:
         raise ValueError("Enter an amount above $0")
-    if from_type == "credit":
-        raise ValueError("Move money from a chequing, savings, or cash account")
+    # Money goes back to where it came from, which only lowers what's owed on a card source.
+    new_from = from_cents - amount_cents if from_type == "credit" else from_cents + amount_cents
     new_to = to_cents + amount_cents if to_type == "credit" else to_cents - amount_cents
-    if new_to < 0:
+    if (from_type == "credit" and new_from < 0) or (new_to < 0 and to_type != FRIEND):
         raise ValueError("Removing it would make an account balance negative")
-    return from_cents + amount_cents, new_to
+    return new_from, new_to

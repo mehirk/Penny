@@ -126,3 +126,10 @@ def test_card_payment_and_heads_up() -> None:
     assert paid.transfers[0].kind == "card_payment"
     assert {a.id: a.balance_cents for a in paid.accounts}[card] == 0
     assert paid.cash_warnings == []
+
+
+def test_friends_can_go_either_way() -> None:
+    # Paying back a friend you owe, and a friend paying you back.
+    assert move("chequing", 5_000, "person", -1_500, 1_500) == (3_500, 0)
+    assert move("person", 1_500, "chequing", 0, 1_500) == (0, 1_500)
+    assert undo("chequing", 3_500, "person", 0, 1_500) == (5_000, -1_500)

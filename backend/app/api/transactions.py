@@ -12,6 +12,7 @@ from app.dashboard_models import (
     DashboardResponse,
     ImportResult,
     ImportRowsRequest,
+    SharedPurchaseWrite,
     SplitTransactionWrite,
     TransactionPatch,
     TransactionWrite,
@@ -37,6 +38,18 @@ def create_split_transaction(
     """Record one purchase or deposit across several accounts (one transaction each)."""
     return in_view(
         user_store(current_user).create_split_transaction(current_user.id, request),
+        current_user,
+        month,
+    )
+
+
+@router.post("/transactions/shared", response_model=DashboardResponse)
+def create_shared_purchase(
+    request: SharedPurchaseWrite, current_user: AuthenticatedUser, month: ViewMonth = None
+) -> DashboardResponse:
+    """Record a purchase split with friends: your share is spending, the rest is owed."""
+    return in_view(
+        user_store(current_user).create_shared_purchase(current_user.id, request),
         current_user,
         month,
     )
