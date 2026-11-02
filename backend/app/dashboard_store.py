@@ -89,7 +89,7 @@ from app.dashboard_models import (
     UpcomingPay,
 )
 from app.domain.card_due import next_card_due
-from app.domain.cash_check import Cash, Due, shortfalls
+from app.domain.cash_check import Cash, Due, due_soon, shortfalls
 from app.domain.categorize import categorize, necessity
 from app.domain.chart_series import ChartTransaction, build_series
 from app.domain.chart_series import Filters as ChartFilters
@@ -1088,26 +1088,27 @@ class DashboardStore:
         return sorted(lines, key=lambda line: (-line.amount_cents, line.name))
 
     def _cash_warnings(self, recurring: RecurringSummary) -> list[CashWarning]:
-        """Accounts short of the bills still due from them this month (overdue included)."""
+        """Accounts short of the bills due from them within 3 days (overdue included)."""
+        today = self.today()
+        unpaid = [item for item in recurring.unpaid if due_soon(item.due_on, today)]
         bills = {
             item.bill_id: self._bills[item.bill_id]
-            for item in recurring.unpaid
+            for item in unpaid
             if item.bill_id in self._bills
         }
         dues = [
             Due(bills[item.bill_id].account_id, item.amount_cents)
-            for item in recurring.unpaid
+            for item in unpaid
             if item.bill_id in bills
         ]
         # A card payment due this month is usually paid from chequing.
         chequing = next(iter(self._accounts_of("chequing")), None)
-        today = self.today()
         cards = [
             (account, due)
             for account in self._accounts_of("credit")
             if account.payment_due_day
             and account.balance_cents > 0
-            and (due := next_card_due(today, account.payment_due_day)) <= month_end(today)
+            and due_soon(due := next_card_due(today, account.payment_due_day), today)
         ]
         if chequing:
             dues += [Due(chequing.id, account.balance_cents) for account, _ in cards]
@@ -1116,7 +1117,7 @@ class DashboardStore:
         for short in shortfalls(cash, dues):
             mine = [
                 (item.name, item.due_on)
-                for item in recurring.unpaid
+                for item in unpaid
                 if item.bill_id in bills and bills[item.bill_id].account_id == short.account_id
             ]
             if chequing and short.account_id == chequing.id:
