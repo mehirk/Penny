@@ -121,6 +121,14 @@ class ChatStore:
             )
         return saved
 
+    def delete_all(self, owner: str) -> None:
+        if not database_enabled():
+            with self._lock:
+                self._memory.pop(owner, None)
+            return
+        with connection() as conn:
+            conn.execute("delete from public.coach_conversations where user_id = %s", (owner,))
+
     def delete(self, owner: str, conversation_id: str) -> None:
         if not database_enabled():
             with self._lock:

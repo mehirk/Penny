@@ -112,8 +112,10 @@ export function Sidebar({ active, dashboard, collapsed, onToggle, onNavigate }: 
       </div>
       <nav aria-label="Primary" className="mt-8">
         <ul className="space-y-1">
-          {MENU.map(({ id, label, icon: Icon }) => { const here = active === id || (id === "today" && active === "accounts"); return (
-            <li key={id}>
+          {MENU.map(({ id, label, icon: Icon, primary }, index) => { const here = active === id || (id === "today" && active === "accounts"); const firstMore = !primary && MENU[index - 1]?.primary; return (
+            // The four main areas first, then the rest under "More", the same group as the phone's More.
+            <li key={id} className={cn(firstMore && "mt-3 border-t border-line pt-3")}>
+              {firstMore && !collapsed && <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-ink-subtle">More</p>}
               <button type="button" title={collapsed ? label : undefined} onClick={() => onNavigate(id)} aria-current={here ? "page" : undefined} className={cn("relative flex min-h-11 w-full items-center rounded-xl text-sm font-medium transition-colors duration-150", collapsed ? "justify-center px-0" : "gap-3 px-3", here ? "bg-sage text-primary before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-full before:bg-accent" : "text-ink-muted hover:bg-sage-soft hover:text-ink")}>
                 <Icon className="size-5 shrink-0" aria-hidden="true" />{!collapsed && label}
               </button>
@@ -142,7 +144,7 @@ export function MobileNavigation({ active, onNavigate, onAdd }: { active: View; 
   const secondary = MENU.filter((item) => !item.primary);
   const moreActive = secondary.some((item) => item.id === active);
   const current = (id: View) => active === id || (id === "today" && active === "accounts");
-  const tab = (selected: boolean) => cn("grid h-12 w-11 place-items-center min-[400px]:w-12 rounded-full transition-colors duration-200 motion-reduce:transition-none", selected ? "bg-sage text-ink" : "text-ink-subtle hover:text-ink");
+  const tab = (selected: boolean) => cn("grid h-12 w-12 place-items-center min-[400px]:w-14 rounded-full transition-colors duration-200 motion-reduce:transition-none", selected ? "bg-sage text-ink" : "text-ink-subtle hover:text-ink");
   const tabs = [...primary.map((item) => ({ ...item, selected: current(item.id), onClick: () => { if (active !== item.id) haptic("selection"); onNavigate(item.id); } })), { id: "more" as const, label: "More", icon: Menu, selected: moreActive, onClick: () => { haptic("selection"); setMoreOpen(true); } }];
   return (
     <nav aria-label="Primary" className="mobile-tab-bar pointer-events-none fixed inset-x-0 bottom-0 z-30 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:hidden">

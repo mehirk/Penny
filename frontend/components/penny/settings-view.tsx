@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Banknote, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, ScanFace, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
+import { Banknote, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, RotateCcw, ScanFace, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
-import { type Dashboard, dashboardApi, type PayFrequency, type PaySchedule } from "@/lib/api";
+import { type Dashboard, dashboardApi } from "@/lib/api";
 import { biometryName, clearSignIn, faceIdStatus, type FaceIdStatus, isCancelled, saveSignIn, setFaceIdDeclined } from "@/lib/face-id";
 import { formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
@@ -18,6 +17,7 @@ import { accountEmoji } from "./emoji";
 import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
 import { cad, DueDaySelect, Field } from "./shared";
 import { BackBar } from "./back-bar";
+import { PaySection } from "./pay-section";
 import { StatementImport } from "./statement-import";
 import { useSubpage } from "./subpage";
 
@@ -70,6 +70,56 @@ function TrustSection() {
       <p className="mt-1 text-sm text-ink-subtle">These are the standards a connection would have to meet. They are commitments, not live features.</p>
       <ul className="mt-2 space-y-2">{BANK_CONNECTION_STANDARDS.map((item) => <li key={item} className="flex gap-2 text-sm text-ink-muted"><Lock className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />{item}</li>)}</ul>
     </section>
+  );
+}
+
+/**
+ * Settings, very end: erase everything and start again. Typing "reset" confirms it, since it
+ * can't be undone; afterwards first-run setup opens.
+ */
+function ResetDataRow({ save, onReset }: { save: SaveChange; onReset: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const confirmed = typed.trim().toLowerCase() === "reset";
+
+  async function reset() {
+    setBusy(true);
+    setError("");
+    // Setup opens again after a reset, even on a device where it was once skipped.
+    try { window.localStorage.removeItem("penny-setup-skipped"); } catch { /* storage blocked */ }
+    const failed = await save(() => dashboardApi.resetData(), "Your data was reset");
+    setBusy(false);
+    if (failed) { setError(failed); return; }
+    setOpen(false);
+    setTyped("");
+    // Straight into setup, like a brand-new account (Home is underneath when it's done).
+    onReset();
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-[var(--radius-card)] font-semibold text-ink-subtle hover:bg-danger-soft hover:text-danger">
+        <RotateCcw className="size-4" aria-hidden="true" />Reset data
+      </button>
+      <Dialog open={open} onOpenChange={(next) => { if (!busy) { setOpen(next); setTyped(""); setError(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset all your data?</DialogTitle>
+            <DialogDescription>This erases your transactions, budgets, bills, goals, accounts, categories you made, pay schedule, Learn progress, and Penny AI chats. You’ll start again from setup. This can’t be undone.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); if (confirmed) void reset(); }} className="space-y-4">
+            <Field label="Type reset to confirm">{(props) => <Input {...props} autoComplete="off" autoCapitalize="none" value={typed} onChange={(event) => setTyped(event.target.value)} disabled={busy} className="min-h-11 text-base" />}</Field>
+            {error && <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+              <Button type="submit" variant="destructive" disabled={!confirmed || busy}>{busy ? "Resetting…" : "Reset everything"}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -127,25 +177,24 @@ function FaceIdSection({ status, onChange }: { status: FaceIdStatus; onChange: (
   );
 }
 
-const PAY_SHORT: Record<PayFrequency, string> = { weekly: "Weekly", biweekly: "Every 2 weeks", semimonthly: "Twice a month", monthly: "Monthly", custom: "Custom" };
-
 type SettingsPage = { id: string; labelId: string; group: string; icon: LucideIcon; title: string; summary: string; body: React.ReactNode };
 
 /**
  * Settings as an iPhone-style list: grouped rows with a one-line summary. A row opens its own
  * page, with "‹ Settings" (or the device's Back) to return.
  */
-export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
+export function SettingsView({ dashboard, save, onReset }: { dashboard: Dashboard; save: SaveChange; onReset: () => void }) {
   const { theme, palette } = usePreferences();
   const [pageId, openPage, back] = useSubpage("settings");
-  const pay = dashboard.pay_schedule;
+  const pay = dashboard.pay;
+  const nextPay = pay?.upcoming[0]?.on ?? pay?.sources.flatMap((source) => source.upcoming).sort()[0];
   const styleName = PALETTE_OPTIONS.find((option) => option.value === palette)?.label ?? "Penny";
   const themeName = THEME_OPTIONS.find((option) => option.value === theme)?.label ?? "";
   const custom = dashboard.categories.filter((category) => category.custom).length;
   const [faceId, setFaceId] = useState<FaceIdStatus | null>(null);
   useEffect(() => { void faceIdStatus().then(setFaceId); }, []);
   const pages: SettingsPage[] = [
-    { id: "pay", labelId: "pay-title", group: "Money", icon: Banknote, title: "When you get paid", summary: pay ? `${PAY_SHORT[pay.frequency]} · next ${formatShortDate(pay.next_payday)}` : "Not set up yet", body: <PayScheduleSection dashboard={dashboard} save={save} /> },
+    { id: "pay", labelId: "pay-title", group: "Money", icon: Banknote, title: "When you get paid", summary: pay ? `${pay.sources.length === 1 ? "1 source" : `${pay.sources.length} sources`} · about ${cad(pay.monthly_cents)} a month${nextPay ? ` · next ${formatShortDate(nextPay)}` : ""}` : "Not set up yet", body: <PaySection dashboard={dashboard} save={save} /> },
     { id: "accounts", labelId: "accounts-title", group: "Money", icon: Wallet, title: "Accounts", summary: `${dashboard.accounts.length} account${dashboard.accounts.length === 1 ? "" : "s"}`, body: <AccountsSection dashboard={dashboard} save={save} /> },
     { id: "categories", labelId: "categories-title", group: "Money", icon: Tags, title: "Categories", summary: custom ? `${custom} of your own` : "Penny’s defaults", body: <CategoriesSection dashboard={dashboard} save={save} /> },
     { id: "import", labelId: "import-title", group: "Money", icon: FileUp, title: "Import a statement", summary: "PDF, Excel, or CSV · read by Penny AI", body: <StatementImport dashboard={dashboard} save={save} /> },
@@ -188,6 +237,7 @@ export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: 
         </section>
       ))}
       <SignOutRow />
+      <ResetDataRow save={save} onReset={onReset} />
     </div>
   );
 
@@ -217,59 +267,12 @@ export function SettingsView({ dashboard, save }: { dashboard: Dashboard; save: 
   return <div className="mx-auto max-w-2xl">{list}</div>;
 }
 
-const PAY_FREQUENCIES: { value: PayFrequency; label: string }[] = [
-  { value: "weekly", label: "Every week" },
-  { value: "biweekly", label: "Every 2 weeks" },
-  { value: "semimonthly", label: "Twice a month (15th and last day)" },
-  { value: "monthly", label: "Once a month" },
-  { value: "custom", label: "Every … days" },
-];
-
 /** True from the `lg` breakpoint (1024px), where Settings shows two panes. */
 function useWideScreen(): boolean {
   return useSyncExternalStore(
     (onChange) => { const media = window.matchMedia("(min-width: 1024px)"); media.addEventListener("change", onChange); return () => media.removeEventListener("change", onChange); },
     () => window.matchMedia("(min-width: 1024px)").matches,
     () => false,
-  );
-}
-
-function PayScheduleSection({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
-  const current = dashboard.pay_schedule;
-  const [frequency, setFrequency] = useState<PayFrequency>(current?.frequency ?? "biweekly");
-  const [nextPayday, setNextPayday] = useState(current?.next_payday ?? dashboard.money_calendar.today ?? dashboard.current_month);
-  const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    let cents: number;
-    try { cents = parseCadToCents(String(form.get("amount"))); } catch { setError("Enter your usual take-home pay"); return; }
-    const interval = frequency === "custom" ? Number(form.get("interval")) : null;
-    if (interval !== null && !(interval >= 7 && interval <= 62)) { setError("Pick between 7 and 62 days"); return; }
-    const body: PaySchedule = { name: String(form.get("name")).trim() || "Paycheque", amount_cents: cents, account_id: String(form.get("account_id")), frequency, next_payday: nextPayday, interval_days: interval };
-    const result = await save(() => dashboardApi.setPaySchedule(body), "Pay schedule saved");
-    setError(result ?? "");
-    setSaved(!result);
-  }
-
-  return (
-    <section className={SECTION} aria-labelledby="pay-title">
-      <p className="mt-1 text-sm text-ink-subtle">Your payday forecast and pay cycles are built from this.</p>
-      <form onSubmit={submit} onChange={() => setSaved(false)} className="mt-4 space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Paycheque name">{(props) => <Input {...props} name="name" defaultValue={current?.name ?? "Paycheque"} maxLength={80} />}</Field>
-          <Field label="Take-home amount (CAD)">{(props) => <Input {...props} name="amount" inputMode="decimal" defaultValue={current ? centsToInput(String(current.amount_cents)) : ""} placeholder="0.00" required />}</Field>
-          <Field label="How often">{(props) => <Select {...props} value={frequency} onChange={(event) => setFrequency(event.target.value as PayFrequency)}>{PAY_FREQUENCIES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select>}</Field>
-          {frequency === "custom" ? <Field label="Days between paydays">{(props) => <Input {...props} name="interval" type="number" min={7} max={62} defaultValue={current?.interval_days ?? 18} />}</Field> : <div className="hidden sm:block" />}
-          <Field label="Next payday">{(props) => <DatePicker id={props.id} value={nextPayday} onChange={(value) => { setNextPayday(value); setSaved(false); }} />}</Field>
-          <Field label="Paid into">{(props) => <Select {...props} name="account_id" defaultValue={current?.account_id ?? dashboard.accounts[0]?.id}>{dashboard.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</Select>}</Field>
-        </div>
-        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-        <Button type="submit">{saved ? <><Check className="size-4" aria-hidden="true" />Saved</> : "Save pay schedule"}</Button>
-      </form>
-    </section>
   );
 }
 

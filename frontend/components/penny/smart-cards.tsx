@@ -5,7 +5,7 @@ import { LoaderCircle, MessageCircle, RefreshCw, Sparkles, WandSparkles } from "
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { type AssistSource, type AssistText, assistApi, type BudgetChange, type BudgetRebalance, type BudgetSuggestion, type BudgetSuggestions, type Dashboard } from "@/lib/api";
+import { type AssistSource, type AssistText, assistApi, type BudgetChange, type BudgetPlanSummary, type BudgetRebalance, type BudgetSuggestion, type BudgetSuggestions, type Dashboard } from "@/lib/api";
 import { formatMonth } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { cad, describeError } from "./shared";
@@ -74,13 +74,52 @@ export function SpendingTake({ dashboard, version, onAsk }: { dashboard: Dashboa
  * Budget limits suggested from the last three months. Nothing changes until the user ticks the
  * ones they want and presses Apply, which runs the normal budget create/update calls.
  */
+const INCOME_SOURCE: Record<BudgetPlanSummary["income_source"], string> = {
+  stated: "what you told Penny",
+  pay: "your pay in Settings",
+  history: "what came in over recent months",
+  none: "not known yet",
+};
+
+/**
+ * Where a month's money goes in a suggested budget: what comes in, bills, savings, and what's
+ * left for everyday spending. Every figure comes from the API (app/domain/smart_budget.py).
+ */
+export function PlanBreakdown({ plan }: { plan: BudgetPlanSummary }) {
+  const rows: [string, number, string][] = [
+    ["Coming in", plan.income_cents, ""],
+    ["Recurring bills", plan.fixed_cents, "−"],
+    ["Savings and goals", plan.savings_cents, "−"],
+  ];
+  return (
+    <div className="rounded-xl border border-line text-sm">
+      <dl className="divide-y divide-line">
+        {rows.map(([label, cents, sign]) => (
+          <div key={label} className="flex items-center justify-between gap-3 px-3 py-2">
+            <dt className="text-ink-muted">{label}{label === "Coming in" && <span className="block text-xs text-ink-subtle">From {INCOME_SOURCE[plan.income_source]}</span>}</dt>
+            <dd className="tabular font-semibold text-ink">{sign && <span aria-hidden="true">{sign} </span>}{cad(cents)}</dd>
+          </div>
+        ))}
+        <div className="flex items-center justify-between gap-3 bg-sage-soft/60 px-3 py-2">
+          <dt className="font-semibold text-ink">For everyday spending</dt>
+          <dd className="tabular font-semibold text-ink">{cad(plan.everyday_cents)}</dd>
+        </div>
+      </dl>
+      {plan.status === "trimmed" && <p className="border-t border-line px-3 py-2 text-xs text-gold-strong">Your usual spending doesn’t fit, so eating out and entertainment were trimmed first.</p>}
+      {plan.status === "short" && <p className="border-t border-line px-3 py-2 text-xs text-danger">Your bills are more than what comes in. These show what you usually spend.</p>}
+      {plan.status === "no_income" && <p className="border-t border-line px-3 py-2 text-xs text-ink-subtle">Add your pay in Settings › When you get paid for a plan that fits.</p>}
+      {plan.status === "fits" && plan.buffer_cents > 0 && <p className="border-t border-line px-3 py-2 text-xs text-ink-subtle"><span className="tabular">{cad(plan.buffer_cents)}</span> stays unassigned as a buffer.</p>}
+    </div>
+  );
+}
+
 export function BudgetSuggestionsDialog({ open, onClose, onApply }: { open: boolean; onClose: () => void; onApply: (month: string, picked: BudgetSuggestion[]) => Promise<string | null> }) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Suggested budgets</DialogTitle>
-          <DialogDescription>Based on what you actually spent over the last three months. Tick the ones you want.</DialogDescription>
+          <DialogDescription>Built from what comes in, your bills, your goals, and what you usually spend. Tick the ones you want.</DialogDescription>
         </DialogHeader>
         {open && <SuggestionsBody onApply={onApply} />}
       </DialogContent>
@@ -103,7 +142,7 @@ function SuggestionsBody({ onApply }: { onApply: (month: string, picked: BudgetS
       </div>
     );
   }
-  const { month, suggestions, summary } = result.data;
+  const { month, suggestions, summary, plan } = result.data;
   const picked = suggestions.filter((item) => !skipped.has(item.category_id));
 
   function toggle(id: string) {
@@ -124,6 +163,7 @@ function SuggestionsBody({ onApply }: { onApply: (month: string, picked: BudgetS
         <div className="mb-1"><SourceBadge source={summary.source} /></div>
         {summary.items[0]}
       </div>
+      {plan && <PlanBreakdown plan={plan} />}
       {suggestions.length === 0 ? null : (
         <ul className="divide-y divide-line rounded-xl border border-line" aria-label={`Suggestions for ${formatMonth(month)}`}>
           {suggestions.map((item) => {

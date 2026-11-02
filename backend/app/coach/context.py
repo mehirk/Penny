@@ -8,7 +8,7 @@ from datetime import date
 from typing import Literal
 
 from app.coach.facts import FactBook
-from app.coach.models import Proposal, Signal, ToolUse
+from app.coach.models import BudgetPlanCard, Proposal, Signal, ToolUse
 from app.dashboard_models import DashboardResponse, Goal, HistoryResponse, MonthlyBudget
 from app.dashboard_store import DashboardStore
 from app.domain.finance import COMMON_UTILIZATION_GUIDELINE_BASIS_POINTS, add_months
@@ -32,6 +32,7 @@ class CoachContext:
     facts: FactBook = field(default_factory=FactBook)
     tools_used: list[ToolUse] = field(default_factory=list)
     proposal: Proposal | None = None
+    budget_plan: BudgetPlanCard | None = None
 
     @property
     def month(self) -> date:

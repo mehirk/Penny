@@ -17,13 +17,13 @@ export type View = "today" | "spending" | "charts" | "accounts" | "recurring" | 
  */
 export const NAVIGATION: { id: View; label: string; title: string; description: string; icon: LucideIcon; primary: boolean; inMenu?: boolean }[] = [
   { id: "today", label: "Home", title: "Today", description: "Your Money Score, streaks, and what’s coming up.", icon: Home, primary: true },
-  { id: "spending", label: "Spending", title: "Spending", description: "Transactions, recurring bills, and budgets.", icon: ReceiptText, primary: true },
+  { id: "spending", label: "Spending", title: "Spending", description: "Transactions and recurring bills.", icon: ReceiptText, primary: true },
   { id: "budgets", label: "Budgets", title: "Budgets", description: "Your plan for the month. Everything else is measured against it.", icon: PiggyBank, primary: true },
-  { id: "charts", label: "Charts", title: "Charts", description: "Your money over time. Pick a range, filter, and choose what to show.", icon: ChartColumnBig, primary: true },
+  { id: "ai", label: "Penny AI", title: "Penny AI", description: "Your money coach. It knows your numbers and helps you decide.", icon: Bot, primary: true },
+  { id: "charts", label: "Charts", title: "Charts", description: "Your money over time. Pick a range, filter, and choose what to show.", icon: ChartColumnBig, primary: false },
   { id: "accounts", label: "Accounts", title: "Accounts", description: "Every account’s balance, and what it all adds up to.", icon: Landmark, primary: false, inMenu: false },
   { id: "goals", label: "Goals", title: "Goals", description: "Save on purpose and see what it takes each month.", icon: Target, primary: false },
   { id: "learn", label: "Learn", title: "Learn", description: "Lessons and challenges for Canada or the US, from Easy to Hard.", icon: GraduationCap, primary: false },
-  { id: "ai", label: "Penny AI", title: "Penny AI", description: "Your money coach. It knows your numbers and helps you decide.", icon: Bot, primary: true },
   { id: "settings", label: "Settings", title: "Settings", description: "Accounts, appearance, and how your data is protected.", icon: Settings, primary: false },
 ];
 

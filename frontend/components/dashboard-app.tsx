@@ -13,6 +13,7 @@ import { AddMoneyDialog, BudgetDialog, ConfirmDialog, type ConfirmRequest, GoalD
 import { AccountsView } from "@/components/penny/accounts-view";
 import { GoalsView } from "@/components/penny/goals-view";
 import { ChartsView } from "./penny/charts-view";
+import { TransferContext, TransferDialog, type TransferPrefill } from "./penny/transfer-dialog";
 import { BudgetsView } from "@/components/penny/budgets-view";
 import { LearnView } from "@/components/penny/learn-view";
 import type { BillInput } from "@/components/penny/recurring-view";
@@ -23,8 +24,9 @@ import { usePreferences } from "@/components/penny/preferences";
 import { PullToRefresh } from "@/components/penny/pull-to-refresh";
 import { cad, describeError, MENU, NAVIGATION, type View } from "@/components/penny/shared";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ToastProvider, useToast } from "@/components/ui/toast";
-import { type Bill, type Budget, type BudgetSuggestion, type Dashboard, dashboardApi, type Mission, type SavingsGoal, type Transaction } from "@/lib/api";
+import { type Bill, type Budget, type BudgetSuggestion, type Dashboard, dashboardApi, type Mission, type SavingsGoal, type Transaction, type Transfer } from "@/lib/api";
 import { onPasswordRequired, setAppSignedIn } from "@/lib/face-id";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 import { addMonths, formatMonth } from "@/lib/format";
@@ -128,6 +130,8 @@ function PennyApp() {
   const [setupOpen, setSetupOpen] = useState(false);
 
   const [budgetTarget, setBudgetTarget] = useState<Budget | "new" | null>(null);
+  const [transferTarget, setTransferTarget] = useState<TransferPrefill | null>(null);
+  const [billShort, setBillShort] = useState<Bill | null>(null);
   const [goalTarget, setGoalTarget] = useState<SavingsGoal | "new" | null>(null);
   const [addMoneyTarget, setAddMoneyTarget] = useState<SavingsGoal | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
@@ -376,9 +380,25 @@ function PennyApp() {
     void mutate(() => dashboardApi.completeMission(mission.id, month), `Mission complete · +${mission.xp_reward} XP`)
       .then((error) => { if (error) toast({ title: "Couldn’t complete the mission", description: error, tone: "error" }); });
   };
-  const markBillPaid = (bill: Bill) => {
-    void mutate(() => dashboardApi.markBillPaid(bill.id, month), `${bill.name} paid`)
-      .then((error) => { if (error) toast({ title: "Couldn’t update the bill", description: error, tone: "error" }); });
+  const markBillPaid = (bill: Bill, accountId?: string) => {
+    void mutate(() => dashboardApi.markBillPaid(bill.id, month, accountId), `${bill.name} paid`)
+      .then((error) => {
+        if (!error) return;
+        // Not enough in the bill's account: offer to move money or pay from another account.
+        if (/negative/i.test(error)) setBillShort(bill);
+        else toast({ title: "Couldn’t update the bill", description: error, tone: "error" });
+      });
+  };
+  const transfers = {
+    openTransfer: (prefill: TransferPrefill) => setTransferTarget(prefill),
+    deleteTransfer: (transfer: Transfer) => setConfirm(deleteConfirmation(mutate, {
+      title: transfer.kind === "card_payment" ? "Remove this card payment?" : "Remove this transfer?",
+      description: "Both account balances go back to how they were before it.",
+      confirmLabel: "Remove",
+      noun: transfer.kind === "card_payment" ? "Card payment" : "Transfer",
+      remove: () => dashboardApi.deleteTransfer(transfer.id, month),
+      restore: () => dashboardApi.addTransfer({ from_account_id: transfer.from_account_id, to_account_id: transfer.to_account_id, amount_cents: transfer.amount_cents, occurred_on: transfer.occurred_on, note: transfer.note }, month),
+    })),
   };
   const saveBill = (id: string | null, body: BillInput) =>
     mutate(() => (id ? dashboardApi.updateBill(id, body, month) : dashboardApi.createBill(body, month)), id ? "Bill updated" : `${body.name} added`);
@@ -403,6 +423,7 @@ function PennyApp() {
   }
 
   return (
+    <TransferContext.Provider value={transfers}>
     <div className="min-h-dvh">
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-xl focus:bg-surface focus:px-4 focus:py-3 focus:font-semibold focus:shadow-[var(--shadow-raised)]">Skip to content</a>
       <Sidebar active={view} dashboard={dashboard} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} onNavigate={navigate} />
@@ -419,8 +440,8 @@ function PennyApp() {
             {view === "charts" && <ChartsView dashboard={dashboard} />}
             {view === "budgets" && <BudgetsView dashboard={dashboard} onNavigate={navigate} onAddBudget={() => setBudgetTarget("new")} onEditBudget={setBudgetTarget} onCopyBudgets={copyBudgets} onApplyBudgets={applyBudgetSuggestions} onApplyBudgetChanges={applyBudgetChanges} />}
             {view === "learn" && <LearnView dashboard={dashboard} onCompleteMission={completeMission} onProgress={applyChange} onNavigate={navigate} onAsk={askPenny} />}
-            {view === "ai" && <CoachView chat={coachChat} dashboard={dashboard} onDashboardChange={applyChange} onApproved={(message) => toast({ title: "Change applied", description: message })} />}
-            {view === "settings" && <SettingsView dashboard={dashboard} save={mutate} />}
+            {view === "ai" && <CoachView chat={coachChat} dashboard={dashboard} onDashboardChange={applyChange} onApproved={(message) => toast({ title: "Change applied", description: message })} onApplyBudgets={applyBudgetSuggestions} />}
+            {view === "settings" && <SettingsView dashboard={dashboard} save={mutate} onReset={() => { navigate("today"); setSetupOpen(true); }} />}
           </div>
         </main>
       </div>
@@ -441,7 +462,43 @@ function PennyApp() {
       />
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
       <DisplaySettingsDialog open={displayOpen} onOpenChange={setDisplayOpen} />
+      <TransferDialog dashboard={dashboard} prefill={transferTarget} onClose={() => setTransferTarget(null)} onSave={(body) => mutate(() => dashboardApi.addTransfer(body, month), body.to_account_id && dashboard.accounts.find((a) => a.id === body.to_account_id)?.account_type === "credit" ? "Card payment recorded" : "Transfer recorded")} />
+      <BillShortDialog dashboard={dashboard} bill={billShort} onClose={() => setBillShort(null)} onTransfer={(prefill) => { setBillShort(null); setTransferTarget(prefill); }} onPayFrom={(bill, accountId) => { setBillShort(null); markBillPaid(bill, accountId); }} />
     </div>
+    </TransferContext.Provider>
+  );
+}
+
+/**
+ * A bill's account doesn't have enough to pay it: move money in first (recommended), or pay it
+ * from another account this once. Penny only records it either way.
+ */
+function BillShortDialog({ dashboard, bill, onClose, onTransfer, onPayFrom }: { dashboard: Dashboard; bill: Bill | null; onClose: () => void; onTransfer: (prefill: TransferPrefill) => void; onPayFrom: (bill: Bill, accountId: string) => void }) {
+  const account = bill ? dashboard.accounts.find((a) => a.id === bill.account_id) : undefined;
+  const others = bill ? dashboard.accounts.filter((a) => a.id !== bill.account_id && a.account_type !== "credit" && a.balance_cents >= bill.amount_cents) : [];
+  const short = bill && account ? Math.max(0, bill.amount_cents - account.balance_cents) : 0;
+  const richest = [...others].sort((a, b) => (a.account_type === "savings" ? 0 : 1) - (b.account_type === "savings" ? 0 : 1) || b.balance_cents - a.balance_cents)[0];
+  return (
+    <Dialog open={bill !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent>
+        {bill && account && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Not enough in {account.name}</DialogTitle>
+              <DialogDescription>{bill.name} is {cad(bill.amount_cents)}, and {account.name} has {cad(account.balance_cents)}.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Button className="w-full" onClick={() => onTransfer({ from: richest?.id, to: account.id, amountCents: short })}>Move {cad(short)} into {account.name} first</Button>
+              {others.map((other) => (
+                <Button key={other.id} variant="outline" className="w-full" onClick={() => onPayFrom(bill, other.id)}>Pay from {other.name} this time</Button>
+              ))}
+              <Button variant="ghost" className="w-full" onClick={onClose}>Cancel</Button>
+            </div>
+            <p className="text-xs text-ink-subtle">Penny records what you do in your bank. It doesn’t move real money.</p>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

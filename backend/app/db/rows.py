@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from app.dashboard_models import Bill, Category, GoalContribution, Mission, PaySchedule
+from app.dashboard_models import Bill, Category, GoalContribution, Mission, PaySchedule, Transfer
 from app.dashboard_store import StoreSnapshot
 from app.learning.engine import Attempt, Learner, LessonResult
 from app.learning.models import AttemptView, LearnProfile
@@ -30,7 +30,8 @@ TABLE_KEYS: dict[str, tuple[str, ...]] = {
     "goal_contributions": ("id",),
     "bills": ("id",),
     "missions": ("id",),
-    "pay_schedules": (),
+    "pay_schedules": ("id",),
+    "transfers": ("id",),
     "learn_profiles": (),
     "learn_results": ("lesson_id",),
     "learn_activity": ("day",),
@@ -97,7 +98,8 @@ def to_rows(snapshot: StoreSnapshot) -> Rows:
         "goal_contributions": [item.model_dump() for item in snapshot.contributions],
         "bills": [item.model_dump() for item in snapshot.bills],
         "missions": [item.model_dump() for item in snapshot.missions],
-        "pay_schedules": [snapshot.pay_schedule.model_dump()] if snapshot.pay_schedule else [],
+        "pay_schedules": [item.model_dump() for item in snapshot.pay_schedules],
+        "transfers": [item.model_dump() for item in snapshot.transfers],
         "learn_profiles": [learner.profile.model_dump()],
         "learn_results": [
             {
@@ -163,7 +165,10 @@ def from_rows(user_id: str, profile: Row, tables: dict[str, list[Row]]) -> Store
         ],
         missions=[Mission.model_validate(row) for row in tables.get("missions", [])],
         bills=[Bill.model_validate(row) for row in tables.get("bills", [])],
-        pay_schedule=PaySchedule.model_validate(pay[0]) if pay else None,
+        transfers=[Transfer.model_validate(row) for row in tables.get("transfers", [])],
+        pay_schedules=sorted(
+            (PaySchedule.model_validate(row) for row in pay), key=lambda item: item.id
+        ),
         learner=learner,
     )
 

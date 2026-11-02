@@ -133,7 +133,7 @@ class Bill(DashboardModel):
     last_paid_on: date | None = None
 
 
-class PaySchedule(DashboardModel):
+class PayScheduleWrite(DashboardModel):
     name: str = Field(min_length=1, max_length=80)
     amount_cents: int = Field(gt=0)
     account_id: str
@@ -141,6 +141,32 @@ class PaySchedule(DashboardModel):
     next_payday: date
     # Only for "custom": days between paydays.
     interval_days: int | None = Field(default=None, ge=7, le=62)
+
+
+class PaySchedule(PayScheduleWrite):
+    """One source of pay (a job, a scholarship, an allowance). People can have several."""
+
+    id: str = Field(min_length=1, max_length=80)
+
+
+class PaySource(PaySchedule):
+    monthly_cents: int = Field(ge=0)  # average per month (app.domain.starter_budget)
+    upcoming: list[date]  # the next few paydays
+
+
+class UpcomingPay(DashboardModel):
+    pay_id: str
+    name: str
+    on: date
+    amount_cents: int = Field(gt=0)
+
+
+class PayOverview(DashboardModel):
+    """Every source of pay, what they add up to a month, and the paydays coming up."""
+
+    monthly_cents: int = Field(ge=0)
+    sources: list[PaySource]
+    upcoming: list[UpcomingPay]  # every payday in the next 35 days, soonest first
 
 
 class NetWorthSnapshot(DashboardModel):
@@ -412,6 +438,37 @@ class BudgetPlan(DashboardModel):
     fixed: list[FixedCost]
 
 
+class TransferWrite(DashboardModel):
+    """Money the user moved between their own accounts in their bank, or a card payment."""
+
+    from_account_id: str
+    to_account_id: str
+    amount_cents: int = Field(gt=0)
+    occurred_on: date
+    note: str | None = Field(default=None, max_length=120)
+
+
+class Transfer(TransferWrite):
+    id: str = Field(min_length=1, max_length=80)
+    # "card_payment" when it pays down a credit card. Neither is spending or income.
+    kind: Literal["transfer", "card_payment"]
+
+
+class CashWarning(DashboardModel):
+    """An account that can't cover the bills still due from it this month (app.domain.cash_check).
+    A heads-up only: Safe to spend follows the budget, and Penny never moves money."""
+
+    account_id: str
+    account_name: str
+    due_cents: int = Field(ge=0)
+    balance_cents: int
+    short_cents: int = Field(gt=0)
+    bill_names: list[str]
+    first_due_on: date
+    cover_account_id: str | None
+    cover_account_name: str | None
+
+
 class SafeToSpendBreakdown(DashboardModel):
     """Each step of Safe to spend (app.domain.runway.safe_to_spend), so the app can show it."""
 
@@ -454,7 +511,9 @@ class DashboardResponse(DashboardModel):
     investing_foundations: list[FoundationCheck]
     spending_classification: SpendingClassification
     bills: list[Bill]
+    # The main pay (the largest a month): it sets the pay cycles. `pay` has every source.
     pay_schedule: PaySchedule | None
+    pay: PayOverview | None = None
     home: HomeSummary
     net_worth: NetWorthSnapshot
     accounts_overview: AccountsOverview
@@ -465,6 +524,9 @@ class DashboardResponse(DashboardModel):
     # Credit cards with a payment due day, soonest first.
     card_payments: list[CardPayment] = Field(default_factory=list)
     budget_plan: BudgetPlan | None = None
+    cash_warnings: list[CashWarning] = Field(default_factory=list)
+    # Transfers and card payments in the period on screen, newest first.
+    transfers: list[Transfer] = Field(default_factory=list)
     # A real (non-demo) account with no budget, bills, or pay schedule yet: offer the setup.
     needs_onboarding: bool = False
     # Only while the period shown includes today.
@@ -535,6 +597,12 @@ class BudgetPatch(DashboardModel):
 class BudgetLimitChange(DashboardModel):
     budget_id: str
     limit_cents: int = Field(ge=0)
+
+
+class ResetRequest(DashboardModel):
+    """Erasing everything needs the word typed back, so a stray request can't do it."""
+
+    confirm: Literal["reset"]
 
 
 class BudgetChangesRequest(DashboardModel):

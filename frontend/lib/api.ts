@@ -34,7 +34,12 @@ export type MoneyCalendar = {
 export type BillFrequency = "weekly" | "biweekly" | "monthly" | "yearly";
 export type Bill = { id: string; name: string; amount_cents: number; category_id: string | null; account_id: string; frequency: BillFrequency; next_due: string; auto_record: boolean; last_paid_on: string | null };
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly" | "custom";
-export type PaySchedule = { name: string; amount_cents: number; account_id: string; frequency: PayFrequency; next_payday: string; interval_days: number | null };
+export type PayScheduleWrite = { name: string; amount_cents: number; account_id: string; frequency: PayFrequency; next_payday: string; interval_days: number | null };
+/** One source of pay (a job, a scholarship, an allowance); people can have several. */
+export type PaySchedule = PayScheduleWrite & { id: string };
+export type PaySource = PaySchedule & { monthly_cents: number; upcoming: string[] };
+/** Every source of pay, their monthly total, and every payday in the next 35 days. */
+export type PayOverview = { monthly_cents: number; sources: PaySource[]; upcoming: { pay_id: string; name: string; on: string; amount_cents: number }[] };
 export type RecurringExpense = { id: string; name: string; category_name: string | null; amount_cents: number; monthly_cents: number; frequency: BillFrequency; next_due: string; days_until_due: number; kind: "bill" | "subscription"; auto_record: boolean; last_paid_on: string | null; payment_count: number; last_paid_cents: number | null; total_paid_cents: number; paid_this_month: boolean; status: "overdue" | "due_soon" | "later" };
 export type RecurringPayment = { bill_id: string; name: string; occurred_on: string; amount_cents: number; paid_automatically: boolean | null };
 export type UpcomingPayment = { bill_id: string; name: string; due_on: string; days_until_due: number; amount_cents: number; auto_record: boolean; kind: "bill" | "subscription" };
@@ -71,7 +76,9 @@ export type Dashboard = {
   investing_foundations: FoundationCheck[];
   spending_classification: { needs_cents: number; wants_cents: number; needs_basis_points: number; wants_basis_points: number };
   bills: Bill[];
+  /** The main pay (largest a month); it sets the pay cycles. */
   pay_schedule: PaySchedule | null;
+  pay: PayOverview | null;
   home: { available_cents: number; cash_cents: number; cash_history: MonthPoint[]; cash_change_basis_points: number | null; savings_cents: number; savings_history: MonthPoint[]; monthly_saved_cents: number; monthly_goal_cents: number; spending_change_basis_points: number | null; weekly_flexible_cents: number };
   net_worth: { cash_cents: number; savings_cents: number; investments_cents: number | null; liabilities_cents: number; net_worth_cents: number };
   accounts_overview: AccountsOverview;
@@ -80,6 +87,10 @@ export type Dashboard = {
   safe_to_spend: SafeToSpendBreakdown | null;
   card_payments: CardPayment[];
   budget_plan: BudgetPlan | null;
+  /** Accounts that can't cover the bills still due from them this month (a heads-up only). */
+  cash_warnings: CashWarning[];
+  /** Transfers and card payments in the period on screen, newest first. */
+  transfers: Transfer[];
   /** A real account with no budget, bills, or pay schedule yet: offer the setup. */
   needs_onboarding: boolean;
   /** How long Safe to spend has to last; null when the period shown doesn't include today. */
@@ -88,6 +99,10 @@ export type Dashboard = {
 };
 
 /** Each step of Safe to spend, as the API computed it. */
+/** Money the user moved between their own accounts in their bank (Penny records it; it never moves money). */
+export type TransferWrite = { from_account_id: string; to_account_id: string; amount_cents: number; occurred_on: string; note: string | null };
+export type Transfer = TransferWrite & { id: string; kind: "transfer" | "card_payment" };
+export type CashWarning = { account_id: string; account_name: string; due_cents: number; balance_cents: number; short_cents: number; bill_names: string[]; first_due_on: string; cover_account_id: string | null; cover_account_name: string | null };
 /** One recurring bill's share of the month's budget: paid so far plus what's still due. */
 export type FixedCost = { bill_id: string; name: string; category_id: string | null; kind: "bill" | "subscription"; amount_cents: number; paid_cents: number; due_cents: number; next_due_on: string | null };
 /** The month's budget: recurring bills (fixed) plus the category budgets (variable). */
@@ -121,6 +136,7 @@ export type CoachReply = {
   facts: CoachFact[];
   tools_used: { name: string; label: string }[];
   proposal: CoachProposal | null;
+  budget_plan?: CoachBudgetPlan | null;
   source: "ai" | "built_in";
   fallback_reason: "no_api_key" | "model_error" | "timeout" | "unverified_numbers" | null;
   model: string | null;
@@ -216,15 +232,21 @@ export const dashboardApi = {
   copyBudgets: (fromMonth: string, toMonth: string) => request("/api/v1/budgets/copy", { method: "POST", body: JSON.stringify({ from_month: fromMonth, to_month: toMonth }) }),
   createGoal: (body: GoalWrite, month?: string) => request(inMonth("/api/v1/savings-goals", month), { method: "POST", body: JSON.stringify(body) }),
   updateGoal: (id: string, body: Partial<GoalWrite> & { status?: SavingsGoal["status"] }, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
+  /** Erases all of the user's data and Penny AI chats; setup shows again. */
+  resetData: () => request("/api/v1/account/reset", { method: "POST", body: JSON.stringify({ confirm: "reset" }) }),
   deleteGoal: (id: string, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}`, month), { method: "DELETE" }),
   contributeToGoal: (id: string, amount_cents: number, fromAccountId: string, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}/contributions`, month), { method: "POST", body: JSON.stringify({ amount_cents, from_account_id: fromAccountId }) }),
   completeMission: (id: string, month?: string) => request(inMonth(`/api/v1/missions/${id}/complete`, month), { method: "POST" }),
   billHistory: (id: string) => authorizedRequest<BillHistory>(`/api/v1/bills/${id}/history`),
-  markBillPaid: (id: string, month?: string) => request(inMonth(`/api/v1/bills/${id}/mark-paid`, month), { method: "POST" }),
+  markBillPaid: (id: string, month?: string, accountId?: string) => request(inMonth(`/api/v1/bills/${id}/mark-paid${accountId ? `?account_id=${encodeURIComponent(accountId)}` : ""}`, month), { method: "POST" }),
+  addTransfer: (body: TransferWrite, month?: string) => request(inMonth("/api/v1/transfers", month), { method: "POST", body: JSON.stringify(body) }),
+  deleteTransfer: (id: string, month?: string) => request(inMonth(`/api/v1/transfers/${id}`, month), { method: "DELETE" }),
   createBill: (body: Omit<Bill, "id" | "last_paid_on">, month?: string) => request(inMonth("/api/v1/bills", month), { method: "POST", body: JSON.stringify(body) }),
   updateBill: (id: string, body: Partial<Omit<Bill, "id" | "last_paid_on">>, month?: string) => request(inMonth(`/api/v1/bills/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
   deleteBill: (id: string, month?: string) => request(inMonth(`/api/v1/bills/${id}`, month), { method: "DELETE" }),
-  setPaySchedule: (body: PaySchedule) => request("/api/v1/pay-schedule", { method: "PUT", body: JSON.stringify(body) }),
+  addPay: (body: PayScheduleWrite) => request("/api/v1/pay-schedules", { method: "POST", body: JSON.stringify(body) }),
+  updatePay: (id: string, body: PayScheduleWrite) => request(`/api/v1/pay-schedules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deletePay: (id: string) => request(`/api/v1/pay-schedules/${id}`, { method: "DELETE" }),
   createCategory: (body: { name: string; kind: Category["kind"]; parent_id: string | null }) => request("/api/v1/categories", { method: "POST", body: JSON.stringify(body) }),
   deleteCategory: (id: string) => request(`/api/v1/categories/${id}`, { method: "DELETE" }),
   createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day?: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
@@ -254,7 +276,11 @@ export type StatementDraft = {
   balance_difference_cents: number | null;
   rows: StatementRow[]; problems: string[];
 };
-export type BudgetSuggestions = { month: string; suggestions: BudgetSuggestion[]; summary: AssistText };
+/** The whole picture behind suggested budgets (backend app/domain/smart_budget.py). */
+export type BudgetPlanSummary = { income_cents: number; income_source: "stated" | "pay" | "history" | "none"; fixed_cents: number; savings_cents: number; everyday_cents: number; planned_cents: number; buffer_cents: number; status: "fits" | "trimmed" | "short" | "no_income" };
+export type BudgetSuggestions = { month: string; suggestions: BudgetSuggestion[]; summary: AssistText; plan: (BudgetPlanSummary & { history_months: number }) | null };
+/** A whole budget Penny AI built in chat; "Add to my budgets" applies its lines like suggestions. */
+export type CoachBudgetPlan = BudgetPlanSummary & { month: string; summary: string; lines: BudgetSuggestion[] };
 
 export type OnboardingAnswers = {
   opening_balances: Record<string, number>;

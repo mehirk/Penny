@@ -81,10 +81,26 @@ class BudgetSuggestion(AssistModel):
     reason: str
 
 
+class BudgetPlanOut(AssistModel):
+    """The whole picture behind the suggestions (app.domain.smart_budget)."""
+
+    income_cents: int
+    # Where income came from: given in chat, every source of pay, recent months, or unknown.
+    income_source: Literal["stated", "pay", "history", "none"]
+    fixed_cents: int
+    savings_cents: int
+    everyday_cents: int
+    planned_cents: int
+    buffer_cents: int
+    status: Literal["fits", "trimmed", "short", "no_income"]
+    history_months: int
+
+
 class BudgetSuggestions(AssistModel):
     month: date
     suggestions: list[BudgetSuggestion]
     summary: AssistText
+    plan: BudgetPlanOut | None = None
 
 
 _BULLETS_SCHEMA: dict[str, Any] = {
@@ -597,69 +613,107 @@ async def spending_take(settings: Settings, dashboard: DashboardResponse) -> Ass
 ROUND_TO_CENTS = 500
 
 
-async def budget_suggestions(
-    settings: Settings, store: DashboardStore, user_id: str
-) -> BudgetSuggestions:
-    """Limits based on the last three months of actual spending, for the user to review."""
-    ctx = load_context(store, user_id)
-    dashboard, prior = ctx.dashboard, ctx.prior
-    months = prior.totals.months_with_activity
+def smart_suggestions(
+    store: DashboardStore, user_id: str, f: FactBook, stated_income_cents: int | None = None
+) -> tuple[list[BudgetSuggestion], BudgetPlanOut, list[str]]:
+    """Category budgets from everything known: income (even before pay arrives), bills,
+    savings and goals, and usual everyday spending (app.domain.smart_budget). Returns the
+    suggestions that would change something, the plan, and a built-in summary."""
+    plan, source = store.smart_budget_plan(user_id, stated_income_cents)
+    dashboard = store.dashboard_for_user(user_id)
+    _, months = store.everyday_averages(dashboard.current_month)
+    names = {c.id: c.name for c in dashboard.categories}
     current = {b.category_id: b for b in dashboard.budgets if not b.carried_over}
-    names = {c.id: c for c in dashboard.categories}
-    f = FactBook()
     suggestions = []
-    for item in prior.categories:
-        if not item.category_id or not months or item.category_id not in names:
+    for line in plan.lines:
+        name = names.get(line.category_id, "Other")
+        usual = f.money(f"{name} usual", line.usual_cents, "history")
+        f.money(f"Suggested {name} budget", line.suggested_cents, "budgets")
+        budget = current.get(line.category_id)
+        if budget and budget.limit_cents == line.suggested_cents:
             continue
-        average = item.spent_cents // months
-        suggested = ceil_div(average, ROUND_TO_CENTS) * ROUND_TO_CENTS
-        budget = current.get(item.category_id)
-        if suggested <= 0 or (budget and budget.limit_cents == suggested):
-            continue
-        # Lowering a limit below what's already spent this month would only put it over.
-        if budget and suggested < budget.limit_cents and suggested < budget.spent_cents:
-            continue
-        avg_text = f.money(f"{item.category_name} 3-month average", average, "history")
-        f.money(f"Suggested {item.category_name} budget", suggested, "history")
-        if budget:
-            now = f.money(f"{item.category_name} budget", budget.limit_cents, "budgets")
-            direction = "Raise" if suggested > budget.limit_cents else "Lower"
-            reason = f"{direction} from {now}: you’ve averaged {avg_text} a month."
+        if line.basis == "typical":
+            reason = f"A typical student amount ({usual}); no spending here yet."
         else:
-            reason = f"No budget yet; you’ve averaged {avg_text} a month."
+            reason = f"You usually spend {usual} a month."
+        if line.trimmed:
+            reason += " Lowered to fit what comes in."
+        if budget:
+            reason += f" Now {f.money(f'{name} budget', budget.limit_cents, 'budgets')}."
         suggestions.append(
             BudgetSuggestion(
-                category_id=item.category_id,
-                category_name=item.category_name,
+                category_id=line.category_id,
+                category_name=name,
                 budget_id=budget.id if budget else None,
                 current_limit_cents=budget.limit_cents if budget else None,
-                suggested_cents=suggested,
-                average_cents=average,
+                suggested_cents=line.suggested_cents,
+                average_cents=line.usual_cents,
                 reason=reason,
             )
         )
-    fallback = [
-        "These limits match what you’ve actually spent over the last three months, rounded up "
-        "to the nearest $5. Pick the ones that feel right."
-    ]
-    summary = (
-        await _phrase(
-            settings,
-            f,
-            "Write one sentence (max 35 words) summarising these budget suggestions and what "
-            "changing them would mean. Mention at most one category by name.",
-            f"SUGGESTIONS: {[s.reason for s in suggestions]}",
-            fallback,
-            1,
-        )
-        if suggestions
-        else AssistText(
-            items=["Your budgets already match your recent spending."],
-            source="built_in",
-            model=None,
-        )
+    out = BudgetPlanOut(
+        income_cents=plan.income_cents,
+        income_source=source,  # type: ignore[arg-type]
+        fixed_cents=plan.fixed_cents,
+        savings_cents=plan.savings_cents,
+        everyday_cents=plan.everyday_cents,
+        planned_cents=plan.planned_cents,
+        buffer_cents=plan.buffer_cents,
+        status=plan.status,
+        history_months=months,
     )
-    return BudgetSuggestions(month=dashboard.active_month, suggestions=suggestions, summary=summary)
+    usual_words = "your usual spending" if months else "typical student spending"
+    income = f.money("Monthly income", plan.income_cents, "pay")
+    bills = f.money("Recurring bills", plan.fixed_cents, "bills")
+    saving = f.money("Savings", plan.savings_cents, "goals")
+    room = f.money("Everyday room", plan.everyday_cents, "budgets")
+    f.money("Planned everyday", plan.planned_cents, "budgets")
+    f.money("Buffer", plan.buffer_cents, "budgets")
+    if plan.status == "no_income":
+        summary = [
+            "Penny doesn't know your income yet, so these match what you usually spend. Add "
+            "your pay in Settings for a plan that fits."
+        ]
+    elif plan.status == "short":
+        summary = [
+            f"Your bills ({bills}) are more than the {income} coming in, so there's no room "
+            "left for everyday spending. These show what you usually spend."
+        ]
+    elif plan.status == "trimmed":
+        summary = [
+            f"From {income} a month, after {bills} in bills and {saving} saved, {room} is left. "
+            f"{usual_words.capitalize()} doesn't fit, so wants were trimmed first."
+        ]
+    else:
+        summary = [
+            f"From {income} a month, after {bills} in bills and {saving} saved, {room} is left "
+            f"for everyday spending. {usual_words.capitalize()} fits."
+        ]
+    return suggestions, out, summary
+
+
+async def budget_suggestions(
+    settings: Settings, store: DashboardStore, user_id: str
+) -> BudgetSuggestions:
+    """A whole budget for this month, for the user to review and pick from."""
+    f = FactBook()
+    suggestions, plan, fallback = smart_suggestions(store, user_id, f)
+    dashboard = store.dashboard_for_user(user_id)
+    summary = await _phrase(
+        settings,
+        f,
+        "Write one or two sentences (max 45 words) explaining this budget plan: where the money "
+        "goes (bills, savings, everyday) and whether usual spending fits. Mention at most one "
+        "category by name. Educational, not financial advice.",
+        f"PLAN: {plan.model_dump()} SUGGESTIONS: {[s.reason for s in suggestions]} "
+        f"FACTS: {fallback}",
+        fallback,
+        1,
+        max_chars=320,
+    )
+    return BudgetSuggestions(
+        month=dashboard.active_month, suggestions=suggestions, summary=summary, plan=plan
+    )
 
 
 # ------------------------------------------------------------------ onboarding
