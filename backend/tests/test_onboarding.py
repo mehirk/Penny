@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.dashboard_models import BudgetPatch, OnboardingAnswers, OnboardingApply
-from app.dashboard_store import _fresh_store
+from app.store import fresh_store
 
 USER = "user-1"
 
@@ -33,25 +33,25 @@ def _answers(**overrides: object) -> OnboardingAnswers:
 
 
 def test_new_account_needs_onboarding() -> None:
-    store = _fresh_store(USER, None)
+    store = fresh_store(USER, None)
     assert store.dashboard_for_user(USER).needs_onboarding
 
 
 def test_apply_saves_setup_with_bills_outside_category_budgets() -> None:
-    store = _fresh_store(USER, None)
+    store = fresh_store(USER, None)
     result = store.apply_onboarding(
         USER, OnboardingApply(answers=_answers(), everyday_limits={"cat-fun": 5_000})
     )
     # Rent is a recurring bill (the fixed budget); category budgets are only everyday amounts.
     budgets = {b.category_id: b.limit_cents for b in result.budgets}
     assert budgets == {"cat-groceries": 30_000, "cat-fun": 5_000}
-    assert result.pay_schedule is not None and len(result.bills) == 1
+    assert result.pay is not None and len(result.bills) == 1
     assert not result.needs_onboarding
     assert result.spending_power_cents > 0
 
 
 def test_apply_only_once() -> None:
-    store = _fresh_store(USER, None)
+    store = fresh_store(USER, None)
     store.apply_onboarding(USER, OnboardingApply(answers=_answers()))
     with pytest.raises(HTTPException) as error:
         store.apply_onboarding(USER, OnboardingApply(answers=_answers()))
@@ -59,21 +59,21 @@ def test_apply_only_once() -> None:
 
 
 def test_apply_rejects_income_categories_for_spending() -> None:
-    store = _fresh_store(USER, None)
+    store = fresh_store(USER, None)
     with pytest.raises(HTTPException) as error:
         store.apply_onboarding(USER, OnboardingApply(answers=_answers(everyday={"cat-income": 1})))
     assert error.value.status_code == 422
 
 
 def test_without_pay_the_monthly_money_is_the_base() -> None:
-    store = _fresh_store(USER, None)
+    store = fresh_store(USER, None)
     plan = store.starter_plan_for(USER, _answers(income=None, monthly_money_cents=80_000, bills=[]))
     assert plan.income_cents == 80_000
 
 
 def _setup():  # type: ignore[no-untyped-def]
     """$2,500 in chequing, a savings account and a card, and one $500 Groceries budget."""
-    store = _fresh_store(USER, None)
+    store = fresh_store(USER, None)
     store.apply_onboarding(
         USER,
         OnboardingApply(
@@ -279,9 +279,9 @@ def test_budget_changes_apply_together_or_not_at_all() -> None:
 
 
 def test_check_warns_when_budget_is_above_income_but_still_applies() -> None:
-    from app.coach.assist import starter_check
+    from app.assist.onboarding import starter_check
 
-    store = _fresh_store(USER, None)
+    store = fresh_store(USER, None)
     answers = _answers(
         income=None, monthly_money_cents=100_000, bills=[], everyday={"cat-groceries": 150_000}
     )
@@ -339,7 +339,7 @@ def test_reset_erases_everything_and_shows_setup_again() -> None:
         [],
     )
     assert [(a.name, a.balance_cents) for a in result.accounts] == [("Chequing", 0)]
-    assert result.pay_schedule is None
+    assert result.pay is None
     # Still theirs: only the owner can use it, and setup can run again.
     store.apply_onboarding(USER, OnboardingApply(answers=_answers()))
     with pytest.raises(HTTPException):
@@ -357,9 +357,9 @@ def test_reset_request_needs_the_word() -> None:
 
 
 def test_demo_reset_restores_the_demo_data() -> None:
-    from app.dashboard_store import DashboardStore
+    from app.store import demo_store
 
-    demo = DashboardStore()
+    demo = demo_store()
     owner = demo.snapshot().profile.id
     before = {g.id for g in demo.dashboard_for_user(owner).savings_goals}
     demo.delete_goal(owner, "goal-laptop")

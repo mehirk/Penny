@@ -16,9 +16,9 @@ const HISTORY_LIMIT = 11;
 const MAX_QUESTION_LENGTH = 600;
 
 type ProposalState = "approving" | "approved" | "dismissed";
-export type CoachMessage = { id: string; role: CoachRole; content: string; reply?: CoachReply };
+type CoachMessage = { id: string; role: CoachRole; content: string; reply?: CoachReply };
 type ChatError = { title: string; detail: string };
-export type Conversation = { id: string; title: string; updated_at: string; messages: CoachMessage[]; proposals: Record<string, ProposalState> };
+type Conversation = { id: string; title: string; updated_at: string; messages: CoachMessage[]; proposals: Record<string, ProposalState> };
 
 const STORAGE_KEY = "penny-coach-chats";
 /** Set once this device's older, device-only chats have been uploaded to the account. */
@@ -179,7 +179,7 @@ export function useCoachChat() {
   return { conversations, activeId, messages, proposals: active?.proposals ?? {}, pending, error, send, retry, newChat, open, remove, setProposal };
 }
 
-export type CoachChat = ReturnType<typeof useCoachChat>;
+type CoachChat = ReturnType<typeof useCoachChat>;
 
 export function CoachView({ chat, dashboard, onDashboardChange, onApproved, onApplyBudgets }: { chat: CoachChat; dashboard: Dashboard; onDashboardChange: (dashboard: Dashboard) => void; onApproved: (message: string) => void; onApplyBudgets: (month: string, picked: BudgetSuggestion[]) => Promise<string | null> }) {
   const [brief, setBrief] = useState<CoachBrief | null>(null);

@@ -2,12 +2,13 @@
 
 **Make money, make sense.** Penny is a mobile-first financial literacy and budgeting MVP for Canadian students and young adults. Every profile, account, transaction, and balance in this repository is fictional.
 
-The app has seven sections:
+The main sections:
 
 - **Today (home):** total cash with trend, safe to spend, credit used, monthly savings against goals, a spending overview with a "vs last month" tip, recent transactions, upcoming bills, financial health with the daily Money Score, Penny AI prompts, and a learning streak.
 - **Spending:** transactions (search, money in/out, category, a one-day or range date filter, CSV export) with soft Need/Want and Recurring tags, then budgets and trends. A Recurring tab lists every bill with its payment history and an auto-paid or mark-paid choice. A period picker shows any month, preset range, or custom dates.
+- **Budgets:** the month's plan as recurring bills (fixed) plus category budgets (variable), with suggested budgets and a rebalance when one goes over.
+- **Charts:** income, spending, and budgets month by month, filtered by account or category.
 - **Goals:** savings goals with the monthly amount needed to hit each target date.
-- **Invest:** education only. A foundations checklist, TFSA, RRSP and FHSA explained with 2026 limits, and a compounding-and-fees explorer.
 - **Learn:** short lessons with quizzes on budgeting, saving, tax, credit and investing, plus XP, levels, a learning streak and challenges.
 - **Penny AI:** a money coach grounded in the user's verified numbers.
 
@@ -53,7 +54,7 @@ Check `http://localhost:8000/health` and interactive API documentation at `http:
 
 How the daily Money Score works: fixed recurring charges are excluded. Each day earns up to 60 points for month-to-date flexible spending against the pro-rated flexible budget, and up to 40 for that day's flexible spending against the daily allowance. Zones follow WHOOP's bands: green 67–100, yellow 34–66, red 0–33. See `backend/app/domain/money_days.py`.
 
-Other routes: `GET /api/v1/categorize?description=…` (rule-based category and need/want suggestion), `POST /api/v1/lessons/{id}/complete` (idempotent XP), `POST /api/v1/calculations/growth` (illustrative compounding with fees), `/api/v1/bills` (create, update, delete, and `/{id}/mark-paid`), `PUT /api/v1/pay-schedule`, `/api/v1/categories` and `/api/v1/accounts` (customization), and `POST /api/v1/transactions/import` (CSV history).
+Other routes: `GET /api/v1/categorize?description=…` (rule-based category and need/want suggestion, with Penny AI as a fallback), `/api/v1/learn` (lessons, attempts, and XP), `/api/v1/bills` (create, update, delete, `/{id}/history`, and `/{id}/mark-paid`), `/api/v1/pay-schedules`, `/api/v1/transfers`, `/api/v1/categories` and `/api/v1/accounts` (customization), `/api/v1/onboarding/*` (first-run setup), `/api/v1/assist/*` (quick add, search, statement reading, suggestions, and short explanations; none of them save anything), and `POST /api/v1/transactions/import-rows` (reviewed statement rows). The full list is at `/docs`.
 
 Dashboard and CRUD routes are under `/api/v1/dashboard`, `/api/v1/transactions`, `/api/v1/budgets`, and `/api/v1/savings-goals`. Add `?month=YYYY-MM-01` to view or return a past month. History is `GET /api/v1/history?start=…&end=…`; other additions are `POST /api/v1/budgets/copy`, `POST /api/v1/savings-goals/{id}/contributions`, `POST /api/v1/missions/{id}/complete`, and the stateless `POST /api/v1/calculations/credit-utilization`.
 
@@ -78,7 +79,7 @@ Restart FastAPI after changing the environment file. AI answers are labelled wit
 
 ### Authentication
 
-Every financial route (dashboard, transactions, budgets, savings goals, Penny AI, and approval) requires `Authorization: Bearer <token>`. Missing or invalid tokens return 401; an authenticated user who does not own the data receives 403. Only the stateless `POST /api/v1/calculations/summary` and `/health` are public.
+Every financial route (dashboard, transactions, budgets, savings goals, Penny AI, and approval) requires `Authorization: Bearer <token>`. Missing or invalid tokens return 401; an authenticated user who does not own the data receives 403. Only the stateless `POST /api/v1/calculations/credit-utilization` and `/health` are public.
 
 - **Supabase (default):** the browser signs in with the publishable key and sends the session access token. FastAPI verifies it against `PENNY_SUPABASE_URL/auth/v1/.well-known/jwks.json` (ES256 or RS256, cached for ten minutes), and checks the issuer, `aud=authenticated`, `role=authenticated`, expiry, and subject. `PENNY_SUPABASE_JWT_SECRET` is only for legacy HS256 projects.
 - **Whose data:** the Supabase user whose UUID is in `PENNY_DEMO_OWNER_USER_ID` gets the fictional Maya data set. Every other signed-in user gets their own account, empty apart from a $0 chequing account and starter categories.
@@ -147,7 +148,7 @@ Rerun `npm run ios:build` after any frontend change or when the Mac's address ch
 
 Money is `bigint` cents. Only FastAPI touches these tables, over `PENNY_DATABASE_URL`: row level security is on with no policies, and the `anon` and `authenticated` roles have no grants, so the public Data API can't read or change them. All writes still go through the deterministic backend.
 
-Each request loads the user's data in one query, runs the same integer-cent domain code as before (`backend/app/dashboard_store.py`), and saves only the rows that changed, in one transaction (`backend/app/db/`). If another tab or device saved first, an edit gets `409` ("refresh and try again") instead of overwriting. Penny AI chats are saved to the account and follow the user across devices; chats saved only on a device before this are uploaded once.
+Each request loads the user's data in one query, runs the same integer-cent domain code as before (`backend/app/store/`), and saves only the rows that changed, in one transaction (`backend/app/db/`). If another tab or device saved first, an edit gets `409` ("refresh and try again") instead of overwriting. Penny AI chats are saved to the account and follow the user across devices; chats saved only on a device before this are uploaded once.
 
 ## Hosting
 
@@ -170,14 +171,26 @@ Never set `PENNY_DEMO_AUTH_TOKEN` in production (the API refuses to start). Choo
 
 ## Verification
 
-Automated verification is intentionally deferred during the active redesign phase. The Python modules in `backend/app/domain/finance.py` and `backend/app/coach/calculations.py` remain the authoritative financial calculation layer. Amounts are integer cents, and the frontend converts editable decimal strings to cents without floating-point money arithmetic. Run lint, type checking, builds, and end-to-end checks during the final verification phase before release.
+The modules in `backend/app/domain/` and `backend/app/coach/calculations.py` are the authoritative financial calculation layer. Amounts are integer cents, and the frontend converts editable decimal strings to cents without floating-point money arithmetic.
+
+```bash
+cd backend && uv run ruff check . && uv run ruff format --check . && uv run --with pytest pytest
+cd frontend && npm run typecheck && npm run lint && npm run build
+```
 
 ## Repository map
 
 ```text
 frontend/             Next.js, Tailwind CSS, shadcn/ui components, Supabase Auth client
 frontend/ios/         Native iOS shell (Capacitor) around the static export of the frontend
-backend/              FastAPI, Pydantic models, deterministic financial domain (app/domain), Penny AI (app/coach), Postgres persistence (app/db), Dockerfile
+backend/              FastAPI and its Dockerfile:
+  app/api/            HTTP routes, one router per area
+  app/store/          each person's data and every operation on it (one module per area)
+  app/domain/         deterministic, tested integer-cent financial rules
+  app/coach/          Penny AI: snapshot, tools, number grounding, proposals, saved chats
+  app/assist/         smaller AI helpers: quick add, search, statements, suggestions, explanations
+  app/learning/       Learn lessons and game rules
+  app/db/             Postgres persistence (load per request, save what changed)
 supabase/migrations/  Postgres schema, Auth trigger, grants, indexes, and RLS policies
 docs/architecture.md  System boundaries and data flow
 ```

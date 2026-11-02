@@ -19,7 +19,7 @@ import { cad, MENU, NAVIGATION, type View } from "./shared";
 const MONTH_VIEWS: View[] = ["today", "spending", "budgets"];
 export const THEME_ICONS: Record<ThemeSetting, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
 
-export const SHORTCUTS: { keys: string; action: string }[] = [
+const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "N", action: "Add a transaction" },
   { keys: "[  ]", action: "Previous / next month" },
   { keys: "1 – 9", action: "Jump between sections" },

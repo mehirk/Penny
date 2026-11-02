@@ -11,7 +11,7 @@ import { categoryIcon } from "./category-icons";
 import { AccountDetail } from "./account-detail";
 import { SafeDetail } from "./safe-detail";
 import { SpentDetail } from "./spent-detail";
-import { ACCOUNT_TYPE_LABELS } from "./dialogs";
+import { ACCOUNT_TYPE_LABELS } from "./labels";
 import { accountEmoji } from "./emoji";
 import { AmountsToggle, BigAmount, cad, type View } from "./shared";
 import { useSubpage } from "./subpage";
@@ -19,8 +19,6 @@ import { useTransfers } from "./transfer-dialog";
 
 // Accounts read like the sum: what you have, then what you owe.
 const ACCOUNT_ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "credit"];
-
-export { categoryIcon };
 
 type Props = {
   dashboard: Dashboard;

@@ -8,6 +8,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from app.assist.budgets import smart_suggestions
 from app.coach import calculations as calc
 from app.coach.context import CoachContext
 from app.coach.facts import parse_cad
@@ -360,8 +361,6 @@ def propose_budget_limit(
 def propose_budget_plan(ctx: CoachContext, monthly_income: str | None) -> dict[str, Any]:
     """A whole month's budget from everything known (plus income the user stated), shown as a
     card the user can add. Nothing is applied here."""
-    from app.coach.assist import smart_suggestions  # assist imports this package's context
-
     stated = _amount(monthly_income, "monthly_income") if monthly_income else None
     suggestions, plan, summary = smart_suggestions(ctx.store, ctx.user_id, ctx.facts, stated)
     ctx.budget_plan = BudgetPlanCard(

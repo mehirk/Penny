@@ -13,7 +13,7 @@ import { formatLongDate, formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { FREQUENCIES, PaymentMode } from "./bill-options";
-import { categoryOptions } from "./dialogs";
+import { categoryOptions } from "./labels";
 import { cad, describeError, dueLabel, EmptyState, Field } from "./shared";
 
 export type BillInput = Omit<Bill, "id" | "last_paid_on">;

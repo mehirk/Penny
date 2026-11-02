@@ -100,9 +100,9 @@ def test_rejects_bad_savings_share() -> None:
 
 
 def test_demo_store_plan_uses_every_pay_source_and_leaves_bills_out() -> None:
-    from app.dashboard_store import DashboardStore
+    from app.store import demo_store
 
-    store = DashboardStore()
+    store = demo_store()
     owner = store.snapshot().profile.id
     plan, source = store.smart_budget_plan(owner)
     assert source == "pay"
@@ -118,9 +118,9 @@ def test_coach_builds_a_budget_card_without_the_model() -> None:
     from app.coach.coach import Coach
     from app.coach.models import ChatRequest
     from app.config import Settings
-    from app.dashboard_store import DashboardStore
+    from app.store import demo_store
 
-    store = DashboardStore()
+    store = demo_store()
     owner = store.snapshot().profile.id
     coach = Coach(store, Settings(_env_file=None, openai_api_key=None))  # type: ignore[call-arg]
     request = ChatRequest.model_validate(

@@ -97,18 +97,10 @@ class FinancialHealthFactor(DashboardModel):
     explanation: str
 
 
-class MonthPoint(DashboardModel):
-    month: date
-    value: int
-
-
 class FinancialHealth(DashboardModel):
     score: int = Field(ge=0, le=100)
-    # Scores for the months before this one, oldest first (empty until computed).
-    history: list[MonthPoint] = []
     factors: list[FinancialHealthFactor]
     methodology: str
-    limitations: list[str]
 
 
 class SpendingClassification(DashboardModel):
@@ -169,14 +161,6 @@ class PayOverview(DashboardModel):
     upcoming: list[UpcomingPay]  # every payday in the next 35 days, soonest first
 
 
-class NetWorthSnapshot(DashboardModel):
-    cash_cents: int = Field(ge=0)
-    savings_cents: int = Field(ge=0)
-    investments_cents: int | None
-    liabilities_cents: int = Field(ge=0)
-    net_worth_cents: int
-
-
 class AccountGoal(DashboardModel):
     id: str
     name: str
@@ -208,8 +192,6 @@ class AccountsOverview(DashboardModel):
     accounts: list[AccountBalance]
     spending_cents: int = Field(ge=0)  # chequing and cash
     savings_cents: int = Field(ge=0)
-    investments_cents: int = Field(ge=0)
-    other_cents: int = Field(ge=0)
     assets_cents: int = Field(ge=0)
     owed_cents: int = Field(ge=0)
     net_worth_cents: int
@@ -231,7 +213,6 @@ class RecurringExpense(DashboardModel):
     auto_record: bool
     last_paid_on: date | None
     payment_count: int = Field(ge=0)
-    last_paid_cents: int | None = None
     total_paid_cents: int = Field(default=0, ge=0)
     paid_this_month: bool = False
     # overdue: the due date passed and it isn't paid; due_soon: within 7 days; later: after that.
@@ -291,29 +272,12 @@ class RecurringSummary(DashboardModel):
     suggestions: list[RecurringSuggestion]
     fixed_monthly_cents: int = Field(ge=0)
     subscriptions_monthly_cents: int = Field(ge=0)
-    due_next_7_days_cents: int = Field(ge=0)
-    due_before_payday_cents: int = Field(ge=0)
     # Unpaid bills (including overdue) through the end of this month; Safe to spend holds this back.
     unpaid_bills_cents: int = Field(ge=0)
     # The due dates behind unpaid_bills_cents, soonest (or most overdue) first.
     unpaid: list[UpcomingPayment] = Field(default_factory=list)
-    unpaid_until: date | None = None
     share_of_income_basis_points: int | None
     methodology: str
-
-
-class MoneyDay(DashboardModel):
-    day: date
-    future: bool
-    score: int | None = Field(default=None, ge=0, le=100)
-    zone: Literal["green", "yellow", "red"] | None = None
-    pace_points: int | None = None
-    day_points: int | None = None
-    flexible_spent_cents: int = Field(ge=0)
-    total_spent_cents: int = Field(ge=0)
-    income_cents: int = Field(ge=0)
-    transaction_count: int = Field(ge=0)
-    due: list[str]
 
 
 class MoneyStreaks(DashboardModel):
@@ -325,61 +289,24 @@ class MoneyStreaks(DashboardModel):
 
 
 class MoneyCalendar(DashboardModel):
-    month: date
+    """The daily Money Score for the month shown (app.domain.money_days)."""
+
+    # The app's "today" while the current month is shown; None for past months.
     today: date | None
     today_score: int | None
     today_zone: Literal["green", "yellow", "red"] | None
-    flexible_budget_cents: int = Field(ge=0)
     daily_allowance_cents: int = Field(ge=0)
-    days: list[MoneyDay]
     streaks: MoneyStreaks
     methodology: str
-
-
-class Lesson(DashboardModel):
-    id: str
-    track: Literal["budgeting", "saving", "tax", "credit", "rules", "investing"]
-    difficulty: Literal["easy", "medium", "hard"]
-    title: str
-    xp_reward: int = Field(gt=0)
-    completed: bool
-
-
-class LearningProgress(DashboardModel):
-    xp_total: int = Field(ge=0)
-    level: int = Field(ge=1)
-    level_xp: int = Field(ge=0)
-    level_size_xp: int = Field(gt=0)
-    streak_days: int = Field(ge=0)
-    completed_today: bool
-    # Monday to Sunday of the current week: whether a lesson was completed that day.
-    week_activity: list[bool]
-    next_lesson: Lesson | None
-    lessons: list[Lesson]
-
-
-class FoundationCheck(DashboardModel):
-    id: str
-    title: str
-    status: Literal["met", "in_progress", "not_met"]
-    detail: str
 
 
 class HomeSummary(DashboardModel):
     """Headline numbers for the home screen; every value is computed from transactions."""
 
+    # Chequing and cash: money for day-to-day spending.
     available_cents: int
-    cash_cents: int
-    # Month-end cash (chequing, cash, savings) for the last six months, oldest first.
-    cash_history: list[MonthPoint]
-    cash_change_basis_points: int | None
-    savings_cents: int
-    savings_history: list[MonthPoint]
-    monthly_saved_cents: int
-    monthly_goal_cents: int
     # Month-to-date spending vs the previous month over the same days.
     spending_change_basis_points: int | None
-    weekly_flexible_cents: int
 
 
 class Period(DashboardModel):
@@ -432,8 +359,6 @@ class BudgetPlan(DashboardModel):
     fixed_cents: int = Field(ge=0)
     fixed_paid_cents: int = Field(ge=0)
     variable_cents: int = Field(ge=0)
-    # Spending outside the recurring bills, measured against the variable budget.
-    variable_spent_cents: int = Field(ge=0)
     total_cents: int = Field(ge=0)
     fixed: list[FixedCost]
 
@@ -484,7 +409,6 @@ class SafeToSpendBreakdown(DashboardModel):
 
 
 class DashboardTotals(Summary):
-    available_balance_cents: int
     total_budget_cents: int = Field(ge=0)
     savings_rate_basis_points: int
 
@@ -507,15 +431,10 @@ class DashboardResponse(DashboardModel):
     financial_health: FinancialHealth
     money_calendar: MoneyCalendar
     recurring: RecurringSummary
-    learning: LearningProgress
-    investing_foundations: list[FoundationCheck]
     spending_classification: SpendingClassification
     bills: list[Bill]
-    # The main pay (the largest a month): it sets the pay cycles. `pay` has every source.
-    pay_schedule: PaySchedule | None
     pay: PayOverview | None = None
     home: HomeSummary
-    net_worth: NetWorthSnapshot
     accounts_overview: AccountsOverview
     previous_month_cash_flow_cents: int | None
     # Safe to spend: negative when spending has passed the budget.
@@ -725,28 +644,6 @@ class CreditUtilizationResponse(DashboardModel):
     within_common_guideline: bool
 
 
-class GrowthRequest(DashboardModel):
-    initial_cents: int = Field(ge=0, le=100_000_000)
-    monthly_cents: int = Field(ge=0, le=10_000_000)
-    years: int = Field(ge=1, le=50)
-    annual_return_basis_points: int = Field(ge=0, le=2_000)
-    annual_fee_basis_points: int = Field(default=0, ge=0, le=500)
-
-
-class GrowthPoint(DashboardModel):
-    year: int
-    contributed_cents: int
-    balance_cents: int
-
-
-class GrowthResponse(DashboardModel):
-    points: list[GrowthPoint]
-    contributed_cents: int
-    balance_cents: int
-    growth_cents: int
-    fees_cost_cents: int
-
-
 class CategorySuggestion(DashboardModel):
     category_id: str | None
     category_name: str | None
@@ -800,62 +697,6 @@ class AccountPatch(DashboardModel):
     payment_due_day: int | None = Field(default=None, ge=1, le=31)
 
 
-class ForecastEvent(DashboardModel):
-    name: str
-    # Signed: income positive, spending negative.
-    amount_cents: int
-    kind: Literal["income", "bill", "spending", "daily_budget", "planned"]
-    projected: bool
-
-
-class ForecastDay(DashboardModel):
-    day: date
-    start_cents: int
-    end_cents: int
-    status: Literal["comfortable", "tight", "short"]
-    past: bool
-    is_today: bool
-    is_payday: bool
-    events: list[ForecastEvent]
-
-
-class PayCycle(DashboardModel):
-    offset: int
-    label: str
-    start: date
-    end: date
-
-
-class CycleReview(DashboardModel):
-    income_cents: int = Field(ge=0)
-    spent_cents: int = Field(ge=0)
-    biggest_expense_name: str | None
-    biggest_expense_cents: int | None
-    previous_spent_cents: int | None
-
-
-class ForecastResponse(DashboardModel):
-    cycles: list[PayCycle]
-    cycle: PayCycle
-    mode: Literal["bills", "budget"]
-    days: list[ForecastDay]
-    starting_cents: int
-    ending_cents: int
-    lowest_day: date
-    lowest_cents: int
-    next_payday: date
-    days_until_payday: int
-    daily_budget_cents: int
-    tight_threshold_cents: int
-    review: CycleReview | None
-    methodology: str
-
-
-class ImportRequest(DashboardModel):
-    csv: str = Field(min_length=1, max_length=400_000)
-    account_id: str
-
-
 class ImportRow(DashboardModel):
     """One reviewed row from an uploaded statement."""
 
@@ -875,8 +716,6 @@ class ImportResult(DashboardModel):
     imported: int
     skipped: int
     errors: list[str]
-    # Rows the keyword rules couldn't place that Penny AI categorized instead.
-    ai_categorized: int = 0
     dashboard: DashboardResponse
 
 
@@ -887,7 +726,6 @@ class BillHistory(DashboardModel):
     total_paid_cents: int = Field(ge=0)
     paid_this_year_cents: int = Field(ge=0)
     average_cents: int = Field(ge=0)
-    auto_paid_count: int = Field(ge=0)
 
 
 # ------------------------------------------------------------------ onboarding

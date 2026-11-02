@@ -13,10 +13,10 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from threading import RLock
 
-from app.dashboard_store import DashboardStore
 from app.db import repository
 from app.db.pool import connection
 from app.db.rows import Row, Rows, profile_row, to_rows
+from app.store.store import DashboardStore
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class Unit:
                         raise
         snapshot, version = found
         return _Loaded(
-            DashboardStore.restore(snapshot, owners),
+            DashboardStore(snapshot, owners),
             profile_row(snapshot.profile),
             to_rows(snapshot),
             version,

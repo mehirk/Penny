@@ -41,9 +41,9 @@ def test_undo_refuses_when_the_money_has_been_spent() -> None:
 
 def _store_with_savings():  # type: ignore[no-untyped-def]
     from app.dashboard_models import AccountWrite
-    from app.dashboard_store import _fresh_store
+    from app.store import fresh_store
 
-    store = _fresh_store("user-1", None)
+    store = fresh_store("user-1", None)
     result = store.create_account(
         "user-1", AccountWrite(name="Savings", account_type="savings", balance_cents=600_000)
     )

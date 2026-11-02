@@ -8,7 +8,7 @@ import { Input, Select } from "@/components/ui/input";
 import { type AccountType, type Dashboard, onboardingApi, type OnboardingAnswers, type PayFrequency, type StarterCheck, type StarterPlan } from "@/lib/api";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { ACCOUNT_TYPE_LABELS } from "./dialogs";
+import { ACCOUNT_TYPE_LABELS } from "./labels";
 import { accountEmoji } from "./emoji";
 import { cad, describeError, DueDaySelect, Field } from "./shared";
 

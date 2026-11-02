@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import type { AccountBalance, AccountType, Dashboard } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ACCOUNT_TYPE_LABELS } from "./dialogs";
+import { ACCOUNT_TYPE_LABELS } from "./labels";
 import { AmountsToggle, cad, EmptyState, type View } from "./shared";
 import { accountEmoji } from "./emoji";
 import { AccountDetail } from "./account-detail";

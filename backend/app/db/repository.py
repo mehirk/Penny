@@ -6,7 +6,6 @@ from psycopg import Connection, sql
 from psycopg.rows import DictRow
 from psycopg.types.json import Jsonb
 
-from app.dashboard_store import StoreSnapshot
 from app.db.rows import (
     JSON_COLUMNS,
     ORDERED_TABLES,
@@ -17,6 +16,7 @@ from app.db.rows import (
     diff,
     from_rows,
 )
+from app.store.state import StoreSnapshot
 
 
 class StaleDataError(Exception):

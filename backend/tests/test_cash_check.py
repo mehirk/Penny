@@ -55,9 +55,9 @@ def test_store_waits_until_three_days_before() -> None:
     from datetime import timedelta
 
     from app.dashboard_models import AccountWrite, BillWrite
-    from app.dashboard_store import _fresh_store
+    from app.store import fresh_store
 
-    store = _fresh_store("user-1", None)
+    store = fresh_store("user-1", None)
     store.create_account(
         "user-1", AccountWrite(name="Savings", account_type="savings", balance_cents=600_000)
     )

@@ -10,10 +10,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from app.dashboard_models import Bill, Category, GoalContribution, Mission, PaySchedule, Transfer
-from app.dashboard_store import StoreSnapshot
 from app.learning.engine import Attempt, Learner, LessonResult
 from app.learning.models import AttemptView, LearnProfile
 from app.models import Account, DemoUser, Transaction
+from app.store.state import StoreSnapshot
 
 Row = dict[str, Any]
 TableRows = dict[tuple[Any, ...], Row]

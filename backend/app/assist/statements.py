@@ -5,7 +5,7 @@ money went. `app.domain.statement` turns that into integer cents, drops impossib
 reason, and checks the rows against the statement's own opening and closing balances. Nothing is
 saved here; the user reviews the rows and imports them separately.
 
-A CSV that the built-in importer understands is read without the model at all.
+A CSV that the built-in reader understands is read without the model at all.
 """
 
 import base64
@@ -17,7 +17,7 @@ from typing import Any, Literal
 from fastapi import HTTPException, status
 from pydantic import Field
 
-from app.coach.assist import AssistModel, Source
+from app.assist.common import AssistModel, Source
 from app.coach.llm import ModelUnavailable, ask_json
 from app.config import Settings
 from app.dashboard_models import Category
@@ -163,10 +163,8 @@ def _rows_out(
     return out
 
 
-def _from_csv_rules(
-    text: str, today: date, categories: list[Category], accounts: list[Account]
-) -> StatementDraft | None:
-    """A CSV the built-in importer reads cleanly needs no model."""
+def _from_csv_rules(text: str, today: date, categories: list[Category]) -> StatementDraft | None:
+    """A CSV the built-in reader (app.domain.csv_import) reads cleanly needs no model."""
     parsed, errors = parse_transactions_csv(text, today)
     if not parsed or len(errors) > len(parsed) // 10:
         return None
@@ -304,7 +302,7 @@ async def read_statement(
                 ) from error
         else:
             text = data.decode("utf-8-sig", errors="replace")
-            ruled = _from_csv_rules(text, today, categories, accounts)
+            ruled = _from_csv_rules(text, today, categories)
             if ruled:
                 return ruled
         if not text.strip():

@@ -207,16 +207,6 @@ class Learner:
     def lesson_xp(self) -> int:
         return sum(result.xp_earned for result in self.results.values())
 
-    def next_lesson(self) -> LessonContent | None:
-        """The first open, unpassed lesson in the learner's topics, easiest tier first."""
-        chosen = set(self.profile.topics)
-        options = [
-            lesson
-            for lesson in lessons_for(self.country)
-            if lesson.topic in chosen and lesson.id not in self.results and self.is_unlocked(lesson)
-        ]
-        return min(options, key=lambda lesson: TIERS.index(lesson.tier), default=None)
-
     def badges(self, today: date) -> list[Badge]:
         passed = [LESSONS_BY_ID[lesson_id] for lesson_id in self.results]
         topics_mastered = any(

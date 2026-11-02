@@ -12,7 +12,7 @@ import { formatShortDate } from "@/lib/format";
 import { EMPTY_FILTERS, filterTransactions, hasActiveFilters, type KindFilter, sortTransactions, type TransactionFilters, type TransactionSort, transactionsToCsv } from "@/lib/transactions";
 import { cn } from "@/lib/utils";
 import { BackBar } from "./back-bar";
-import { categoryOptions } from "./dialogs";
+import { categoryOptions } from "./labels";
 import { cad, EmptyState } from "./shared";
 import { SwipeRow } from "./swipe-row";
 import { categoryIcon } from "./category-icons";
@@ -261,7 +261,7 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onOpen, on
 }
 
 /** The category's icon, as on Home, so a list of purchases can be scanned by kind. */
-export function TransactionIdentity({ item, category }: { item: Transaction; category: Category | undefined }) {
+function TransactionIdentity({ item, category }: { item: Transaction; category: Category | undefined }) {
   const income = item.kind === "income";
   return (
     <>

@@ -4,7 +4,7 @@ export type SpendingFrom = "chequing" | "chequing_and_savings";
 export type AccountType = "chequing" | "savings" | "credit" | "cash" | "investment" | "other";
 export type AccountBalance = { id: string; name: string; account_type: AccountType; balance_cents: number; net_cents: number; credit_limit_cents: number | null; available_credit_cents: number | null; utilization_basis_points: number | null; goals: { id: string; name: string; current_cents: number }[]; goal_cents: number; free_cents: number | null; money_in_cents: number; money_out_cents: number; last_activity_on: string | null };
 /** Every account and how they add up, as of today (whatever period is on screen). */
-export type AccountsOverview = { accounts: AccountBalance[]; spending_cents: number; savings_cents: number; investments_cents: number; other_cents: number; assets_cents: number; owed_cents: number; net_worth_cents: number; goal_cents: number; goal_shortfall_cents: number };
+export type AccountsOverview = { accounts: AccountBalance[]; spending_cents: number; savings_cents: number; assets_cents: number; owed_cents: number; net_worth_cents: number; goal_cents: number; goal_shortfall_cents: number };
 export type Account = { id: string; name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day: number | null };
 /** A credit card's next payment (from its due day) and what's owed on it now. */
 export type CardPayment = { account_id: string; account_name: string; due_on: string; days_until_due: number; owed_cents: number };
@@ -15,19 +15,15 @@ export type GoalContribution = { id: string; amount_cents: number; from_account_
 export type SavingsGoal = { id: string; name: string; target_cents: number; current_cents: number; target_date: string | null; status: "active" | "completed" | "paused"; progress_basis_points: number; monthly_needed_cents: number | null; account_id: string | null; contributed_this_month_cents: number; recent_contributions: GoalContribution[] };
 export type Mission = { id: string; title: string; description: string; xp_reward: number; completed: boolean };
 export type CategorySpending = { category_id: string | null; category_name: string; colour_token: string; spent_cents: number; share_basis_points: number };
-export type FinancialHealthFactor = { id: string; label: string; score: number; max_score: number; explanation: string };
-export type MonthPoint = { month: string; value: number };
-export type FinancialHealth = { score: number; history: MonthPoint[]; factors: FinancialHealthFactor[]; methodology: string; limitations: string[] };
-export type Zone = "green" | "yellow" | "red";
-export type MoneyDay = { day: string; future: boolean; score: number | null; zone: Zone | null; pace_points: number | null; day_points: number | null; flexible_spent_cents: number; total_spent_cents: number; income_cents: number; transaction_count: number; due: string[] };
+type FinancialHealthFactor = { id: string; label: string; score: number; max_score: number; explanation: string };
+export type FinancialHealth = { score: number; factors: FinancialHealthFactor[]; methodology: string };
+type Zone = "green" | "yellow" | "red";
+/** The daily Money Score. `today` is the app's "today" while the current month is shown. */
 export type MoneyCalendar = {
-  month: string;
   today: string | null;
   today_score: number | null;
   today_zone: Zone | null;
-  flexible_budget_cents: number;
   daily_allowance_cents: number;
-  days: MoneyDay[];
   streaks: { current_green: number; best_green: number; no_spend_days: number; green_days: number; scored_days: number };
   methodology: string;
 };
@@ -40,18 +36,15 @@ export type PaySchedule = PayScheduleWrite & { id: string };
 export type PaySource = PaySchedule & { monthly_cents: number; upcoming: string[] };
 /** Every source of pay, their monthly total, and every payday in the next 35 days. */
 export type PayOverview = { monthly_cents: number; sources: PaySource[]; upcoming: { pay_id: string; name: string; on: string; amount_cents: number }[] };
-export type RecurringExpense = { id: string; name: string; category_name: string | null; amount_cents: number; monthly_cents: number; frequency: BillFrequency; next_due: string; days_until_due: number; kind: "bill" | "subscription"; auto_record: boolean; last_paid_on: string | null; payment_count: number; last_paid_cents: number | null; total_paid_cents: number; paid_this_month: boolean; status: "overdue" | "due_soon" | "later" };
+export type RecurringExpense = { id: string; name: string; category_name: string | null; amount_cents: number; monthly_cents: number; frequency: BillFrequency; next_due: string; days_until_due: number; kind: "bill" | "subscription"; auto_record: boolean; last_paid_on: string | null; payment_count: number; total_paid_cents: number; paid_this_month: boolean; status: "overdue" | "due_soon" | "later" };
 export type RecurringPayment = { bill_id: string; name: string; occurred_on: string; amount_cents: number; paid_automatically: boolean | null };
 export type UpcomingPayment = { bill_id: string; name: string; due_on: string; days_until_due: number; amount_cents: number; auto_record: boolean; kind: "bill" | "subscription" };
 export type RecurringMonth = { paid_count: number; paid_cents: number; left_count: number; left_cents: number; overdue_count: number; overdue_cents: number };
-export type RecurringSuggestion = { name: string; category_id: string | null; amount_cents: number; next_due: string };
-export type RecurringSummary = { items: RecurringExpense[]; bill_count: number; subscription_count: number; this_month: RecurringMonth | null; upcoming: UpcomingPayment[]; recent_payments: RecurringPayment[]; suggestions: RecurringSuggestion[]; fixed_monthly_cents: number; subscriptions_monthly_cents: number; due_next_7_days_cents: number; due_before_payday_cents: number; unpaid_bills_cents: number; unpaid: UpcomingPayment[]; unpaid_until: string | null; share_of_income_basis_points: number | null; methodology: string };
-export type BillHistory = { bill: Bill; payments: Transaction[]; payment_count: number; total_paid_cents: number; paid_this_year_cents: number; average_cents: number; auto_paid_count: number };
+type RecurringSuggestion = { name: string; category_id: string | null; amount_cents: number; next_due: string };
+export type RecurringSummary = { items: RecurringExpense[]; bill_count: number; subscription_count: number; this_month: RecurringMonth | null; upcoming: UpcomingPayment[]; recent_payments: RecurringPayment[]; suggestions: RecurringSuggestion[]; fixed_monthly_cents: number; subscriptions_monthly_cents: number; unpaid_bills_cents: number; unpaid: UpcomingPayment[]; share_of_income_basis_points: number | null; methodology: string };
+export type BillHistory = { bill: Bill; payments: Transaction[]; payment_count: number; total_paid_cents: number; paid_this_year_cents: number; average_cents: number };
 export type LessonTrack = "budgeting" | "saving" | "tax" | "credit" | "rules" | "investing";
 export type LessonTier = "easy" | "medium" | "hard";
-export type Lesson = { id: string; track: LessonTrack; difficulty: LessonTier; title: string; xp_reward: number; completed: boolean };
-export type LearningProgress = { xp_total: number; level: number; level_xp: number; level_size_xp: number; streak_days: number; completed_today: boolean; week_activity: boolean[]; next_lesson: Lesson | null; lessons: Lesson[] };
-export type FoundationCheck = { id: string; title: string; status: "met" | "in_progress" | "not_met"; detail: string };
 /** The date range a dashboard covers. `phrase` reads after a verb: "spent $X this month". */
 export type Period = { start: string; end: string; label: string; phrase: string; single_month: boolean; month_count: number };
 export type Dashboard = {
@@ -72,15 +65,12 @@ export type Dashboard = {
   financial_health: FinancialHealth;
   money_calendar: MoneyCalendar;
   recurring: RecurringSummary;
-  learning: LearningProgress;
-  investing_foundations: FoundationCheck[];
   spending_classification: { needs_cents: number; wants_cents: number; needs_basis_points: number; wants_basis_points: number };
   bills: Bill[];
-  /** The main pay (largest a month); it sets the pay cycles. */
-  pay_schedule: PaySchedule | null;
+  /** Every source of pay; the largest a month is first and sets the pay cycles. */
   pay: PayOverview | null;
-  home: { available_cents: number; cash_cents: number; cash_history: MonthPoint[]; cash_change_basis_points: number | null; savings_cents: number; savings_history: MonthPoint[]; monthly_saved_cents: number; monthly_goal_cents: number; spending_change_basis_points: number | null; weekly_flexible_cents: number };
-  net_worth: { cash_cents: number; savings_cents: number; investments_cents: number | null; liabilities_cents: number; net_worth_cents: number };
+  /** Spending money now, and month-to-date spending against last month's same days. */
+  home: { available_cents: number; spending_change_basis_points: number | null };
   accounts_overview: AccountsOverview;
   previous_month_cash_flow_cents: number | null;
   spending_power_cents: number;
@@ -95,10 +85,9 @@ export type Dashboard = {
   needs_onboarding: boolean;
   /** How long Safe to spend has to last; null when the period shown doesn't include today. */
   spending_runway: SpendingRunway | null;
-  totals: { available_balance_cents: number; income_cents: number; spending_cents: number; cash_flow_cents: number; total_budget_cents: number; budget_remaining_cents: number; savings_contributions_cents: number; savings_rate_basis_points: number };
+  totals: { income_cents: number; spending_cents: number; cash_flow_cents: number; total_budget_cents: number; budget_remaining_cents: number; savings_rate_basis_points: number };
 };
 
-/** Each step of Safe to spend, as the API computed it. */
 /** Money the user moved between their own accounts in their bank (Penny records it; it never moves money). */
 export type TransferWrite = { from_account_id: string; to_account_id: string; amount_cents: number; occurred_on: string; note: string | null };
 export type Transfer = TransferWrite & { id: string; kind: "transfer" | "card_payment" };
@@ -106,7 +95,8 @@ export type CashWarning = { account_id: string; account_name: string; due_cents:
 /** One recurring bill's share of the month's budget: paid so far plus what's still due. */
 export type FixedCost = { bill_id: string; name: string; category_id: string | null; kind: "bill" | "subscription"; amount_cents: number; paid_cents: number; due_cents: number; next_due_on: string | null };
 /** The month's budget: recurring bills (fixed) plus the category budgets (variable). */
-export type BudgetPlan = { fixed_cents: number; fixed_paid_cents: number; variable_cents: number; variable_spent_cents: number; total_cents: number; fixed: FixedCost[] };
+export type BudgetPlan = { fixed_cents: number; fixed_paid_cents: number; variable_cents: number; total_cents: number; fixed: FixedCost[] };
+/** Each step of Safe to spend, as the API computed it. */
 export type SafeToSpendBreakdown = { fixed_cents: number; variable_cents: number; budget_cents: number; spent_cents: number; unpaid_bills_cents: number; safe_cents: number; over_cents: number; has_budget: boolean };
 export type SpendingRunway = { until: string; until_payday: boolean; days_left: number; per_day_cents: number; status: "on_track" | "tight" | "empty" | "over" };
 
@@ -119,14 +109,13 @@ export type History = {
   categories: CategorySpending[];
   data_months: string[];
 };
-export type Growth = { points: { year: number; contributed_cents: number; balance_cents: number }[]; contributed_cents: number; balance_cents: number; growth_cents: number; fees_cost_cents: number };
 export type CategorySuggestion = { category_id: string | null; category_name: string | null; necessity: "need" | "want" | null; matched: string | null; source: "rules" | "ai" | null };
 export type CreditUtilization = { balance_cents: number; credit_limit_cents: number; utilization_basis_points: number; within_common_guideline: boolean };
 
 export type TransactionWrite = Omit<Transaction, "id" | "category" | "necessity" | "auto_categorized" | "bill_id" | "paid_automatically" | "unusual"> & { repeat?: { frequency: BillFrequency; next_due: string | null; auto_record: boolean } | null };
 /** One purchase or deposit across several accounts; the API saves one transaction per account. */
 export type SplitTransactionWrite = Omit<TransactionWrite, "account_id" | "amount_cents"> & { splits: { account_id: string; amount_cents: number }[] };
-export type GoalWrite = Pick<SavingsGoal, "name" | "target_cents" | "current_cents" | "target_date" | "account_id">;
+type GoalWrite = Pick<SavingsGoal, "name" | "target_cents" | "current_cents" | "target_date" | "account_id">;
 export type CoachRole = "user" | "assistant";
 export type CoachFact = { label: string; display: string; cents: number | null; basis_points: number | null; source: string };
 export type CoachProposal = { id: string; version: string; kind: "goal_contribution" | "budget_limit"; title: string; reason: string; target_id: string; target_name: string; current_cents: number; proposed_cents: number };
@@ -151,7 +140,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
  * FastAPI sends `detail` as a string for app errors, but as a list of {loc, msg} objects when a
  * request fails validation. Either way, turn it into a readable sentence.
  */
-export function errorText(detail: unknown): string | null {
+function errorText(detail: unknown): string | null {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     const messages = detail
@@ -252,9 +241,8 @@ export const dashboardApi = {
   createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day?: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
   updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteAccount: (id: string) => request(`/api/v1/accounts/${id}`, { method: "DELETE" }),
-  importRows: (account_id: string, rows: ImportRow[]) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; ai_categorized: number; dashboard: Dashboard }>("/api/v1/transactions/import-rows", { method: "POST", body: JSON.stringify({ account_id, rows }) }),
+  importRows: (account_id: string, rows: ImportRow[]) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; dashboard: Dashboard }>("/api/v1/transactions/import-rows", { method: "POST", body: JSON.stringify({ account_id, rows }) }),
   applyBudgetChanges: (changes: { budget_id: string; limit_cents: number }[], month?: string) => request(inMonth("/api/v1/budgets/changes", month), { method: "POST", body: JSON.stringify({ changes }) }),
-  importCsv: (csv: string, account_id: string) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; ai_categorized: number; dashboard: Dashboard }>("/api/v1/transactions/import", { method: "POST", body: JSON.stringify({ csv, account_id }) }),
   suggestCategory: (description: string, kind: Transaction["kind"]) => authorizedRequest<CategorySuggestion>(`/api/v1/categorize?description=${encodeURIComponent(description)}&kind=${kind}`),
 };
 
@@ -306,7 +294,6 @@ export const onboardingApi = {
 
 /** Smart helpers. They only read data or fill forms; every change still goes through a user action. */
 export const assistApi = {
-  parseTransaction: (text: string) => authorizedRequest<ParsedTransaction>("/api/v1/assist/parse-transaction", { method: "POST", body: JSON.stringify({ text }) }),
   search: (text: string) => authorizedRequest<SearchFilters>("/api/v1/assist/search", { method: "POST", body: JSON.stringify({ text }) }),
   parseTransactions: (text: string) => authorizedRequest<{ items: ParsedTransaction[] }>("/api/v1/assist/parse-transactions", { method: "POST", body: JSON.stringify({ text }) }),
   spendingTake: (start: string, end: string) => authorizedRequest<AssistText>(`/api/v1/assist/spending-take?start=${start}&end=${end}`),
@@ -343,7 +330,6 @@ export const learnApi = {
   answer: (attemptId: string, body: { question_id: string; choices?: string[]; value?: string }) => authorizedRequest<AnswerResult>(`/api/v1/learn/attempts/${encodeURIComponent(attemptId)}/answers`, { method: "POST", body: JSON.stringify(body) }),
 };
 
-
 export type ChartMonth = { month: string; income_cents: number; spending_cents: number; net_cents: number; budget_cents: number; needs_cents: number; wants_cents: number; categories: { category_id: string | null; spent_cents: number }[] };
 export type ChartCategory = { category_id: string | null; category_name: string; spent_cents: number; share_basis_points: number };
 export type ChartAccount = { account_id: string; account_name: string; account_type: string; income_cents: number; spending_cents: number };
@@ -364,7 +350,6 @@ export const historyApi = {
 };
 
 export const calculationsApi = {
-  growth: (body: { initial_cents: number; monthly_cents: number; years: number; annual_return_basis_points: number; annual_fee_basis_points: number }) => authorizedRequest<Growth>("/api/v1/calculations/growth", { method: "POST", body: JSON.stringify(body) }),
   creditUtilization: (balance_cents: number, credit_limit_cents: number) => authorizedRequest<CreditUtilization>("/api/v1/calculations/credit-utilization", { method: "POST", body: JSON.stringify({ balance_cents, credit_limit_cents }) }),
 };
 

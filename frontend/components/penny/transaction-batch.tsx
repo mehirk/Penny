@@ -9,7 +9,7 @@ import { type BillFrequency, type Dashboard, dashboardApi, type ParsedTransactio
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { FREQUENCIES, nextAfter } from "./bill-options";
-import { categoryOptions } from "./dialogs";
+import { categoryOptions } from "./labels";
 import { cad } from "./shared";
 
 export type Draft = {

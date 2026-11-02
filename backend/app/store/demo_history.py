@@ -3,7 +3,7 @@
 
 Every amount is invented integer cents for Maya Singh, a fictional student. The table is
 fixed so totals, tests, and charts are reproducible. October 2026 (the demo's current
-month) lives in `fixtures.py` and is not repeated here.
+month) lives in `seed.py` and is not repeated here.
 """
 
 from dataclasses import dataclass

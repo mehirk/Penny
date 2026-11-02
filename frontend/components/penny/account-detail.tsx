@@ -9,7 +9,7 @@ import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { BackBar } from "./back-bar";
 import { categoryIcon } from "./category-icons";
-import { ACCOUNT_TYPE_LABELS } from "./dialogs";
+import { ACCOUNT_TYPE_LABELS } from "./labels";
 import { accountEmoji } from "./emoji";
 import { BigAmount, cad } from "./shared";
 import { useTransfers } from "./transfer-dialog";
