@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, BarChart3, ChevronRight, CreditCard, Home, PiggyBank, ShoppingCart, Sparkles, TrendingUp, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BarChart3, X, ChevronRight, CreditCard, Home, PiggyBank, ShoppingCart, Sparkles, TrendingUp, type LucideIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import type { AccountType, Dashboard, SpendingRunway, Transaction } from "@/lib/api";
@@ -207,14 +207,35 @@ function SafeToSpendHero({ dashboard, onOpen, onSetBudgets }: Pick<Props, "dashb
  * Heads-up: an account can't cover the bills still due from it this month (for example $0 in
  * Chequing with rent due). Safe to spend doesn't change; Penny never moves money.
  */
+const HEADS_UP_KEY = "penny-heads-up-dismissed";
+
+/** Heads-ups closed with ×, by warning, with the day they were closed (this device only). */
+function readDismissed(): Record<string, string> {
+  try { return JSON.parse(window.localStorage.getItem(HEADS_UP_KEY) ?? "{}") as Record<string, string>; } catch { return {}; }
+}
+
 function CashHeadsUp({ dashboard, onOpenAccount }: Pick<Props, "dashboard"> & { onOpenAccount: (id: string) => void }) {
   const transfers = useTransfers();
+  // The server only sends these from 3 days before a due date. Closing one hides it for the
+  // rest of today; it comes back tomorrow if the money still isn't there.
+  const today = dashboard.money_calendar.today ?? new Date().toISOString().slice(0, 10);
+  const [dismissed, setDismissed] = useState<Record<string, string>>(readDismissed);
+  const keyOf = (w: Dashboard["cash_warnings"][number]) => `${w.account_id}:${w.first_due_on}:${w.due_cents}`;
+  const shown = dashboard.cash_warnings.filter((w) => dismissed[keyOf(w)] !== today);
+  function dismiss(key: string) {
+    // Keep only today's entries, so the list never grows.
+    const next = { ...Object.fromEntries(Object.entries(dismissed).filter(([, day]) => day === today)), [key]: today };
+    setDismissed(next);
+    try { window.localStorage.setItem(HEADS_UP_KEY, JSON.stringify(next)); } catch { /* storage blocked: hidden until reload */ }
+  }
+  if (shown.length === 0) return null;
   return (
     <ul className="space-y-2.5" aria-label="Heads-up">
-      {dashboard.cash_warnings.map((w) => {
+      {shown.map((w) => {
         const bills = w.bill_names.length === 1 ? w.bill_names[0] : `${w.bill_names.length} bills`;
         return (
-          <li key={w.account_id} role="alert" className="rounded-[var(--radius-card)] border border-gold/50 bg-gold-soft p-4">
+          <li key={w.account_id} role="alert" className="relative rounded-[var(--radius-card)] border border-gold/50 bg-gold-soft p-4 pr-14">
+            <button type="button" aria-label="Hide until tomorrow" title="Hide until tomorrow" onClick={() => dismiss(keyOf(w))} className="absolute right-2 top-2 grid size-11 place-items-center rounded-full text-ink-subtle hover:bg-gold/20 hover:text-ink"><X className="size-4" aria-hidden="true" /></button>
             <p className="flex items-start gap-2 text-sm text-ink">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-gold-strong" aria-hidden="true" />
               <span>
@@ -226,8 +247,8 @@ function CashHeadsUp({ dashboard, onOpenAccount }: Pick<Props, "dashboard"> & { 
             </p>
             <div className="mt-3 ml-6 flex flex-wrap items-center gap-2">
               {w.cover_account_id && transfers && (
-                <button type="button" onClick={() => transfers.openTransfer({ from: w.cover_account_id!, to: w.account_id, amountCents: w.short_cents })} className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-on-primary">
-                  <ArrowLeftRight className="size-4" aria-hidden="true" />Move <span className="tabular">{cad(w.short_cents)}</span> from {w.cover_account_name}
+                <button type="button" onClick={() => transfers.openTransfer({ from: w.cover_account_id!, to: w.account_id, amountCents: w.short_cents })} className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-left text-sm font-semibold text-on-primary">
+                  <ArrowLeftRight className="size-4 shrink-0" aria-hidden="true" /><span>Move <span className="tabular">{cad(w.short_cents)}</span> from {w.cover_account_name}</span>
                 </button>
               )}
               <button type="button" onClick={() => onOpenAccount(w.account_id)} className="inline-flex min-h-11 items-center gap-1 px-2 text-sm font-semibold text-ink underline-offset-2 hover:underline">Open {w.account_name}<ChevronRight className="size-4" aria-hidden="true" /></button>

@@ -1,4 +1,4 @@
-"""Can each account cover the bills still due from it this month?
+"""Can each account cover the bills due from it in the next few days?
 
 Safe to spend follows the budget, not balances, so this is a separate heads-up: rent of $611 due
 from a chequing account holding $0 is a problem even when the budget is fine. For each account
@@ -6,11 +6,22 @@ whose balance is less than its unpaid bills, it reports the shortfall and, when 
 another account to move money from (savings first, then the one with the most). Credit cards
 are left out: a bill charged to a card adds to what's owed rather than needing cash.
 
+Only bills due within 3 days (or overdue) count, so the warning shows up when it's time to act.
+
 Integer cents only. Nothing here reads a database or calls a model.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date, timedelta
+
+# Warn only this close to a due date (overdue ones too); earlier, there's still time.
+HEADS_UP_DAYS = 3
+
+
+def due_soon(due_on: date, today: date) -> bool:
+    """True from 3 days before a due date onward (overdue included)."""
+    return due_on <= today + timedelta(days=HEADS_UP_DAYS)
 
 
 @dataclass(frozen=True, slots=True)

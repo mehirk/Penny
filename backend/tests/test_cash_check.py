@@ -38,3 +38,41 @@ def test_a_source_must_keep_enough_for_its_own_bills() -> None:
 def test_negative_amounts_are_rejected() -> None:
     with pytest.raises(ValueError):
         shortfalls([CHEQUING], [Due("chq", -1)])
+
+
+def test_due_soon_window() -> None:
+    from datetime import date
+
+    from app.domain.cash_check import due_soon
+
+    today = date(2026, 11, 10)
+    assert due_soon(date(2026, 11, 13), today)  # 3 days before
+    assert not due_soon(date(2026, 11, 14), today)  # 4 days: not yet
+    assert due_soon(date(2026, 11, 2), today)  # overdue
+
+
+def test_store_waits_until_three_days_before() -> None:
+    from datetime import timedelta
+
+    from app.dashboard_models import AccountWrite, BillWrite
+    from app.dashboard_store import _fresh_store
+
+    store = _fresh_store("user-1", None)
+    store.create_account(
+        "user-1", AccountWrite(name="Savings", account_type="savings", balance_cents=600_000)
+    )
+
+    def rent(days: int):  # type: ignore[no-untyped-def]
+        return BillWrite(
+            name="Rent",
+            amount_cents=61_100,
+            category_id="cat-housing",
+            account_id="acct-chequing",
+            next_due=store.today() + timedelta(days=days),
+            auto_record=False,
+        )
+
+    early = store.create_bill("user-1", rent(10))
+    assert early.cash_warnings == []
+    store.delete_bill("user-1", early.bills[0].id)
+    assert len(store.create_bill("user-1", rent(2)).cash_warnings) == 1
