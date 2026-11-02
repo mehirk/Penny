@@ -10,6 +10,8 @@ import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { ACCOUNT_TYPE_LABELS } from "./labels";
 import { accountEmoji } from "./emoji";
+import { PalettePicker, ThemePicker } from "./app-shell";
+import { DEFAULT_PALETTE, DEFAULT_SURFACE, usePreferences } from "./preferences";
 import { cad, describeError, DueDaySelect, Field } from "./shared";
 
 /** Starting suggestions only; every amount is the user's to change. */
@@ -39,18 +41,11 @@ const PAY_OPTIONS: { value: PayFrequency; label: string }[] = [
 ];
 const STEPS = ["Accounts", "Income", "Bills", "Everyday", "Savings", "Your plan"];
 
-type Bill = { key: string; on: boolean; name: string; category: string; amount: string; day: string };
+/** `due` is the next payment's date; `paid` says one due today is already paid. */
+type Bill = { key: string; on: boolean; name: string; category: string; amount: string; due: string; paid: boolean };
 type NewAccount = { name: string; type: AccountType; balance: string; limit: string; dueDay: string };
 
 const isoDay = (date: Date) => date.toISOString().slice(0, 10);
-/** The next date with this day of the month, on or after `today` (day capped at 28). */
-function nextOnDay(today: string, day: number): string {
-  const base = new Date(`${today}T00:00:00Z`);
-  const d = Math.min(28, Math.max(1, day));
-  const candidate = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), d));
-  if (candidate < base) candidate.setUTCMonth(candidate.getUTCMonth() + 1);
-  return isoDay(candidate);
-}
 /** Basis points for a typed percentage ("12" or "12.5", up to 2 decimals); invalid is null. */
 function percentToBasisPoints(value: string): number | null {
   const match = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(value.trim().replace(/%$/, ""));
@@ -70,6 +65,8 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
   const today = dashboard.money_calendar.today ?? isoDay(new Date());
   const categoryIds = useMemo(() => new Set(dashboard.categories.filter((c) => c.kind === "spending").map((c) => c.id)), [dashboard.categories]);
   const editable = dashboard.accounts_overview.accounts.filter((a) => a.last_activity_on === null);
+  // Picking a look comes first; it isn't one of the numbered steps.
+  const [intro, setIntro] = useState(true);
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -79,7 +76,7 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
   const [incomeMode, setIncomeMode] = useState<"pay" | "monthly">("pay");
   const [pay, setPay] = useState({ amount: "", frequency: "biweekly" as PayFrequency, next: today });
   const [monthly, setMonthly] = useState("");
-  const [bills, setBills] = useState<Bill[]>(() => BILL_PRESETS.filter((p) => categoryIds.has(p.category)).map((p) => ({ key: p.key, on: false, name: p.name, category: p.category, amount: p.amount, day: "1" })));
+  const [bills, setBills] = useState<Bill[]>(() => BILL_PRESETS.filter((p) => categoryIds.has(p.category)).map((p) => ({ key: p.key, on: false, name: p.name, category: p.category, amount: p.amount, due: "", paid: false })));
   const [everyday, setEveryday] = useState<Record<string, string>>(() => Object.fromEntries(EVERYDAY_PRESETS.filter((p) => categoryIds.has(p.category)).map((p) => [p.category, p.amount])));
   const [savings, setSavings] = useState(1_000);
   // A typed percentage when "Custom" is picked; null while a preset is chosen.
@@ -121,7 +118,8 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
     for (const bill of bills.filter((b) => b.on)) {
       const cents = toCents(bill.amount);
       if (!cents || !bill.name.trim()) return `Check the amount for ${bill.name || "your bill"}.`;
-      billList.push({ name: bill.name.trim(), amount_cents: cents, category_id: bill.category, frequency: "monthly", next_due: nextOnDay(today, Number(bill.day) || 1) });
+      if (!bill.due) return `Pick when ${bill.name.trim()} is next due.`;
+      billList.push({ name: bill.name.trim(), amount_cents: cents, category_id: bill.category, frequency: "monthly", next_due: bill.due, already_paid: bill.due <= today && bill.paid });
     }
     const spend: Record<string, number> = {};
     for (const [category, value] of Object.entries(everyday)) {
@@ -240,11 +238,12 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
     </div>
   );
 
+  if (intro) return <AppearanceIntro onDone={() => setIntro(false)} />;
+
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="setup-title" className="fixed inset-0 z-[60] overflow-y-auto bg-canvas">
-      <div className="mx-auto flex min-h-dvh max-w-lg flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1rem)]">
+    <SetupScreen>
         <div className="flex items-center justify-between gap-3">
-          {step > 0 ? <button type="button" onClick={() => { setError(""); setStep(step - 1); }} className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-lg px-2 font-semibold text-ink-muted hover:text-ink"><ArrowLeft className="size-4" aria-hidden="true" />Back</button> : <span />}
+          <button type="button" onClick={() => { setError(""); if (step > 0) setStep(step - 1); else setIntro(true); }} className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-lg px-2 font-semibold text-ink-muted hover:text-ink"><ArrowLeft className="size-4" aria-hidden="true" />Back</button>
           <span className="text-xs font-semibold text-ink-subtle">Step {step + 1} of {STEPS.length}</span>
         </div>
         <ol className="mt-2 flex gap-1.5" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
@@ -323,17 +322,24 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
                       {bill.key.startsWith("custom") ? <Input aria-label="Bill name" placeholder="Bill name" value={bill.name} onChange={(e) => updateBill(bill.key, { name: e.target.value })} className="min-h-11 flex-1 text-base" /> : <span className="flex-1 font-semibold text-ink">{bill.name}</span>}
                     </label>
                     {bill.on && (
-                      <div className="mt-2 grid grid-cols-[1fr_7rem] gap-2">
+                      <div className="mt-2 space-y-2">
                         {money(bill.amount, (v) => updateBill(bill.key, { amount: v }), `${bill.name} amount`)}
-                        <Select aria-label={`${bill.name} due day`} value={bill.day} onChange={(e) => updateBill(bill.key, { day: e.target.value })} className="min-h-11 text-base">
-                          {Array.from({ length: 28 }, (_, i) => String(i + 1)).map((d) => <option key={d} value={d}>Due {d}</option>)}
-                        </Select>
+                        <div>
+                          <p className="mb-1 text-xs font-semibold text-ink-subtle">Next payment</p>
+                          <DatePicker value={bill.due} min={today} onChange={(value) => updateBill(bill.key, { due: value, paid: false })} />
+                        </div>
+                        {bill.due === today && (
+                          <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-ink">
+                            <input type="checkbox" checked={bill.paid} onChange={(e) => updateBill(bill.key, { paid: e.target.checked })} className="size-5 accent-[var(--color-primary)]" />
+                            Already paid today’s. Start from the next one.
+                          </label>
+                        )}
                       </div>
                     )}
                   </li>
                 ))}
               </ul>
-              <Button variant="outline" className="mt-3 w-full" onClick={() => setBills([...bills, { key: `custom-${bills.length}`, on: true, name: "", category: "cat-housing", amount: "", day: "1" }])}><Plus className="size-4" aria-hidden="true" />Add another bill</Button>
+              <Button variant="outline" className="mt-3 w-full" onClick={() => setBills([...bills, { key: `custom-${bills.length}`, on: true, name: "", category: "cat-housing", amount: "", due: "", paid: false }])}><Plus className="size-4" aria-hidden="true" />Add another bill</Button>
             </section>
           )}
 
@@ -394,8 +400,47 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
             )
             : <Button className="min-h-12 w-full text-base" disabled={busy} onClick={() => void approve()}><Check className="size-4" aria-hidden="true" />{busy ? "Saving…" : "Use this plan"}</Button>}
         </div>
+    </SetupScreen>
+  );
+}
+
+/** The full-screen frame every setup screen uses. */
+function SetupScreen({ children }: { children: React.ReactNode }) {
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="setup-title" className="fixed inset-0 z-[60] overflow-y-auto bg-canvas">
+      <div className="mx-auto flex min-h-dvh max-w-lg flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-[calc(env(safe-area-inset-top)+1rem)]">
+        {children}
       </div>
     </div>
+  );
+}
+
+/** Before the questions: pick how Penny looks, or keep the default. Saved on this device. */
+function AppearanceIntro({ onDone }: { onDone: () => void }) {
+  const { setTheme, setPalette, setSurface } = usePreferences();
+  function keepDefault() {
+    setTheme("system");
+    setPalette(DEFAULT_PALETTE);
+    setSurface(DEFAULT_SURFACE);
+    onDone();
+  }
+  return (
+    <SetupScreen>
+      <p className="flex min-h-11 items-center text-xs font-semibold text-ink-subtle">Before we start</p>
+      <section className="mt-4 flex-1 animate-enter">
+        <h1 id="setup-title" className="text-2xl font-semibold tracking-tight text-ink">Make Penny yours</h1>
+        <p className="mt-2 text-sm text-ink-muted">Pick how Penny looks. Tap a choice to see it right away.</p>
+        <h2 className="mt-6 text-sm font-semibold text-ink">Theme</h2>
+        <div className="mt-2"><ThemePicker /></div>
+        <h2 className="mt-6 text-sm font-semibold text-ink">Style</h2>
+        <div className="mt-2"><PalettePicker /></div>
+        <p className="mt-6 rounded-xl bg-sage-soft p-3 text-sm text-ink-muted">You can change this anytime in Settings.</p>
+      </section>
+      <div className="sticky bottom-0 -mx-4 mt-6 flex gap-2 bg-canvas/90 px-4 pb-1 pt-3 backdrop-blur">
+        <Button variant="outline" className="min-h-12 shrink-0 text-base" onClick={keepDefault}>Stick to the default</Button>
+        <Button className="min-h-12 flex-1 text-base" onClick={onDone}>Continue</Button>
+      </div>
+    </SetupScreen>
   );
 }
 

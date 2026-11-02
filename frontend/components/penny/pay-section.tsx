@@ -10,6 +10,7 @@ import { type Dashboard, dashboardApi, type PayFrequency, type PayScheduleWrite,
 import { formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { isOwnAccount } from "./labels";
 import { cad, Field } from "./shared";
 import type { SaveChange } from "./settings-view";
 
@@ -161,7 +162,7 @@ function PayForm({ dashboard, source, save, onDone }: { dashboard: Dashboard; so
           <Field label="How often">{(props) => <Select {...props} value={frequency} onChange={(e) => setFrequency(e.target.value as PayFrequency)} className="min-h-11 text-base">{FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</Select>}</Field>
           {frequency === "custom" && <Field label="Days between paydays">{(props) => <Input {...props} type="number" min={7} max={62} value={interval} onChange={(e) => setInterval(e.target.value)} className="min-h-11 text-base" />}</Field>}
           <Field label="Next payday">{(props) => <DatePicker id={props.id} value={nextPayday} onChange={setNextPayday} />}</Field>
-          <Field label="Paid into">{(props) => <Select {...props} value={accountId} onChange={(e) => setAccountId(e.target.value)} className="min-h-11 text-base">{dashboard.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>}</Field>
+          <Field label="Paid into">{(props) => <Select {...props} value={accountId} onChange={(e) => setAccountId(e.target.value)} className="min-h-11 text-base">{dashboard.accounts.filter(isOwnAccount).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>}</Field>
         </div>
         {preview.length > 0 && (
           <div aria-live="polite">

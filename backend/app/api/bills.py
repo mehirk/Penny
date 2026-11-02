@@ -49,11 +49,13 @@ def mark_bill_paid(
     current_user: AuthenticatedUser,
     month: ViewMonth = None,
     account_id: str | None = None,
+    record_only: bool = False,
 ) -> DashboardResponse:
     """Record this payment as a transaction and move the bill to its next due date.
-    `account_id` pays it from a different account this time."""
+    `account_id` pays it from a different account this time; `record_only` adds it to history
+    without changing a balance (it was paid before, and the balance already reflects it)."""
     return in_view(
-        user_store(current_user).mark_bill_paid(current_user.id, bill_id, account_id),
+        user_store(current_user).mark_bill_paid(current_user.id, bill_id, account_id, record_only),
         current_user,
         month,
     )

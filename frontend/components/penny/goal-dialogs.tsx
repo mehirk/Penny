@@ -10,6 +10,7 @@ import type { Dashboard, SavingsGoal } from "@/lib/api";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { FormError, parseAmount, type Submit, SubmitButton } from "./form-parts";
+import { isOwnAccount } from "./labels";
 import { cad, Field } from "./shared";
 
 type GoalBody = { name: string; target_cents: number; current_cents: number; target_date: string | null; account_id: string | null; status?: "active" | "paused" };
@@ -36,7 +37,7 @@ export function GoalDialog({ target, dashboard, onClose, onSubmit, onRequestDele
 }
 
 function GoalForm({ item, dashboard, onSubmit, onRequestDelete }: { item: SavingsGoal | null; dashboard: Dashboard; onSubmit: Submit<GoalBody>; onRequestDelete?: () => void }) {
-  const holders = dashboard.accounts.filter((account) => account.account_type !== "credit");
+  const holders = dashboard.accounts.filter((account) => account.account_type !== "credit" && isOwnAccount(account));
   const [targetDate, setTargetDate] = useState(item?.target_date ?? "");
   const [errors, setErrors] = useState<{ current?: string; target?: string }>({});
   const [formError, setFormError] = useState("");
@@ -121,7 +122,7 @@ export function AddMoneyDialog({ goal, dashboard, onClose, onSubmit }: { goal: S
 }
 
 function AddMoneyForm({ goal, dashboard, onSubmit }: { goal: SavingsGoal; dashboard: Dashboard; onSubmit: (amountCents: number, fromAccountId: string) => Promise<string | null> }) {
-  const sources = dashboard.accounts.filter((account) => account.account_type !== "credit");
+  const sources = dashboard.accounts.filter((account) => account.account_type !== "credit" && isOwnAccount(account));
   const [from, setFrom] = useState(sources.find((account) => account.account_type === "chequing")?.id ?? sources[0]?.id ?? "");
   const [value, setValue] = useState("");
   const [amountError, setAmountError] = useState("");

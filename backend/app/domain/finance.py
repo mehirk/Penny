@@ -68,6 +68,10 @@ def build_summary(transactions: Iterable[TransactionAmount], budget_cents: int) 
 
 
 BASIS_POINTS = 10_000
+# Accounts that can go below $0: a purchase the user records is saved even when Penny's balance
+# is behind their bank's, and a friend's balance is negative while the user owes them. Savings,
+# investment, and other accounts can't; a card's balance is what's owed, which can't be negative.
+OVERDRAWABLE_TYPES = frozenset({"chequing", "cash", "person"})
 # Educational guideline often cited in Canadian credit-literacy material; not a score rule.
 COMMON_UTILIZATION_GUIDELINE_BASIS_POINTS = 3_000
 

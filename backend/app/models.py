@@ -1,7 +1,9 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.domain.finance import OVERDRAWABLE_TYPES
 
 
 class StrictModel(BaseModel):
@@ -40,11 +42,18 @@ class DemoUser(StrictModel):
 class Account(StrictModel):
     id: str
     name: str
-    account_type: Literal["chequing", "savings", "credit", "cash", "investment", "other"]
-    balance_cents: int = Field(ge=0)
+    account_type: Literal["chequing", "savings", "credit", "cash", "investment", "other", "person"]
+    # Negative only for an overdrawn chequing or cash account, or money owed to a friend.
+    balance_cents: int
     credit_limit_cents: int | None = Field(default=None, ge=0)
     # Credit cards: the day of the month the payment is due.
     payment_due_day: int | None = Field(default=None, ge=1, le=31)
+
+    @model_validator(mode="after")
+    def _overdrawn_only_if_allowed(self) -> "Account":
+        if self.balance_cents < 0 and self.account_type not in OVERDRAWABLE_TYPES:
+            raise ValueError(f"A {self.account_type} account can't have a negative balance")
+        return self
 
 
 class Transaction(StrictModel):

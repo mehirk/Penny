@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronRight, CreditCard, Landmark, LineChart, Pencil, PiggyBank, TriangleAlert, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronRight, CreditCard, Landmark, LineChart, Pencil, PiggyBank, TriangleAlert, Users, Wallet, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import type { AccountBalance, AccountType, Dashboard } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ACCOUNT_TYPE_LABELS } from "./labels";
+import { ACCOUNT_TYPE_LABELS, friendStatus } from "./labels";
 import { AmountsToggle, cad, EmptyState, type View } from "./shared";
 import { accountEmoji } from "./emoji";
 import { AccountDetail } from "./account-detail";
@@ -25,10 +25,11 @@ const TYPE_STYLE: Record<AccountType, { icon: LucideIcon; tone: string }> = {
   investment: { icon: LineChart, tone: "bg-info-soft text-info" },
   credit: { icon: CreditCard, tone: "bg-danger-soft text-danger" },
   other: { icon: Landmark, tone: "bg-sage text-ink-muted" },
+  person: { icon: Users, tone: "bg-info-soft text-info" },
 };
 
 // Credit cards last, so the list reads like the sum: what you have, then what you owe.
-const ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "credit"];
+const ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "person", "credit"];
 
 /** Every account's balance as of today, and the one number they add up to. All figures come from the API. */
 export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
@@ -147,7 +148,10 @@ function AccountCard({ account, onOpen }: { account: AccountBalance; onOpen: () 
   const emoji = accountEmoji(account.name, account.account_type);
   const credit = account.account_type === "credit";
   const used = account.utilization_basis_points;
-  const balance = <p className={cn("tabular text-lg font-semibold tracking-tight sm:text-xl", credit && account.balance_cents > 0 ? "text-danger" : "text-ink")}>{credit && account.balance_cents > 0 ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)}</p>;
+  const friend = account.account_type === "person";
+  const overdrawn = account.balance_cents < 0;
+  const status = friend ? friendStatus(account.balance_cents).toLowerCase() : credit ? "owed" : overdrawn ? "overdrawn" : "balance";
+  const balance = <p className={cn("tabular text-lg font-semibold tracking-tight sm:text-xl", (credit && account.balance_cents > 0) || overdrawn ? "text-danger" : "text-ink")}>{credit && account.balance_cents > 0 ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)}</p>;
   return (
     <li id={`account-${account.account_type === "credit" ? "credit" : account.id}`} className="scroll-mt-28 rounded-[var(--radius-card)]">
       <Card className="flex h-full flex-col p-4 sm:p-5">
@@ -156,7 +160,7 @@ function AccountCard({ account, onOpen }: { account: AccountBalance; onOpen: () 
           <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-xl" aria-hidden="true">{emoji}</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-semibold text-ink">{account.name}</span>
-            <span className="block text-xs text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}{credit ? " · owed" : ""}</span>
+            <span className="block text-xs text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}{status === "balance" ? "" : ` · ${status}`}</span>
           </span>
           {balance}
           <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
@@ -169,7 +173,7 @@ function AccountCard({ account, onOpen }: { account: AccountBalance; onOpen: () 
           </div>
           <div className="shrink-0 text-right">
             {balance}
-            <p className="text-xs text-ink-subtle">{credit ? "owed" : "balance"}</p>
+            <p className="text-xs text-ink-subtle">{status}</p>
           </div>
         </div>
 

@@ -5,35 +5,46 @@ import { ArrowDownLeft, ArrowUpRight, LoaderCircle, Repeat, Trash2 } from "lucid
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
-import { type BillFrequency, type CategorySuggestion, type Dashboard, dashboardApi, type ParsedTransaction, type SplitTransactionWrite, type Transaction, type TransactionWrite } from "@/lib/api";
+import { type BillFrequency, type CategorySuggestion, type Dashboard, dashboardApi, type ParsedTransaction, type SharedPurchaseWrite, type SplitTransactionWrite, type Transaction, type TransactionWrite } from "@/lib/api";
 import { defaultTransactionDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { haptic } from "@/lib/native";
 import { cn } from "@/lib/utils";
 import { FREQUENCIES, nextAfter, PaymentMode } from "./bill-options";
 import { FormError, parseAmount, type Submit } from "./form-parts";
+import { usualAccount } from "./habits";
 import { type InlineCreate, NewAccount, NewCategory } from "./inline-create";
-import { ACCOUNT_TYPE_LABELS, categoryOptions } from "./labels";
+import { ACCOUNT_TYPE_LABELS, categoryOptions, isOwnAccount } from "./labels";
 import { Field } from "./shared";
+import { NOT_SHARED, type SharedDraft, sharedPurchase, SplitWithFriends } from "./split-with-friends";
 
-const KIND_STYLE = {
+/** Everything the form can save: one transaction, one split across accounts, or one shared with friends. */
+export type TransactionBody = TransactionWrite | SplitTransactionWrite | SharedPurchaseWrite;
+
+export const KIND_STYLE = {
   spending: { label: "Money out", icon: ArrowUpRight, sign: "−", text: "text-money-out", on: "border-money-out bg-money-out-soft text-money-out", button: "bg-money-out text-on-money hover:brightness-95" },
   income: { label: "Money in", icon: ArrowDownLeft, sign: "+", text: "text-money-in", on: "border-money-in bg-money-in-soft text-money-in", button: "bg-money-in text-on-money hover:brightness-95" },
 } as const;
 
 const NEW = "__new__";
 
-export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestDelete, onCreate }: { item: Transaction | null; prefill?: ParsedTransaction | null; dashboard: Dashboard; onSubmit: Submit<TransactionWrite | SplitTransactionWrite>; onRequestDelete?: () => void; onCreate: InlineCreate }) {
+/** Values a new transaction starts with: read from a note, or a repeat of a recent purchase. */
+export type TransactionPrefill = Pick<ParsedTransaction, "description" | "amount_cents" | "kind" | "occurred_on" | "category_id" | "repeat"> & { account_id?: string };
+
+export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestDelete, onCreate }: { item: Transaction | null; prefill?: TransactionPrefill | null; dashboard: Dashboard; onSubmit: Submit<TransactionBody>; onRequestDelete?: () => void; onCreate: InlineCreate }) {
   const prefillCategory = prefill && dashboard.categories.find((c) => c.id === prefill.category_id && c.kind === prefill.kind)?.id;
   const prefillRepeat = prefill?.repeat && prefill.kind === "spending" ? prefill.repeat : null;
-  const [kind, setKind] = useState<Transaction["kind"]>(item?.kind ?? prefill?.kind ?? "spending");
+  const initialKind = item?.kind ?? prefill?.kind ?? "spending";
+  const [kind, setKind] = useState<Transaction["kind"]>(initialKind);
   const [amountError, setAmountError] = useState("");
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
   const [category, setCategory] = useState(item?.category_id ?? prefillCategory ?? "");
   const [categoryTouched, setCategoryTouched] = useState(Boolean(item || prefillCategory));
   const [suggestion, setSuggestion] = useState<CategorySuggestion | null>(null);
-  const [account, setAccount] = useState(item?.account_id ?? dashboard.accounts.find((a) => a.account_type === "chequing")?.id ?? dashboard.accounts[0]?.id ?? "");
+  // A new entry starts in the account the user last used for money in or out.
+  const [account, setAccount] = useState(item?.account_id ?? prefill?.account_id ?? usualAccount(dashboard, initialKind));
+  const [accountTouched, setAccountTouched] = useState(Boolean(item || prefill?.account_id));
   const [date, setDate] = useState(item?.occurred_on ?? prefill?.occurred_on ?? defaultTransactionDate(dashboard.active_month, dashboard.money_calendar.today));
   const [adding, setAdding] = useState<"category" | "account" | null>(null);
   const [splits, setSplits] = useState<SplitDraft>({});
@@ -42,9 +53,17 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
   const [repeat, setRepeat] = useState<{ on: boolean; frequency: BillFrequency; nextDue: string; auto: boolean }>(
     prefillRepeat ? { on: true, frequency: prefillRepeat.frequency, nextDue: prefillRepeat.next_due, auto: true } : { on: false, frequency: "monthly", nextDue: "", auto: true },
   );
+  const [share, setShare] = useState<SharedDraft>(NOT_SHARED);
+  // Kept as typed, for the split preview; the amount itself is read when the form is saved.
+  const [amountText, setAmountText] = useState(item ? centsToInput(String(item.amount_cents)) : prefill?.amount_cents ? centsToInput(String(prefill.amount_cents)) : "");
   const splitMode = account === MULTIPLE;
-  // Only a new money-out entry paid from one account can become a recurring bill.
-  const canRepeat = !item && kind === "spending" && !splitMode;
+  // A new money-out entry paid from one account can be shared with friends, or become a recurring bill.
+  const canShare = !item && kind === "spending" && !splitMode;
+  const sharing = canShare && share.on;
+  const friendPaid = sharing && share.payer !== "me";
+  const canRepeat = canShare && !sharing;
+  const typedCents = (() => { try { return parseCadToCents(amountText); } catch { return null; } })();
+  const ownAccounts = dashboard.accounts.filter(isOwnAccount);
   const splitTotal = splitTotalCents(dashboard, splits);
   const style = KIND_STYLE[kind];
   const options = categoryOptions(dashboard.categories, kind);
@@ -53,6 +72,7 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
     if (next !== kind) haptic("selection");
     setKind(next);
     if (dashboard.categories.find((c) => c.id === category)?.kind !== next) { setCategory(""); setCategoryTouched(false); setSuggestion(null); }
+    if (!accountTouched) setAccount(usualAccount(dashboard, next));
   }
 
   /** Fills in the category from the merchant name, unless the user already picked one. */
@@ -67,9 +87,10 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
 
   function chooseAccount(value: string) {
     if (value === NEW) { setAdding("account"); return; }
+    setAccountTouched(true);
     if (value === MULTIPLE && account !== MULTIPLE) {
       // Start with every account included; the user unticks the ones they don't use.
-      setSplits(Object.fromEntries(dashboard.accounts.map((option) => [option.id, splits[option.id] ?? { included: true, amount: "" }])));
+      setSplits(Object.fromEntries(dashboard.accounts.filter(isOwnAccount).map((option) => [option.id, splits[option.id] ?? { included: true, amount: "" }])));
       setSplitErrors({});
     }
     setAccount(value);
@@ -94,6 +115,15 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
     const amount = parseAmount(form.get("amount"));
     if ("error" in amount) { setAmountError(amount.error); return; }
     setAmountError("");
+    if (sharing) {
+      const body = sharedPurchase(share, amount.cents, { ...shared, paidFrom: account });
+      if ("error" in body) { setFormError(body.error); return; }
+      setBusy(true);
+      const error = await onSubmit(body);
+      setBusy(false);
+      if (error) setFormError(error);
+      return;
+    }
     if (canRepeat && repeat.on && repeat.nextDue && repeat.nextDue <= date) { setFormError("The next payment has to be after this one."); return; }
     setBusy(true);
     const error = await onSubmit({
@@ -126,13 +156,13 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
       </div>
 
       {/* A neutral frame: a coloured one read as an error before anything was typed. The sign carries the kind. */}
-      <Field label="Amount (CAD)" error={amountError} hint={splitMode ? "The total of the accounts below." : undefined}>
+      <Field label={friendPaid ? "Your share (CAD)" : "Amount (CAD)"} error={amountError} hint={splitMode ? "The total of the accounts below." : sharing && !friendPaid ? "The total you paid." : undefined}>
         {(props) => (
           <div className="flex items-center rounded-2xl border-2 border-line bg-sage-soft px-4 transition-colors focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15">
             <span className={cn("tabular shrink-0 whitespace-nowrap text-3xl font-semibold", style.text)} aria-hidden="true">{style.sign}$</span>
             {splitMode
               ? <output {...props} className="tabular flex min-h-16 w-full min-w-0 items-center px-1 text-3xl font-semibold text-ink">{centsToInput(String(splitTotal))}</output>
-              : <input {...props} name="amount" inputMode="decimal" enterKeyHint="next" autoComplete="off" placeholder="0.00" defaultValue={item ? centsToInput(String(item.amount_cents)) : prefill?.amount_cents ? centsToInput(String(prefill.amount_cents)) : ""} required className="tabular min-h-16 w-full min-w-0 bg-transparent px-1 text-3xl font-semibold text-ink placeholder:text-ink-subtle/60 focus:outline-none" />}
+              : <input {...props} name="amount" inputMode="decimal" enterKeyHint="next" autoComplete="off" placeholder="0.00" defaultValue={amountText} onChange={(event) => setAmountText(event.target.value)} required className="tabular min-h-16 w-full min-w-0 bg-transparent px-1 text-3xl font-semibold text-ink placeholder:text-ink-subtle/60 focus:outline-none" />}
           </div>
         )}
       </Field>
@@ -151,24 +181,28 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
             </Select>
           )}
         </Field>
-        <Field label={kind === "income" ? "Paid into" : "Paid from"}>
-          {(props) => (
-            <Select {...props} value={account} onChange={(event) => chooseAccount(event.target.value)} required>
-              {dashboard.accounts.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
-              {!item && dashboard.accounts.length > 1 && <option value={MULTIPLE}>Multiple accounts…</option>}
-              <option value={NEW}>+ New account…</option>
-            </Select>
-          )}
-        </Field>
+        {!friendPaid && (
+          <Field label={kind === "income" ? "Paid into" : "Paid from"}>
+            {(props) => (
+              <Select {...props} value={account} onChange={(event) => chooseAccount(event.target.value)} required>
+                {ownAccounts.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                {!item && !sharing && ownAccounts.length > 1 && <option value={MULTIPLE}>Multiple accounts…</option>}
+                <option value={NEW}>+ New account…</option>
+              </Select>
+            )}
+          </Field>
+        )}
       </div>
 
       {adding === "category" && <NewCategory kind={kind} dashboard={dashboard} onCreate={onCreate} onDone={(id) => { setAdding(null); if (id) { setCategory(id); setCategoryTouched(true); } }} />}
-      {adding === "account" && <NewAccount onCreate={onCreate} onDone={(id) => { setAdding(null); if (id) setAccount(id); }} />}
-      {splitMode && <SplitAccounts dashboard={dashboard} kind={kind} splits={splits} errors={splitErrors} onChange={setSplits} onSingle={() => setAccount(dashboard.accounts[0]?.id ?? "")} />}
+      {adding === "account" && <NewAccount onCreate={onCreate} onDone={(id) => { setAdding(null); if (id) { setAccount(id); setAccountTouched(true); } }} />}
+      {splitMode && <SplitAccounts dashboard={dashboard} kind={kind} splits={splits} errors={splitErrors} onChange={setSplits} onSingle={() => setAccount(ownAccounts[0]?.id ?? "")} />}
 
       <Field label="Date">
         {(props) => <DatePicker id={props.id} aria-describedby={props["aria-describedby"]} value={date} onChange={(value) => { setDate(value); if (repeat.on) setRepeat({ ...repeat, nextDue: nextAfter(value, repeat.frequency) }); }} />}
       </Field>
+
+      {canShare && <SplitWithFriends dashboard={dashboard} draft={share} amountCents={typedCents && typedCents > 0 ? typedCents : null} onChange={setShare} onCreate={onCreate} />}
 
       {canRepeat && (
         <div className={cn("rounded-2xl border transition-colors", repeat.on ? "border-primary/40 bg-primary-soft/40" : "border-line")}>
@@ -237,7 +271,7 @@ function SplitAccounts({ dashboard, kind, splits, errors, onChange, onSingle }: 
     <fieldset className="rounded-2xl border border-line p-3">
       <legend className="px-1 text-sm font-semibold text-ink">Split {kind === "income" ? "into" : "from"} accounts</legend>
       <ul className="space-y-2">
-        {dashboard.accounts.map((account) => {
+        {dashboard.accounts.filter(isOwnAccount).map((account) => {
           const row = splits[account.id] ?? { included: true, amount: "" };
           const inputId = `split-${account.id}`;
           return (

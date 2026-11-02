@@ -1,22 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ListPlus, Wand2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { Dashboard, ParsedTransaction, SplitTransactionWrite, Transaction, TransactionWrite } from "@/lib/api";
+import type { Dashboard, ParsedTransaction, Transaction, TransactionWrite } from "@/lib/api";
 import { defaultTransactionDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Submit } from "./form-parts";
+import { type QuickPick, recentPurchases } from "./habits";
 import type { InlineCreate } from "./inline-create";
-import { QuickAdd } from "./quick-add";
+import { QuickAdd, QuickConfirm, QuickPicks } from "./quick-add";
 import { BatchReview, type Draft, draftFrom } from "./transaction-batch";
-import { TransactionForm } from "./transaction-form";
+import { type TransactionBody, TransactionForm, type TransactionPrefill } from "./transaction-form";
 
 export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubmitMany, onRequestDelete, onCreate }: {
   target: Transaction | "new" | null;
   dashboard: Dashboard;
   onClose: () => void;
-  onSubmit: (id: string | null, body: TransactionWrite | SplitTransactionWrite) => Promise<string | null>;
+  onSubmit: (id: string | null, body: TransactionBody) => Promise<string | null>;
   onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>;
   onRequestDelete: (item: Transaction) => void;
   onCreate: InlineCreate;
@@ -38,21 +39,43 @@ export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubm
 }
 
 /**
- * New transactions open on the form. "Quick AI add" expands above it: one entry fills the form
- * in for review; several open a review list. The form can also switch to adding several by hand.
+ * New transactions open on the form, with recent purchases above it as one-tap chips that fill it
+ * in again. "Quick AI add" expands above the form: one entry shows as a card to add in one tap (or
+ * open in the form), several open a review list. The form can also switch to adding several by hand.
  */
-function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dashboard: Dashboard; onSubmit: Submit<TransactionWrite | SplitTransactionWrite>; onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>; onCreate: InlineCreate }) {
+function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dashboard: Dashboard; onSubmit: Submit<TransactionBody>; onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>; onCreate: InlineCreate }) {
   const [mode, setMode] = useState<"form" | "batch">("form");
   const [quickOpen, setQuickOpen] = useState(false);
-  const [prefill, setPrefill] = useState<ParsedTransaction | null>(null);
+  const [prefill, setPrefill] = useState<TransactionPrefill | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  // The note Quick AI add last read, and its single entry when it can be added in one tap.
+  const [fromNote, setFromNote] = useState<ParsedTransaction | null>(null);
+  const [confirm, setConfirm] = useState<(ParsedTransaction & { amount_cents: number }) | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const picks = useMemo(() => recentPurchases(dashboard), [dashboard]);
   const today = defaultTransactionDate(dashboard.active_month, dashboard.money_calendar.today);
+
+  function fill(next: TransactionPrefill) {
+    setConfirm(null);
+    setPrefill(next);
+    setFormKey((key) => key + 1);
+  }
+
+  function onPick(item: QuickPick) {
+    setPicked(item.description);
+    setFromNote(null);
+    fill({ ...item, kind: "spending", occurred_on: today, repeat: null });
+  }
 
   function onParsed(items: ParsedTransaction[]) {
     if (items.length === 1) {
-      setPrefill(items[0]);
-      setFormKey((key) => key + 1);
+      const [only] = items;
+      setPicked(null);
+      setFromNote(only);
+      // Without an amount there's nothing to add yet, so it goes to the form.
+      if (only.amount_cents) setConfirm({ ...only, amount_cents: only.amount_cents });
+      else fill(only);
     } else {
       setDrafts(items.map((parsed) => draftFrom(parsed, dashboard, today)));
       setMode("batch");
@@ -73,8 +96,11 @@ function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dash
           <ListPlus className="size-4" aria-hidden="true" />Add several by hand
         </button>
       </div>
-      {quickOpen && <div id="quick-add-panel"><QuickAdd onParsed={onParsed} filled={prefill} /></div>}
-      <TransactionForm key={formKey} item={null} prefill={prefill} dashboard={dashboard} onCreate={onCreate} onSubmit={onSubmit} />
+      <QuickPicks picks={picks} selected={picked} onPick={onPick} />
+      {quickOpen && <div id="quick-add-panel"><QuickAdd onParsed={onParsed} filled={fromNote} /></div>}
+      {confirm
+        ? <QuickConfirm parsed={confirm} dashboard={dashboard} onSubmit={onSubmit} onEdit={() => fill(confirm)} />
+        : <TransactionForm key={formKey} item={null} prefill={prefill} dashboard={dashboard} onCreate={onCreate} onSubmit={onSubmit} />}
     </div>
   );
 }

@@ -21,5 +21,6 @@ export function parseCadToCents(input: string): number {
 
 export function centsToInput(cents: Cents): string {
   const value = BigInt(cents);
-  return `${value / 100n}.${(value % 100n).toString().padStart(2, "0")}`;
+  const absolute = value < 0n ? -value : value;
+  return `${value < 0n ? "-" : ""}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, "0")}`;
 }

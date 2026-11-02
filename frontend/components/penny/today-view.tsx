@@ -11,14 +11,14 @@ import { categoryIcon } from "./category-icons";
 import { AccountDetail } from "./account-detail";
 import { SafeDetail } from "./safe-detail";
 import { SpentDetail } from "./spent-detail";
-import { ACCOUNT_TYPE_LABELS } from "./labels";
+import { ACCOUNT_TYPE_LABELS, friendStatus } from "./labels";
 import { accountEmoji } from "./emoji";
 import { AmountsToggle, BigAmount, cad, type View } from "./shared";
 import { useSubpage } from "./subpage";
 import { useTransfers } from "./transfer-dialog";
 
 // Accounts read like the sum: what you have, then what you owe.
-const ACCOUNT_ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "credit"];
+const ACCOUNT_ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "person", "credit"];
 
 type Props = {
   dashboard: Dashboard;
@@ -115,10 +115,12 @@ function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp
         <ul className={STACK}>
           {accounts.map((account) => {
             const owed = account.account_type === "credit" && account.balance_cents > 0;
+            const friend = account.account_type === "person";
+            const overdrawn = account.balance_cents < 0;
             const detail = account.account_type === "credit" && account.utilization_basis_points !== null
               ? `${percent(account.utilization_basis_points)} of limit used`
-              : account.goal_cents > 0 ? <><span className="tabular">{cad(account.goal_cents)}</span> set aside for goals</> : ACCOUNT_TYPE_LABELS[account.account_type];
-            return <Glance key={account.id} emoji={accountEmoji(account.name, account.account_type)} label={account.name} detail={detail} value={owed ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)} tone={owed ? "text-danger" : undefined} onOpen={() => onOpenPage(account.id)} />;
+              : friend ? friendStatus(account.balance_cents) : overdrawn ? "Overdrawn" : account.goal_cents > 0 ? <><span className="tabular">{cad(account.goal_cents)}</span> set aside for goals</> : ACCOUNT_TYPE_LABELS[account.account_type];
+            return <Glance key={account.id} emoji={accountEmoji(account.name, account.account_type)} label={account.name} detail={detail} value={owed ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)} tone={owed || overdrawn ? "text-danger" : undefined} onOpen={() => onOpenPage(account.id)} />;
           })}
         </ul>
         <ul className={cn(STACK, "mt-2.5")}>

@@ -1,13 +1,14 @@
 import { getSupabaseAccessToken } from "./supabase";
 
 export type SpendingFrom = "chequing" | "chequing_and_savings";
-export type AccountType = "chequing" | "savings" | "credit" | "cash" | "investment" | "other";
+/** "person": a friend you share costs with. Positive balance, they owe you; negative, you owe them. */
+export type AccountType = "chequing" | "savings" | "credit" | "cash" | "investment" | "other" | "person";
 export type AccountBalance = { id: string; name: string; account_type: AccountType; balance_cents: number; net_cents: number; credit_limit_cents: number | null; available_credit_cents: number | null; utilization_basis_points: number | null; goals: { id: string; name: string; current_cents: number }[]; goal_cents: number; free_cents: number | null; money_in_cents: number; money_out_cents: number; last_activity_on: string | null };
 /** Every account and how they add up, as of today (whatever period is on screen). */
 export type AccountsOverview = { accounts: AccountBalance[]; spending_cents: number; savings_cents: number; assets_cents: number; owed_cents: number; net_worth_cents: number; goal_cents: number; goal_shortfall_cents: number };
 export type Account = { id: string; name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day: number | null };
 /** A credit card's next payment (from its due day) and what's owed on it now. */
-export type CardPayment = { account_id: string; account_name: string; due_on: string; days_until_due: number; owed_cents: number };
+export type CardPayment = { account_id: string; account_name: string; due_on: string; days_until_due: number; owed_cents: number; paid_on: string | null };
 export type Category = { id: string; name: string; colour_token: string; kind: "income" | "spending"; parent_id: string | null; custom: boolean };
 export type Transaction = { id: string; description: string; category: string; account_id: string; category_id: string | null; amount_cents: number; kind: "income" | "spending"; occurred_on: string; necessity: "need" | "want" | null; auto_categorized: boolean; bill_id: string | null; paid_automatically: boolean | null; unusual: boolean };
 export type Budget = { id: string; category_id: string; category_name: string; month_start: string; limit_cents: number; spent_cents: number; remaining_cents: number; usage_basis_points: number; carried_over: boolean };
@@ -28,7 +29,10 @@ export type MoneyCalendar = {
   methodology: string;
 };
 export type BillFrequency = "weekly" | "biweekly" | "monthly" | "yearly";
-export type Bill = { id: string; name: string; amount_cents: number; category_id: string | null; account_id: string; frequency: BillFrequency; next_due: string; auto_record: boolean; last_paid_on: string | null };
+/** `usual_due` is set when only the next payment was moved: the date it would usually be due. */
+export type Bill = { id: string; name: string; amount_cents: number; category_id: string | null; account_id: string; frequency: BillFrequency; next_due: string; auto_record: boolean; last_paid_on: string | null; due_day: number | null; usual_due: string | null };
+/** A bill to save. `already_paid` answers "have you paid it?" for a due date that has passed. */
+export type BillWrite = Omit<Bill, "id" | "last_paid_on" | "due_day" | "usual_due"> & { already_paid?: "history" | "balance" | null };
 export type PayFrequency = "weekly" | "biweekly" | "semimonthly" | "monthly" | "custom";
 export type PayScheduleWrite = { name: string; amount_cents: number; account_id: string; frequency: PayFrequency; next_payday: string; interval_days: number | null };
 /** One source of pay (a job, a scholarship, an allowance); people can have several. */
@@ -115,6 +119,8 @@ export type CreditUtilization = { balance_cents: number; credit_limit_cents: num
 export type TransactionWrite = Omit<Transaction, "id" | "category" | "necessity" | "auto_categorized" | "bill_id" | "paid_automatically" | "unusual"> & { repeat?: { frequency: BillFrequency; next_due: string | null; auto_record: boolean } | null };
 /** One purchase or deposit across several accounts; the API saves one transaction per account. */
 export type SplitTransactionWrite = Omit<TransactionWrite, "account_id" | "amount_cents"> & { splits: { account_id: string; amount_cents: number }[] };
+/** A purchase split with friends: your share is spending; when you paid, `owed_by` is what each friend owes you. */
+export type SharedPurchaseWrite = { description: string; category_id: string | null; occurred_on: string; paid_from: string; my_share_cents: number; owed_by: { account_id: string; amount_cents: number }[] };
 type GoalWrite = Pick<SavingsGoal, "name" | "target_cents" | "current_cents" | "target_date" | "account_id">;
 export type CoachRole = "user" | "assistant";
 export type CoachFact = { label: string; display: string; cents: number | null; basis_points: number | null; source: string };
@@ -213,6 +219,7 @@ export const dashboardApi = {
   loadPeriod: (start: string, end: string) => request(`/api/v1/dashboard?start=${start}&end=${end}`),
   createTransaction: (body: TransactionWrite, month?: string) => request(inMonth("/api/v1/transactions", month), { method: "POST", body: JSON.stringify(body) }),
   createSplitTransaction: (body: SplitTransactionWrite, month?: string) => request(inMonth("/api/v1/transactions/split", month), { method: "POST", body: JSON.stringify(body) }),
+  createSharedPurchase: (body: SharedPurchaseWrite, month?: string) => request(inMonth("/api/v1/transactions/shared", month), { method: "POST", body: JSON.stringify(body) }),
   updateTransaction: (id: string, body: Partial<TransactionWrite>, month?: string) => request(inMonth(`/api/v1/transactions/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
   deleteTransaction: (id: string, month?: string) => request(inMonth(`/api/v1/transactions/${id}`, month), { method: "DELETE" }),
   createBudget: (body: { category_id: string; month_start: string; limit_cents: number }, month?: string) => request(inMonth("/api/v1/budgets", month), { method: "POST", body: JSON.stringify(body) }),
@@ -227,11 +234,19 @@ export const dashboardApi = {
   contributeToGoal: (id: string, amount_cents: number, fromAccountId: string, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}/contributions`, month), { method: "POST", body: JSON.stringify({ amount_cents, from_account_id: fromAccountId }) }),
   completeMission: (id: string, month?: string) => request(inMonth(`/api/v1/missions/${id}/complete`, month), { method: "POST" }),
   billHistory: (id: string) => authorizedRequest<BillHistory>(`/api/v1/bills/${id}/history`),
-  markBillPaid: (id: string, month?: string, accountId?: string) => request(inMonth(`/api/v1/bills/${id}/mark-paid${accountId ? `?account_id=${encodeURIComponent(accountId)}` : ""}`, month), { method: "POST" }),
+  /** `recordOnly` adds the payment to history without changing a balance (already paid in the bank). */
+  markBillPaid: (id: string, month?: string, accountId?: string, recordOnly = false) => {
+    const query = new URLSearchParams();
+    if (accountId) query.set("account_id", accountId);
+    if (recordOnly) query.set("record_only", "true");
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return request(inMonth(`/api/v1/bills/${id}/mark-paid${suffix}`, month), { method: "POST" });
+  },
   addTransfer: (body: TransferWrite, month?: string) => request(inMonth("/api/v1/transfers", month), { method: "POST", body: JSON.stringify(body) }),
   deleteTransfer: (id: string, month?: string) => request(inMonth(`/api/v1/transfers/${id}`, month), { method: "DELETE" }),
-  createBill: (body: Omit<Bill, "id" | "last_paid_on">, month?: string) => request(inMonth("/api/v1/bills", month), { method: "POST", body: JSON.stringify(body) }),
-  updateBill: (id: string, body: Partial<Omit<Bill, "id" | "last_paid_on">>, month?: string) => request(inMonth(`/api/v1/bills/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
+  createBill: (body: BillWrite, month?: string) => request(inMonth("/api/v1/bills", month), { method: "POST", body: JSON.stringify(body) }),
+  /** `move_once` with a new `next_due` moves only the next payment; the schedule stays. */
+  updateBill: (id: string, body: Partial<Omit<BillWrite, "already_paid">> & { move_once?: boolean }, month?: string) => request(inMonth(`/api/v1/bills/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
   deleteBill: (id: string, month?: string) => request(inMonth(`/api/v1/bills/${id}`, month), { method: "DELETE" }),
   addPay: (body: PayScheduleWrite) => request("/api/v1/pay-schedules", { method: "POST", body: JSON.stringify(body) }),
   updatePay: (id: string, body: PayScheduleWrite) => request(`/api/v1/pay-schedules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
@@ -275,7 +290,7 @@ export type OnboardingAnswers = {
   new_accounts: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day: number | null }[];
   income: { amount_cents: number; frequency: PayFrequency; next_payday: string; interval_days: number | null } | null;
   monthly_money_cents: number | null;
-  bills: { name: string; amount_cents: number; category_id: string; frequency: BillFrequency; next_due: string }[];
+  bills: { name: string; amount_cents: number; category_id: string; frequency: BillFrequency; next_due: string; already_paid?: boolean }[];
   everyday: Record<string, number>;
   savings_basis_points: number;
   spending_from?: SpendingFrom;

@@ -17,7 +17,7 @@ import { type PeriodRange, PeriodPicker } from "./period-picker";
 import { cad, MENU, NAVIGATION, type View } from "./shared";
 
 const MONTH_VIEWS: View[] = ["today", "spending", "budgets"];
-export const THEME_ICONS: Record<ThemeSetting, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
+const THEME_ICONS: Record<ThemeSetting, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
 
 const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "N", action: "Add a transaction" },
@@ -138,7 +138,7 @@ export function Sidebar({ active, dashboard, collapsed, onToggle, onNavigate }: 
  * current one sits in a soft pill. Add, where offered, is a separate circle beside it, so it's
  * never mistaken for a tab.
  */
-export function MobileNavigation({ active, onNavigate, onAdd }: { active: View; onNavigate: (view: View) => void; onAdd?: () => void }) {
+export function MobileNavigation({ active, onNavigate, onAdd }: { active: View; onNavigate: (view: View) => void; onAdd: () => void }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const primary = MENU.filter((item) => item.primary);
   const secondary = MENU.filter((item) => !item.primary);
@@ -158,12 +158,10 @@ export function MobileNavigation({ active, onNavigate, onAdd }: { active: View; 
             </li>
           ))}
         </ul>
-        {onAdd && (
-          <button type="button" onClick={onAdd} aria-label="Add transaction" className="pointer-events-auto grid size-[44px] shrink-0 place-items-center rounded-full bg-primary text-on-primary shadow-[var(--shadow-raised)] transition-transform active:scale-95">
-            {/* Fixed at 44pt (the minimum tap size) so larger text never pushes the tab bar off screen. */}
-            <Plus className="size-5" aria-hidden="true" />
-          </button>
-        )}
+        <button type="button" onClick={onAdd} aria-label="Add transaction" className="pointer-events-auto grid size-[44px] shrink-0 place-items-center rounded-full bg-primary text-on-primary shadow-[var(--shadow-raised)] transition-transform active:scale-95">
+          {/* Fixed at 44pt (the minimum tap size) so larger text never pushes the tab bar off screen. */}
+          <Plus className="size-5" aria-hidden="true" />
+        </button>
       </div>
       <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
         <DialogContent>
@@ -277,8 +275,20 @@ export function SurfacePicker({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function DisplaySettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+/** Light, dark, or match the device, as three buttons. */
+export function ThemePicker() {
   const { theme, setTheme } = usePreferences();
+  return (
+    <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-2">
+      {THEME_OPTIONS.map((option) => {
+        const Icon = THEME_ICONS[option.value];
+        return <button key={option.value} type="button" role="radio" aria-checked={theme === option.value} onClick={() => setTheme(option.value)} className={cn("flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border p-2 text-sm font-semibold", theme === option.value ? "border-primary bg-primary-soft text-primary" : "border-line text-ink-muted hover:border-line-strong")}><Icon className="size-5" aria-hidden="true" />{option.label}</button>;
+      })}
+    </div>
+  );
+}
+
+export function DisplaySettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
@@ -288,17 +298,7 @@ export function DisplaySettingsDialog({ open, onOpenChange }: { open: boolean; o
         </DialogHeader>
         <fieldset>
           <legend className="text-sm font-semibold text-ink">Theme</legend>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            {THEME_OPTIONS.map((option) => {
-              const Icon = THEME_ICONS[option.value];
-              return (
-                <label key={option.value} className={cn("flex min-h-16 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border p-2 text-center text-sm font-semibold transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent", theme === option.value ? "border-accent bg-accent-soft text-ink" : "border-line text-ink-muted hover:bg-sage-soft")}>
-                  <input type="radio" name="theme" value={option.value} checked={theme === option.value} onChange={() => setTheme(option.value)} className="sr-only" />
-                  <Icon className="size-5" aria-hidden="true" />{option.label}
-                </label>
-              );
-            })}
-          </div>
+          <div className="mt-2"><ThemePicker /></div>
         </fieldset>
         <fieldset className="mt-5">
           <legend className="text-sm font-semibold text-ink">Style</legend>
@@ -346,7 +346,6 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
   // Phone Home is about today: a short greeting and no period picker (it's on Spending). Looking
   // back at a past month keeps the picker, so there's a way back.
   const phoneToday = view === "today" && includesNow;
-  const showAdd = view === "today" || view === "spending";
   const picker = (
     <>
       <PeriodPicker dashboard={dashboard} loading={monthLoading} onChange={onChangePeriod} />
@@ -369,12 +368,10 @@ export function PageHeader({ view, dashboard, monthLoading, onChangePeriod, onAd
             </div>
           </div>
           <div className="col-start-2 row-start-1 flex shrink-0 items-center gap-2 self-center sm:row-span-3">
-            {/* Phones get Add as a button above the tab bar, within thumb reach. */}
-            {showAdd && (
-              <Button onClick={onAddTransaction} className="shrink-0 max-sm:hidden">
-                <Plus className="size-4" aria-hidden="true" /><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add transaction</span>
-              </Button>
-            )}
+            {/* On every view, so a purchase can be logged from anywhere. Phones get it beside the tab bar, within thumb reach. */}
+            <Button onClick={onAddTransaction} className="shrink-0 max-sm:hidden">
+              <Plus className="size-4" aria-hidden="true" /><span className="sm:hidden">Add</span><span className="hidden sm:inline">Add transaction</span>
+            </Button>
           </div>
           {showMonth && (
             <div className="col-span-1 mt-3 hidden flex-wrap items-center gap-2 sm:flex">{picker}</div>

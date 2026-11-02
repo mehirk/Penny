@@ -1,5 +1,6 @@
 """The dashboard snapshot: everything the app shows for one month or a custom period."""
 
+from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import date, timedelta
 from typing import Any
@@ -42,6 +43,12 @@ def _classification(rows: list[Transaction]) -> SpendingClassification:
     )
 
 
+def _newest_first(rows: Iterable[Transaction]) -> list[Transaction]:
+    """Newest date first; on the same day, the one recorded last first. The store keeps
+    transactions in the order they were recorded, and the sort keeps ties in input order."""
+    return sorted(reversed(list(rows)), key=lambda item: item.occurred_on, reverse=True)
+
+
 def _savings_rate(cash_flow_cents: int, income_cents: int) -> int:
     return cash_flow_cents * 10_000 // income_cents if income_cents else 0
 
@@ -65,14 +72,10 @@ class DashboardViews(StoreInsights):
         base = self.dashboard_for_user(user_id, month_start(end))
         with self._lock:
             rows = self._flag_unusual(
-                sorted(
-                    (
-                        self._with_necessity(t)
-                        for t in self._transactions.values()
-                        if start <= t.occurred_on <= end
-                    ),
-                    key=lambda item: item.occurred_on,
-                    reverse=True,
+                _newest_first(
+                    self._with_necessity(t)
+                    for t in self._transactions.values()
+                    if start <= t.occurred_on <= end
                 )
             )
             # A month only partly inside the period counts for its share of days (floored).
@@ -133,9 +136,7 @@ class DashboardViews(StoreInsights):
         with self._lock:
             month = month_start(month or self.active_month)
             today = self.today()
-            monthly = sorted(
-                self._monthly_transactions(month), key=lambda item: item.occurred_on, reverse=True
-            )
+            monthly = _newest_first(self._monthly_transactions(month))
             # Category budgets are the variable part; recurring bills are measured separately.
             variable_rows = [item for item in monthly if not self._is_bill_payment(item)]
             _, breakdown = self._category_breakdown(monthly)

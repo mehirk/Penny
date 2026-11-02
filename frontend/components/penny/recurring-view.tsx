@@ -1,24 +1,27 @@
 "use client";
 
 import { type FormEvent, useEffect, useState } from "react";
-import { AlertTriangle, CalendarClock, Check, CheckCircle2, ChevronRight, Clock, Hand, Info, LoaderCircle, Pencil, Plus, Repeat, Sparkles, Trash2, Tv, Wand2, Zap } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CheckCircle2, ChevronRight, Clock, CreditCard, Hand, History, Info, LoaderCircle, Pencil, Plus, Repeat, Sparkles, Trash2, Tv, Wand2, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, isoToday } from "@/components/ui/date-picker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
-import { type Bill, type BillFrequency, type BillHistory, type Dashboard, dashboardApi, type RecurringExpense, type RecurringMonth, type RecurringPayment, type UpcomingPayment } from "@/lib/api";
+import { type Bill, type BillFrequency, type BillHistory, type BillWrite, type CardPayment, type Dashboard, dashboardApi, type RecurringExpense, type RecurringMonth, type RecurringPayment, type UpcomingPayment } from "@/lib/api";
 import { formatLongDate, formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { FREQUENCIES, PaymentMode } from "./bill-options";
 import { categoryOptions } from "./labels";
 import { cad, describeError, dueLabel, EmptyState, Field } from "./shared";
+import { useTransfers } from "./transfer-dialog";
 
-export type BillInput = Omit<Bill, "id" | "last_paid_on">;
+/** A bill to save. On an edit, `move_once` moves only the next payment (the schedule stays). */
+export type BillInput = BillWrite & { move_once?: boolean };
 export type RecurringActions = {
-  onMarkPaid: (bill: Bill) => void;
+  /** `recordOnly`: already paid in the bank, so add it to history without changing a balance. */
+  onMarkPaid: (bill: Bill, recordOnly?: boolean) => void;
   onSave: (id: string | null, body: BillInput) => Promise<string | null>;
   onDelete: (bill: Bill) => void;
 };
@@ -106,6 +109,8 @@ export function RecurringView({ dashboard, onAsk, onMarkPaid, onSave, onDelete }
         )}
       </div>
 
+      <CardCycles payments={dashboard.card_payments} />
+
       {summary.suggestions.length > 0 && (
         <Card className="border-accent/30 p-5">
           <h2 className="flex items-center gap-2 font-semibold text-ink"><Wand2 className="size-4 text-accent" aria-hidden="true" />Found in your history</h2>
@@ -137,6 +142,43 @@ export function RecurringView({ dashboard, onAsk, onMarkPaid, onSave, onDelete }
 
 function defaultAccount(dashboard: Dashboard): string {
   return dashboard.accounts.find((account) => account.account_type === "chequing")?.id ?? dashboard.accounts[0]?.id ?? "";
+}
+
+/**
+ * Each credit card's payment, one cycle at a time. Recording a payment (Pay card) pays the cycle
+ * coming up, so the card moves on to next month's due date and shows when it was paid.
+ */
+function CardCycles({ payments }: { payments: CardPayment[] }) {
+  const transfers = useTransfers();
+  if (payments.length === 0) return null;
+  return (
+    <Card className="p-5">
+      <h2 className="flex items-center gap-2 font-semibold text-ink"><CreditCard className="size-4 text-danger" aria-hidden="true" />Credit cards</h2>
+      <p className="mt-1 text-sm text-ink-muted">Paying a card isn’t spending: the purchases already counted. Recording a payment moves the card to next month.</p>
+      <ul className="mt-3 space-y-1">
+        {payments.map((card) => {
+          const paid = card.paid_on !== null;
+          return (
+            <li key={card.account_id} className="flex min-h-16 items-center gap-3 rounded-xl px-2 py-1.5">
+              <DateTile iso={card.due_on} tone={paid ? "paid" : card.days_until_due <= 3 ? "soon" : "later"} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-ink">{card.account_name}</span>
+                <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                  {paid
+                    ? <span className="inline-flex items-center gap-1 font-semibold text-money-in"><CheckCircle2 className="size-3.5" aria-hidden="true" />Paid {formatShortDate(card.paid_on!)} · next due {formatShortDate(card.due_on)}</span>
+                    : <span className={cn("font-semibold", card.days_until_due <= 3 ? "text-gold-strong" : "text-ink-subtle")}>{dueLabel(card.days_until_due)}</span>}
+                  <span className="text-ink-subtle">· <span className="tabular">{cad(card.owed_cents)}</span> owed now</span>
+                </span>
+              </span>
+              {transfers && card.owed_cents > 0 && (
+                <Button size="sm" variant={paid ? "outline" : "default"} onClick={() => transfers.openTransfer({ to: card.account_id, amountCents: card.owed_cents })}>{paid ? "Pay again" : "Mark paid"}</Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
 }
 
 /** This calendar month: how much is paid and how much is left, as a bar. */
@@ -287,12 +329,13 @@ function AllBills({ items, onOpen }: { items: RecurringExpense[]; onOpen: (id: s
 }
 
 /** One bill: how it's paid, the next payment, and every payment so far. */
-function BillDetail({ dashboard, bill, onClose, onMarkPaid, onSave, onEdit, onDelete }: { dashboard: Dashboard; bill: Bill | null; onClose: () => void; onMarkPaid: (bill: Bill) => void; onSave: Props["onSave"]; onEdit: (bill: Bill) => void; onDelete: (bill: Bill) => void }) {
+function BillDetail({ dashboard, bill, onClose, onMarkPaid, onSave, onEdit, onDelete }: { dashboard: Dashboard; bill: Bill | null; onClose: () => void; onMarkPaid: Props["onMarkPaid"]; onSave: Props["onSave"]; onEdit: (bill: Bill) => void; onDelete: (bill: Bill) => void }) {
   const [history, setHistory] = useState<BillHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const accounts = new Map(dashboard.accounts.map((account) => [account.id, account.name]));
   const item = bill ? dashboard.recurring.items.find((entry) => entry.id === bill.id) : undefined;
+  const today = dashboard.money_calendar.today ?? isoToday();
 
   useEffect(() => {
     if (!bill) return;
@@ -324,10 +367,20 @@ function BillDetail({ dashboard, bill, onClose, onMarkPaid, onSave, onEdit, onDe
               <div className="flex flex-col gap-3 rounded-2xl bg-sage-soft p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
                   <span className="grid size-10 place-items-center rounded-xl bg-surface text-gold-strong" aria-hidden="true"><CalendarClock className="size-5" /></span>
-                  <div><p className="text-xs text-ink-subtle">Next payment</p><p className="font-semibold text-ink">{formatLongDate(bill.next_due)}{item && <span className={cn("ml-2 text-sm font-medium", item.days_until_due <= 3 ? "text-gold-strong" : "text-ink-subtle")}>{dueLabel(item.days_until_due)}</span>}</p></div>
+                  <div>
+                    <p className="text-xs text-ink-subtle">Next payment</p>
+                    <p className="font-semibold text-ink">{formatLongDate(bill.next_due)}{item && <span className={cn("ml-2 text-sm font-medium", item.days_until_due <= 3 ? "text-gold-strong" : "text-ink-subtle")}>{dueLabel(item.days_until_due)}</span>}</p>
+                    {bill.usual_due && <p className="text-xs text-ink-subtle">Moved from {formatShortDate(bill.usual_due)} this time only</p>}
+                  </div>
                 </div>
                 <Button variant={bill.auto_record ? "outline" : "default"} onClick={() => onMarkPaid(bill)}><Check className="size-4" aria-hidden="true" />{bill.auto_record ? "Pay early" : "Mark paid"}</Button>
               </div>
+              {bill.next_due <= today && (
+                <button type="button" onClick={() => onMarkPaid(bill, true)} className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-line px-3 text-left text-sm text-ink-muted hover:bg-sage-soft hover:text-ink">
+                  <History className="size-4 shrink-0" aria-hidden="true" />
+                  <span><span className="font-semibold text-ink">Already paid it?</span> Just record it. Your balance won’t change.</span>
+                </button>
+              )}
 
               <PaymentMode value={bill.auto_record} onChange={(auto) => void setMode(auto)} disabled={saving} />
 
@@ -397,10 +450,25 @@ function BillDialog({ dashboard, target, onClose, onSave, onDelete }: { dashboar
   );
 }
 
+type PaidAnswer = "not_yet" | NonNullable<BillWrite["already_paid"]>;
+
+const PAID_ANSWERS: { value: PaidAnswer; label: string; detail: string }[] = [
+  { value: "history", label: "Yes, just add it to my history", detail: "Your balance already reflects it." },
+  { value: "balance", label: "Yes, and take it off my balance", detail: "Penny hasn’t counted it yet." },
+  { value: "not_yet", label: "Not yet", detail: "It stays due until it’s paid." },
+];
+
 function BillForm({ dashboard, draft, onSubmit, onDelete }: { dashboard: Dashboard; draft: BillInput | Bill | null; onSubmit: (body: BillInput) => Promise<string | null>; onDelete?: () => void }) {
+  const existing = draft && "id" in draft ? draft : null;
+  const today = dashboard.money_calendar.today ?? isoToday();
   const [frequency, setFrequency] = useState<BillFrequency>(draft?.frequency ?? "monthly");
-  const [nextDue, setNextDue] = useState(draft?.next_due ?? dashboard.money_calendar.today ?? dashboard.current_month);
+  // A new bill starts without a date, so a bill already paid this month isn't made due today.
+  const [nextDue, setNextDue] = useState(draft?.next_due ?? "");
   const [autoRecord, setAutoRecord] = useState(draft?.auto_record ?? true);
+  const [paid, setPaid] = useState<PaidAnswer | null>(null);
+  const [moveOnce, setMoveOnce] = useState(true);
+  const askPaid = !existing && nextDue !== "" && nextDue <= today;
+  const moved = existing !== null && nextDue !== existing.next_due;
   const [amountError, setAmountError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -412,6 +480,9 @@ function BillForm({ dashboard, draft, onSubmit, onDelete }: { dashboard: Dashboa
     try { cents = parseCadToCents(String(form.get("amount"))); } catch (reason) { setAmountError(reason instanceof Error ? reason.message : "Enter an amount"); return; }
     if (cents <= 0) { setAmountError("Enter an amount greater than $0.00"); return; }
     setAmountError("");
+    if (!nextDue) { setError("Choose when the next payment is due"); return; }
+    if (askPaid && !paid) { setError("Tell Penny whether you’ve paid this one yet"); return; }
+    setError("");
     setBusy(true);
     const result = await onSubmit({
       name: String(form.get("name")).trim(),
@@ -421,6 +492,8 @@ function BillForm({ dashboard, draft, onSubmit, onDelete }: { dashboard: Dashboa
       frequency,
       next_due: nextDue,
       auto_record: autoRecord,
+      ...(askPaid && paid !== "not_yet" ? { already_paid: paid } : {}),
+      ...(moved ? { move_once: moveOnce } : {}),
     });
     setBusy(false);
     if (result) setError(result);
@@ -434,8 +507,33 @@ function BillForm({ dashboard, draft, onSubmit, onDelete }: { dashboard: Dashboa
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="How often">{(props) => <Select {...props} value={frequency} onChange={(event) => setFrequency(event.target.value as BillFrequency)}>{FREQUENCIES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select>}</Field>
-        <Field label="Next due">{(props) => <DatePicker id={props.id} value={nextDue} onChange={setNextDue} />}</Field>
+        <Field label="Next payment due">{(props) => <DatePicker id={props.id} value={nextDue} onChange={setNextDue} />}</Field>
       </div>
+      {askPaid && (
+        <fieldset className="rounded-2xl border border-gold/40 bg-gold-soft/40 p-3">
+          <legend className="px-1 text-sm font-semibold text-ink">{nextDue === today ? "This one is due today." : `This one was due ${formatShortDate(nextDue)}.`} Have you paid it?</legend>
+          <div className="mt-1 space-y-1">
+            {PAID_ANSWERS.map((answer) => (
+              <label key={answer.value} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-2 hover:bg-surface/70">
+                <input type="radio" name="already-paid" checked={paid === answer.value} onChange={() => setPaid(answer.value)} className="size-4 shrink-0 accent-[var(--color-accent)]" />
+                <span className="text-sm"><span className="font-semibold text-ink">{answer.label}</span> <span className="text-ink-subtle">{answer.detail}</span></span>
+              </label>
+            ))}
+          </div>
+          {paid && paid !== "not_yet" && <p className="mt-1 px-2 text-xs text-ink-subtle">The next payment will be the one after.</p>}
+        </fieldset>
+      )}
+      {moved && (
+        <fieldset className="rounded-2xl border border-line p-3">
+          <legend className="px-1 text-sm font-semibold text-ink">Move which payments?</legend>
+          {[{ once: true, label: "Just this one", detail: `The rest stay on their usual date (${formatShortDate(existing!.usual_due ?? existing!.next_due)} each ${frequency === "yearly" ? "year" : frequency === "monthly" ? "month" : "time"}).` }, { once: false, label: "This and every one after", detail: "The new date becomes the usual one." }].map((option) => (
+            <label key={String(option.once)} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-2 hover:bg-sage-soft">
+              <input type="radio" name="move-once" checked={moveOnce === option.once} onChange={() => setMoveOnce(option.once)} className="size-4 shrink-0 accent-[var(--color-accent)]" />
+              <span className="text-sm"><span className="font-semibold text-ink">{option.label}</span> <span className="text-ink-subtle">{option.detail}</span></span>
+            </label>
+          ))}
+        </fieldset>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Category" hint="Leave blank and Penny will pick one from the name.">{(props) => (
           <Select {...props} name="category_id" defaultValue={draft?.category_id ?? ""}>
@@ -443,7 +541,7 @@ function BillForm({ dashboard, draft, onSubmit, onDelete }: { dashboard: Dashboa
             {categoryOptions(dashboard.categories, "spending").map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
           </Select>
         )}</Field>
-        <Field label="Paid from">{(props) => <Select {...props} name="account_id" defaultValue={draft?.account_id ?? defaultAccount(dashboard)}>{dashboard.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</Select>}</Field>
+        <Field label="Paid from">{(props) => <Select {...props} name="account_id" defaultValue={draft?.account_id ?? defaultAccount(dashboard)}>{dashboard.accounts.filter((account) => account.account_type !== "person").map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</Select>}</Field>
       </div>
       <PaymentMode value={autoRecord} onChange={setAutoRecord} />
       {error && <p role="alert" className="rounded-xl bg-danger-soft p-3 text-sm text-danger">{error}</p>}

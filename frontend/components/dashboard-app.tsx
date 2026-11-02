@@ -182,8 +182,9 @@ function PennyApp() {
     void mutate(() => dashboardApi.completeMission(mission.id, month), `Mission complete · +${mission.xp_reward} XP`)
       .then((error) => { if (error) toast({ title: "Couldn’t complete the mission", description: error, tone: "error" }); });
   };
-  const markBillPaid = (bill: Bill, accountId?: string) => {
-    void mutate(() => dashboardApi.markBillPaid(bill.id, month, accountId), `${bill.name} paid`)
+  /** `accountId` pays it from another account this once; `recordOnly` records a payment already made. */
+  const markBillPaid = (bill: Bill, { accountId, recordOnly = false }: { accountId?: string; recordOnly?: boolean } = {}) => {
+    void mutate(() => dashboardApi.markBillPaid(bill.id, month, accountId, recordOnly), recordOnly ? `${bill.name} recorded as paid` : `${bill.name} paid`)
       .then((error) => {
         if (!error) return;
         // Not enough in the bill's account: offer to move money or pay from another account.
@@ -202,8 +203,8 @@ function PennyApp() {
       restore: () => dashboardApi.addTransfer({ from_account_id: transfer.from_account_id, to_account_id: transfer.to_account_id, amount_cents: transfer.amount_cents, occurred_on: transfer.occurred_on, note: transfer.note }, month),
     })),
   };
-  const saveBill = (id: string | null, body: BillInput) =>
-    mutate(() => (id ? dashboardApi.updateBill(id, body, month) : dashboardApi.createBill(body, month)), id ? "Bill updated" : `${body.name} added`);
+  const saveBill = (id: string | null, { already_paid: alreadyPaid, move_once: moveOnce, ...body }: BillInput) =>
+    mutate(() => (id ? dashboardApi.updateBill(id, { ...body, ...(moveOnce === undefined ? {} : { move_once: moveOnce }) }, month) : dashboardApi.createBill({ ...body, already_paid: alreadyPaid ?? null }, month)), id ? "Bill updated" : `${body.name} added`);
   const confirmDeleteBill = (bill: Bill) => {
     setConfirm(deleteConfirmation(mutate, {
       title: `Delete ${bill.name}?`,
@@ -236,7 +237,7 @@ function PennyApp() {
           {monthLoading && <PageSkeleton />}
           <div key={view} className={monthLoading ? "hidden" : "animate-fade"} aria-busy={monthLoading}>
             {view === "today" && <TodayView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} onEditTransaction={setTransactionTarget} onSetUp={() => setSetupOpen(true)} />}
-            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: markBillPaid, onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} />}
+            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: (bill, recordOnly) => markBillPaid(bill, { recordOnly }), onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} />}
             {view === "accounts" && <AccountsView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
             {view === "goals" && <GoalsView dashboard={dashboard} onAsk={askPenny} onAdd={() => setGoalTarget("new")} onEdit={setGoalTarget} onAddMoney={setAddMoneyTarget} onComplete={(goal) => void mutate(() => dashboardApi.updateGoal(goal.id, { status: "completed" }, month), `${goal.name} reached`)} />}
             {view === "charts" && <ChartsView dashboard={dashboard} />}
@@ -247,7 +248,7 @@ function PennyApp() {
           </div>
         </main>
       </div>
-      <MobileNavigation active={view} onNavigate={navigate} onAdd={view === "today" || view === "spending" ? () => setTransactionTarget("new") : undefined} />
+      <MobileNavigation active={view} onNavigate={navigate} onAdd={() => setTransactionTarget("new")} />
       <PullToRefresh onRefresh={refresh} />
       {/* Desktop only: on phones Penny AI is in the tab bar, and a floating button covered content. */}
       {view !== "ai" && <button type="button" onClick={() => navigate("ai")} className="fixed bottom-6 right-6 z-20 hidden min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-on-primary shadow-[var(--shadow-raised)] transition-transform hover:-translate-y-0.5 motion-reduce:transform-none lg:inline-flex"><Bot className="size-4" />Ask Penny</button>}
@@ -265,7 +266,7 @@ function PennyApp() {
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
       <DisplaySettingsDialog open={displayOpen} onOpenChange={setDisplayOpen} />
       <TransferDialog dashboard={dashboard} prefill={transferTarget} onClose={() => setTransferTarget(null)} onSave={(body) => mutate(() => dashboardApi.addTransfer(body, month), body.to_account_id && dashboard.accounts.find((a) => a.id === body.to_account_id)?.account_type === "credit" ? "Card payment recorded" : "Transfer recorded")} />
-      <BillShortDialog dashboard={dashboard} bill={billShort} onClose={() => setBillShort(null)} onTransfer={(prefill) => { setBillShort(null); setTransferTarget(prefill); }} onPayFrom={(bill, accountId) => { setBillShort(null); markBillPaid(bill, accountId); }} />
+      <BillShortDialog dashboard={dashboard} bill={billShort} onClose={() => setBillShort(null)} onTransfer={(prefill) => { setBillShort(null); setTransferTarget(prefill); }} onPayFrom={(bill, accountId) => { setBillShort(null); markBillPaid(bill, { accountId }); }} onRecordOnly={(bill) => { setBillShort(null); markBillPaid(bill, { recordOnly: true }); }} />
     </div>
     </TransferContext.Provider>
   );
