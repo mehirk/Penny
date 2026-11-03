@@ -11,6 +11,12 @@ export function friendStatus(balanceCents: number): string {
   return balanceCents < 0 ? "You owe" : "All settled up";
 }
 
+/** The transfer that settles up with a friend: pay them what you owe, or record them paying you back. */
+export function settleUp(accounts: { id: string; account_type: AccountType }[], friendId: string, balanceCents: number): { from?: string; to?: string; amountCents: number } {
+  const home = accounts.find((account) => account.account_type === "chequing")?.id;
+  return balanceCents < 0 ? { from: home, to: friendId, amountCents: -balanceCents } : { from: friendId, to: home, amountCents: balanceCents };
+}
+
 /** Categories for one kind, with subcategories listed under their parent ("Food › Groceries"). */
 export function categoryOptions(categories: Category[], kind: Category["kind"]): { id: string; label: string }[] {
   const own = categories.filter((category) => category.kind === kind);

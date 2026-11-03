@@ -48,6 +48,9 @@ class Account(StrictModel):
     credit_limit_cents: int | None = Field(default=None, ge=0)
     # Credit cards: the day of the month the payment is due.
     payment_due_day: int | None = Field(default=None, ge=1, le=31)
+    # Credit cards: a payment the user made outside Penny (said in setup or "already paid"). It
+    # counts like a recorded card payment for the cycle it falls in.
+    card_paid_on: date | None = None
 
     @model_validator(mode="after")
     def _overdrawn_only_if_allowed(self) -> "Account":
@@ -74,6 +77,11 @@ class Transaction(StrictModel):
     paid_automatically: bool | None = None
     # Far larger than this category's usual purchase (filled in when a snapshot is built).
     unusual: bool = False
+    # Paid before the user told Penny, so the balance they entered already includes it: it's in
+    # history, budgets, and charts, but never changes a balance (added, edited, or removed).
+    history_only: bool = False
+    # A purchase split in a friends' group (the user's share, or a friend paying for it).
+    group_id: str | None = None
 
 
 class Summary(StrictModel):

@@ -18,6 +18,7 @@ from app.dashboard_models import (
     GoalContribution,
     Mission,
     PaySchedule,
+    SplitGroup,
     Transfer,
 )
 from app.domain.categorize import necessity
@@ -79,6 +80,7 @@ class StoreSnapshot:
     pay_schedules: list[PaySchedule]
     learner: Learner
     transfers: list[Transfer] = field(default_factory=list)
+    split_groups: list[SplitGroup] = field(default_factory=list)
 
 
 class StoreState:
@@ -106,6 +108,7 @@ class StoreState:
         self._bills = {item.id: item for item in snapshot.bills}
         self._pay_schedules = {item.id: item for item in snapshot.pay_schedules}
         self._transfers = {item.id: item for item in snapshot.transfers}
+        self._split_groups = {item.id: item for item in snapshot.split_groups}
         self._learner = copy.deepcopy(snapshot.learner)
 
     def snapshot(self) -> StoreSnapshot:
@@ -124,6 +127,7 @@ class StoreState:
                 pay_schedules=list(self._pay_schedules.values()),
                 learner=copy.deepcopy(self._learner),
                 transfers=list(self._transfers.values()),
+                split_groups=list(self._split_groups.values()),
             )
 
     def today(self) -> date:
@@ -289,7 +293,10 @@ class StoreState:
 
         Something the user recorded already happened, so with `allow_overdraft` chequing and cash
         may go below $0 (Penny's balance is behind theirs). Payments Penny records for a bill
-        don't, so the app can offer to move money in first."""
+        don't, so the app can offer to move money in first. A history-only one never changes a
+        balance, so editing or removing it leaves balances alone too."""
+        if transaction.history_only:
+            return
         signed = (
             transaction.amount_cents if transaction.kind == "income" else -transaction.amount_cents
         )
@@ -338,9 +345,9 @@ class StoreState:
             occurred_on=on,
             bill_id=bill.id,
             paid_automatically=automatically,
+            history_only=not affect_balance,
         )
-        if affect_balance:
-            self._apply_account_effect(transaction, 1, allow_overdraft=allow_overdraft)
+        self._apply_account_effect(transaction, 1, allow_overdraft=allow_overdraft)
         self._transactions[transaction.id] = transaction
         self._bills[bill.id] = bill.model_copy(
             update={"last_paid_on": on, "next_due": following_due(bill), "usual_due": None}

@@ -24,6 +24,8 @@ export type RecurringActions = {
   onMarkPaid: (bill: Bill, recordOnly?: boolean) => void;
   onSave: (id: string | null, body: BillInput) => Promise<string | null>;
   onDelete: (bill: Bill) => void;
+  /** A card payment made outside Penny: the card moves to next month and no balance changes. */
+  onCardPaid: (card: CardPayment) => void;
 };
 type Props = RecurringActions & { dashboard: Dashboard; onAsk: (question: string) => void };
 
@@ -33,7 +35,7 @@ const billInput = (bill: Bill): BillInput => ({ name: bill.name, amount_cents: b
 
 type Section = "upcoming" | "paid" | "all";
 
-export function RecurringView({ dashboard, onAsk, onMarkPaid, onSave, onDelete }: Props) {
+export function RecurringView({ dashboard, onAsk, onMarkPaid, onSave, onDelete, onCardPaid }: Props) {
   const summary = dashboard.recurring;
   const [editing, setEditing] = useState<Bill | BillInput | "new" | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -109,7 +111,7 @@ export function RecurringView({ dashboard, onAsk, onMarkPaid, onSave, onDelete }
         )}
       </div>
 
-      <CardCycles payments={dashboard.card_payments} />
+      <CardCycles payments={dashboard.card_payments} onRecordOnly={onCardPaid} />
 
       {summary.suggestions.length > 0 && (
         <Card className="border-accent/30 p-5">
@@ -148,7 +150,7 @@ function defaultAccount(dashboard: Dashboard): string {
  * Each credit card's payment, one cycle at a time. Recording a payment (Pay card) pays the cycle
  * coming up, so the card moves on to next month's due date and shows when it was paid.
  */
-function CardCycles({ payments }: { payments: CardPayment[] }) {
+function CardCycles({ payments, onRecordOnly }: { payments: CardPayment[]; onRecordOnly: (card: CardPayment) => void }) {
   const transfers = useTransfers();
   if (payments.length === 0) return null;
   return (
@@ -159,7 +161,8 @@ function CardCycles({ payments }: { payments: CardPayment[] }) {
         {payments.map((card) => {
           const paid = card.paid_on !== null;
           return (
-            <li key={card.account_id} className="flex min-h-16 items-center gap-3 rounded-xl px-2 py-1.5">
+            <li key={card.account_id} className="rounded-xl px-2 py-1.5">
+              <div className="flex min-h-16 items-center gap-3">
               <DateTile iso={card.due_on} tone={paid ? "paid" : card.days_until_due <= 3 ? "soon" : "later"} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold text-ink">{card.account_name}</span>
@@ -172,6 +175,13 @@ function CardCycles({ payments }: { payments: CardPayment[] }) {
               </span>
               {transfers && card.owed_cents > 0 && (
                 <Button size="sm" variant={paid ? "outline" : "default"} onClick={() => transfers.openTransfer({ to: card.account_id, amountCents: card.owed_cents })}>{paid ? "Pay again" : "Mark paid"}</Button>
+              )}
+              </div>
+              {!paid && (
+                <button type="button" onClick={() => onRecordOnly(card)} className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-xl border border-line px-3 text-left text-sm text-ink-muted hover:bg-sage-soft hover:text-ink">
+                  <History className="size-4 shrink-0" aria-hidden="true" />
+                  <span><span className="font-semibold text-ink">Already paid it?</span> Just record it. No balance changes.</span>
+                </button>
               )}
             </li>
           );

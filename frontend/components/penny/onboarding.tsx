@@ -12,7 +12,8 @@ import { ACCOUNT_TYPE_LABELS } from "./labels";
 import { accountEmoji } from "./emoji";
 import { PalettePicker, ThemePicker } from "./app-shell";
 import { DEFAULT_PALETTE, DEFAULT_SURFACE, usePreferences } from "./preferences";
-import { cad, describeError, DueDaySelect, Field } from "./shared";
+import { addMonths } from "@/lib/format";
+import { cad, describeError, Field } from "./shared";
 
 /** Starting suggestions only; every amount is the user's to change. */
 const BILL_PRESETS = [
@@ -43,7 +44,8 @@ const STEPS = ["Accounts", "Income", "Bills", "Everyday", "Savings", "Your plan"
 
 /** `due` is the next payment's date; `paid` says one due today is already paid. */
 type Bill = { key: string; on: boolean; name: string; category: string; amount: string; due: string; paid: boolean };
-type NewAccount = { name: string; type: AccountType; balance: string; limit: string; dueDay: string };
+/** `due` is a card's next payment date; next month's means this month's is already paid. */
+type NewAccount = { name: string; type: AccountType; balance: string; limit: string; due: string };
 
 const isoDay = (date: Date) => date.toISOString().slice(0, 10);
 /** Basis points for a typed percentage ("12" or "12.5", up to 2 decimals); invalid is null. */
@@ -86,8 +88,8 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
   const [warning, setWarning] = useState<{ check: StarterCheck; key: string } | null>(null);
   const [limits, setLimits] = useState<Record<string, string>>({});
 
-  /** The answers as the API expects them, or an error message for the first bad amount. */
-  function answers(savingsOverride?: number): OnboardingAnswers | string {
+  // Each step's answers as the API expects them, or an error message for the first bad one.
+  function accountAnswers(): Pick<OnboardingAnswers, "opening_balances" | "new_accounts"> | string {
     const opening: Record<string, number> = {};
     for (const account of editable) {
       const cents = toCents(balances[account.id] ?? "");
@@ -101,19 +103,23 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
       if (!item.name.trim()) return "Give each new account a name.";
       if (balance === null) return `Enter the balance for ${item.name} (0.00 if it's empty).`;
       if (item.type === "credit" && !limit) return `Enter the credit limit for ${item.name}.`;
-      if (item.type === "credit" && !item.dueDay) return `Pick the day ${item.name}'s payment is due.`;
-      accounts.push({ name: item.name.trim(), account_type: item.type, balance_cents: balance, credit_limit_cents: item.type === "credit" ? limit : null, payment_due_day: item.type === "credit" ? Number(item.dueDay) : null });
+      if (item.type === "credit" && !item.due) return `Pick when ${item.name}'s next payment is due.`;
+      accounts.push({ name: item.name.trim(), account_type: item.type, balance_cents: balance, credit_limit_cents: item.type === "credit" ? limit : null, payment_next_due: item.type === "credit" ? item.due : null });
     }
-    let income: OnboardingAnswers["income"] = null;
-    let monthlyMoney: number | null = null;
+    return { opening_balances: opening, new_accounts: accounts };
+  }
+
+  function incomeAnswers(): Pick<OnboardingAnswers, "income" | "monthly_money_cents"> | string {
     if (incomeMode === "pay") {
       const cents = toCents(pay.amount);
       if (!cents) return "Enter your usual take-home pay, or choose “I don’t get regular pay”.";
-      income = { amount_cents: cents, frequency: pay.frequency, next_payday: pay.next, interval_days: null };
-    } else {
-      monthlyMoney = toCents(monthly);
-      if (monthlyMoney === null) return "Check the monthly amount.";
+      return { income: { amount_cents: cents, frequency: pay.frequency, next_payday: pay.next, interval_days: null }, monthly_money_cents: null };
     }
+    const monthlyMoney = toCents(monthly);
+    return monthlyMoney === null ? "Check the monthly amount." : { income: null, monthly_money_cents: monthlyMoney };
+  }
+
+  function billAnswers(): OnboardingAnswers["bills"] | string {
     const billList: OnboardingAnswers["bills"] = [];
     for (const bill of bills.filter((b) => b.on)) {
       const cents = toCents(bill.amount);
@@ -121,19 +127,39 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
       if (!bill.due) return `Pick when ${bill.name.trim()} is next due.`;
       billList.push({ name: bill.name.trim(), amount_cents: cents, category_id: bill.category, frequency: "monthly", next_due: bill.due, already_paid: bill.due <= today && bill.paid });
     }
+    return billList;
+  }
+
+  function everydayAnswers(): OnboardingAnswers["everyday"] | string {
     const spend: Record<string, number> = {};
     for (const [category, value] of Object.entries(everyday)) {
       const cents = toCents(value);
       if (cents === null) return "Enter an amount for each everyday category (0.00 to skip one).";
       if (cents > 0) spend[category] = cents;
     }
+    return spend;
+  }
+
+  /** The checks for the step on screen, so a mistake shows on the step where it was made. */
+  const STEP_ANSWERS = [accountAnswers, incomeAnswers, billAnswers, everydayAnswers];
+
+  /** All the answers, or the first step's error. */
+  function answers(savingsOverride?: number): OnboardingAnswers | string {
+    const accounts = accountAnswers();
+    if (typeof accounts === "string") return accounts;
+    const income = incomeAnswers();
+    if (typeof income === "string") return income;
+    const billList = billAnswers();
+    if (typeof billList === "string") return billList;
+    const spend = everydayAnswers();
+    if (typeof spend === "string") return spend;
     let savingsBasisPoints = savingsOverride ?? savings;
     if (savingsOverride === undefined && customSavings !== null) {
       const typed = percentToBasisPoints(customSavings);
       if (typed === null || typed > MAX_SAVINGS_BASIS_POINTS) return `Enter a savings percentage from 0 to ${MAX_SAVINGS_BASIS_POINTS / 100}.`;
       savingsBasisPoints = typed;
     }
-    return { opening_balances: opening, new_accounts: accounts, income, monthly_money_cents: monthlyMoney, bills: billList, everyday: spend, savings_basis_points: savingsBasisPoints };
+    return { ...accounts, ...income, bills: billList, everyday: spend, savings_basis_points: savingsBasisPoints };
   }
 
   // Penny's suggestions stay on screen while amounts are entered (Everyday and Saving): the
@@ -175,6 +201,8 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
 
   async function next() {
     setError("");
+    const own = STEP_ANSWERS[step]?.();
+    if (typeof own === "string") { setError(own); return; }
     if (step === 3 || step === 4) {
       const draft = answers();
       if (typeof draft === "string") { setError(draft); return; }
@@ -279,13 +307,14 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
                     {item.type === "credit" && (
                       <div className="grid grid-cols-2 gap-2">
                         <Field label="Credit limit">{(props) => <Input {...props} inputMode="decimal" placeholder="1000.00" value={item.limit} onChange={(e) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, limit: e.target.value } : a)))} className="min-h-11 text-base" />}</Field>
-                        <Field label="Payment due">{(props) => <DueDaySelect {...props} value={item.dueDay} onChange={(v) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, dueDay: v } : a)))} />}</Field>
+                        <Field label="Next payment due">{(props) => <DatePicker id={props.id} value={item.due} min={today} max={addMonths(`${today.slice(0, 7)}-01`, 2)} onChange={(v) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, due: v } : a)))} />}</Field>
+                        <p className="col-span-2 text-xs text-ink-subtle">Already paid this month’s? Pick next month’s date. Penny then shows it as paid.</p>
                       </div>
                     )}
                   </li>
                 ))}
               </ul>
-              {newAccounts.length < 4 && <Button variant="outline" className="mt-3 w-full" onClick={() => setNewAccounts([...newAccounts, { name: "", type: "savings", balance: "0.00", limit: "", dueDay: "" }])}><Plus className="size-4" aria-hidden="true" />Add a savings account or card</Button>}
+              {newAccounts.length < 4 && <Button variant="outline" className="mt-3 w-full" onClick={() => setNewAccounts([...newAccounts, { name: "", type: "savings", balance: "0.00", limit: "", due: "" }])}><Plus className="size-4" aria-hidden="true" />Add a savings account or card</Button>}
 
             </section>
           )}

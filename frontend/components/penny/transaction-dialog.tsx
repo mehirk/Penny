@@ -10,11 +10,15 @@ import type { Submit } from "./form-parts";
 import { type QuickPick, recentPurchases } from "./habits";
 import type { InlineCreate } from "./inline-create";
 import { QuickAdd, QuickConfirm, QuickPicks } from "./quick-add";
+import type { SharedDraft } from "./split-with-friends";
 import { BatchReview, type Draft, draftFrom } from "./transaction-batch";
 import { type TransactionBody, TransactionForm, type TransactionPrefill } from "./transaction-form";
 
+/** What the transaction dialog opens on: a new entry, one shared with friends, or an edit. */
+export type TransactionTarget = Transaction | "new" | { share: SharedDraft };
+
 export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubmitMany, onRequestDelete, onCreate }: {
-  target: Transaction | "new" | null;
+  target: TransactionTarget | null;
   dashboard: Dashboard;
   onClose: () => void;
   onSubmit: (id: string | null, body: TransactionBody) => Promise<string | null>;
@@ -22,7 +26,8 @@ export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubm
   onRequestDelete: (item: Transaction) => void;
   onCreate: InlineCreate;
 }) {
-  const item = target && target !== "new" ? target : null;
+  const item = target && target !== "new" && !("share" in target) ? target : null;
+  const share = target && target !== "new" && "share" in target ? target.share : undefined;
   return (
     <Dialog open={target !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
@@ -32,7 +37,7 @@ export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubm
         </DialogHeader>
         {item
           ? <TransactionForm key={item.id} item={item} dashboard={dashboard} onCreate={onCreate} onSubmit={(body) => onSubmit(item.id, body)} onRequestDelete={() => onRequestDelete(item)} />
-          : target === "new" && <NewTransactions dashboard={dashboard} onCreate={onCreate} onSubmit={(body) => onSubmit(null, body)} onSubmitMany={onSubmitMany} />}
+          : target && <NewTransactions dashboard={dashboard} share={share} onCreate={onCreate} onSubmit={(body) => onSubmit(null, body)} onSubmitMany={onSubmitMany} />}
       </DialogContent>
     </Dialog>
   );
@@ -43,7 +48,7 @@ export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubm
  * in again. "Quick AI add" expands above the form: one entry shows as a card to add in one tap (or
  * open in the form), several open a review list. The form can also switch to adding several by hand.
  */
-function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dashboard: Dashboard; onSubmit: Submit<TransactionBody>; onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>; onCreate: InlineCreate }) {
+function NewTransactions({ dashboard, share, onSubmit, onSubmitMany, onCreate }: { dashboard: Dashboard; share?: SharedDraft; onSubmit: Submit<TransactionBody>; onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>; onCreate: InlineCreate }) {
   const [mode, setMode] = useState<"form" | "batch">("form");
   const [quickOpen, setQuickOpen] = useState(false);
   const [prefill, setPrefill] = useState<TransactionPrefill | null>(null);
@@ -100,7 +105,7 @@ function NewTransactions({ dashboard, onSubmit, onSubmitMany, onCreate }: { dash
       {quickOpen && <div id="quick-add-panel"><QuickAdd onParsed={onParsed} filled={fromNote} /></div>}
       {confirm
         ? <QuickConfirm parsed={confirm} dashboard={dashboard} onSubmit={onSubmit} onEdit={() => fill(confirm)} />
-        : <TransactionForm key={formKey} item={null} prefill={prefill} dashboard={dashboard} onCreate={onCreate} onSubmit={onSubmit} />}
+        : <TransactionForm key={formKey} item={null} prefill={prefill} share={share} dashboard={dashboard} onCreate={onCreate} onSubmit={onSubmit} />}
     </div>
   );
 }

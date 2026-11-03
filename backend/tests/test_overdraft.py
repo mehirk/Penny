@@ -145,3 +145,41 @@ def test_same_day_transactions_list_the_last_recorded_first() -> None:
     _spend(store, card, 200)
     first, second = store.dashboard_for_user(USER).transactions[:2]
     assert (first.account_id, second.account_id) == (card, "acct-chequing")
+
+
+def _history(store: DashboardStore, **changes: object) -> TransactionWrite:
+    values: dict[str, object] = {
+        "description": "Textbook",
+        "account_id": "acct-chequing",
+        "amount_cents": 9_000,
+        "kind": "spending",
+        "occurred_on": store.today().replace(day=1),
+        "history_only": True,
+    }
+    values.update(changes)
+    return TransactionWrite.model_validate(values)
+
+
+def test_history_only_purchase_counts_as_spending_but_not_against_the_balance() -> None:
+    store = fresh_store(USER, None)
+    result = store.create_transaction(USER, _history(store))
+    (textbook,) = [t for t in result.transactions if t.description == "Textbook"]
+    assert textbook.history_only
+    assert result.totals.spending_cents == 9_000
+    chequing = next(a for a in result.accounts if a.id == "acct-chequing")
+    assert chequing.balance_cents == 0
+    # Editing or removing it doesn't touch the balance either.
+    store.update_transaction(USER, textbook.id, TransactionPatch(amount_cents=12_000))
+    after = store.delete_transaction(USER, textbook.id)
+    assert next(a for a in after.accounts if a.id == "acct-chequing").balance_cents == 0
+
+
+def test_history_only_must_already_have_happened() -> None:
+    from datetime import timedelta
+
+    store = fresh_store(USER, None)
+    with pytest.raises(HTTPException) as error:
+        store.create_transaction(
+            USER, _history(store, occurred_on=store.today() + timedelta(days=1))
+        )
+    assert error.value.status_code == 422

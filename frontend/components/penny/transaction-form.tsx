@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, LoaderCircle, Repeat, Trash2 } from "lucide-react";
+import { FormEvent, useRef, useState } from "react";
+import { ArrowDownLeft, ArrowUpRight, History, LoaderCircle, Repeat, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
@@ -31,7 +31,7 @@ const NEW = "__new__";
 /** Values a new transaction starts with: read from a note, or a repeat of a recent purchase. */
 export type TransactionPrefill = Pick<ParsedTransaction, "description" | "amount_cents" | "kind" | "occurred_on" | "category_id" | "repeat"> & { account_id?: string };
 
-export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onRequestDelete, onCreate }: { item: Transaction | null; prefill?: TransactionPrefill | null; dashboard: Dashboard; onSubmit: Submit<TransactionBody>; onRequestDelete?: () => void; onCreate: InlineCreate }) {
+export function TransactionForm({ item, prefill = null, share: initialShare = NOT_SHARED, dashboard, onSubmit, onRequestDelete, onCreate }: { item: Transaction | null; prefill?: TransactionPrefill | null; share?: SharedDraft; dashboard: Dashboard; onSubmit: Submit<TransactionBody>; onRequestDelete?: () => void; onCreate: InlineCreate }) {
   const prefillCategory = prefill && dashboard.categories.find((c) => c.id === prefill.category_id && c.kind === prefill.kind)?.id;
   const prefillRepeat = prefill?.repeat && prefill.kind === "spending" ? prefill.repeat : null;
   const initialKind = item?.kind ?? prefill?.kind ?? "spending";
@@ -53,15 +53,19 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
   const [repeat, setRepeat] = useState<{ on: boolean; frequency: BillFrequency; nextDue: string; auto: boolean }>(
     prefillRepeat ? { on: true, frequency: prefillRepeat.frequency, nextDue: prefillRepeat.next_due, auto: true } : { on: false, frequency: "monthly", nextDue: "", auto: true },
   );
-  const [share, setShare] = useState<SharedDraft>(NOT_SHARED);
+  const [share, setShare] = useState<SharedDraft>(initialShare);
+  const [historyOnly, setHistoryOnly] = useState(false);
   // Kept as typed, for the split preview; the amount itself is read when the form is saved.
   const [amountText, setAmountText] = useState(item ? centsToInput(String(item.amount_cents)) : prefill?.amount_cents ? centsToInput(String(prefill.amount_cents)) : "");
+  const amountRef = useRef<HTMLInputElement>(null);
   const splitMode = account === MULTIPLE;
   // A new money-out entry paid from one account can be shared with friends, or become a recurring bill.
   const canShare = !item && kind === "spending" && !splitMode;
   const sharing = canShare && share.on;
   const friendPaid = sharing && share.payer !== "me";
   const canRepeat = canShare && !sharing;
+  // Something paid before today may already be in the balance the user entered.
+  const canSkipBalance = !item && !splitMode && !sharing && date < (dashboard.money_calendar.today ?? date);
   const typedCents = (() => { try { return parseCadToCents(amountText); } catch { return null; } })();
   const ownAccounts = dashboard.accounts.filter(isOwnAccount);
   const splitTotal = splitTotalCents(dashboard, splits);
@@ -134,7 +138,7 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
       kind,
       occurred_on: date,
       // Repeating is only offered when adding; the edit endpoint doesn't accept the field.
-      ...(item ? {} : { repeat: canRepeat && repeat.on ? { frequency: repeat.frequency, next_due: repeat.nextDue || null, auto_record: repeat.auto } : null }),
+      ...(item ? {} : { repeat: canRepeat && repeat.on ? { frequency: repeat.frequency, next_due: repeat.nextDue || null, auto_record: repeat.auto } : null, history_only: canSkipBalance && historyOnly }),
     });
     setBusy(false);
     if (error) setFormError(error);
@@ -162,7 +166,7 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
             <span className={cn("tabular shrink-0 whitespace-nowrap text-3xl font-semibold", style.text)} aria-hidden="true">{style.sign}$</span>
             {splitMode
               ? <output {...props} className="tabular flex min-h-16 w-full min-w-0 items-center px-1 text-3xl font-semibold text-ink">{centsToInput(String(splitTotal))}</output>
-              : <input {...props} name="amount" inputMode="decimal" enterKeyHint="next" autoComplete="off" placeholder="0.00" defaultValue={amountText} onChange={(event) => setAmountText(event.target.value)} required className="tabular min-h-16 w-full min-w-0 bg-transparent px-1 text-3xl font-semibold text-ink placeholder:text-ink-subtle/60 focus:outline-none" />}
+              : <input {...props} ref={amountRef} name="amount" inputMode="decimal" enterKeyHint="next" autoComplete="off" placeholder="0.00" defaultValue={amountText} onChange={(event) => setAmountText(event.target.value)} required className="tabular min-h-16 w-full min-w-0 bg-transparent px-1 text-3xl font-semibold text-ink placeholder:text-ink-subtle/60 focus:outline-none" />}
           </div>
         )}
       </Field>
@@ -202,7 +206,15 @@ export function TransactionForm({ item, prefill = null, dashboard, onSubmit, onR
         {(props) => <DatePicker id={props.id} aria-describedby={props["aria-describedby"]} value={date} onChange={(value) => { setDate(value); if (repeat.on) setRepeat({ ...repeat, nextDue: nextAfter(value, repeat.frequency) }); }} />}
       </Field>
 
-      {canShare && <SplitWithFriends dashboard={dashboard} draft={share} amountCents={typedCents && typedCents > 0 ? typedCents : null} onChange={setShare} onCreate={onCreate} />}
+      {canSkipBalance && (
+        <label className={cn("flex min-h-14 cursor-pointer items-center gap-3 rounded-2xl border px-3 py-2 transition-colors", historyOnly ? "border-info/40 bg-info-soft/40" : "border-line")}>
+          <input type="checkbox" checked={historyOnly} onChange={(event) => setHistoryOnly(event.target.checked)} className="size-5 shrink-0 accent-[var(--color-accent)]" />
+          <span className="min-w-0"><span className="flex items-center gap-1.5 text-sm font-semibold text-ink"><History className="size-4 text-info" aria-hidden="true" />Already in my balance</span><span className="block text-xs text-ink-subtle">Just add it to history. It counts toward budgets, but {ownAccounts.find((option) => option.id === account)?.name ?? "the account"}’s balance won’t change.</span></span>
+        </label>
+      )}
+      {item?.history_only && <p className="rounded-xl bg-info-soft/40 p-3 text-xs text-ink-muted">Added as already in your balance, so changing or deleting it won’t change a balance.</p>}
+
+      {canShare && <SplitWithFriends dashboard={dashboard} draft={share} amountCents={typedCents && typedCents > 0 ? typedCents : null} onChange={setShare} onCreate={onCreate} onEnterAmount={() => { amountRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }); amountRef.current?.focus({ preventScroll: true }); }} />}
 
       {canRepeat && (
         <div className={cn("rounded-2xl border transition-colors", repeat.on ? "border-primary/40 bg-primary-soft/40" : "border-line")}>

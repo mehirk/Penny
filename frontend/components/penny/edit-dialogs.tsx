@@ -6,7 +6,7 @@ import { BudgetDialog } from "./budget-dialog";
 import { AddMoneyDialog, GoalDialog } from "./goal-dialogs";
 import type { InlineCreate } from "./inline-create";
 import { cad } from "./shared";
-import { TransactionDialog } from "./transaction-dialog";
+import { TransactionDialog, type TransactionTarget } from "./transaction-dialog";
 import type { TransactionBody } from "./transaction-form";
 import type { Mutate, ToastMessage } from "./use-dashboard";
 
@@ -18,7 +18,7 @@ export function EditDialogs({ dashboard, mutate, onCreate, onOpenMonth, transact
   mutate: Mutate;
   onCreate: InlineCreate;
   onOpenMonth: (month: string) => void;
-  transaction: DialogSlot<Transaction | "new">;
+  transaction: [target: TransactionTarget | null, setTarget: (target: TransactionTarget | null) => void, requestDelete: (item: Transaction) => void];
   budget: DialogSlot<Budget | "new">;
   goal: DialogSlot<SavingsGoal | "new">;
   addMoney: [target: SavingsGoal | null, setTarget: (target: SavingsGoal | null) => void];

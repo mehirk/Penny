@@ -6,11 +6,11 @@ export type AccountType = "chequing" | "savings" | "credit" | "cash" | "investme
 export type AccountBalance = { id: string; name: string; account_type: AccountType; balance_cents: number; net_cents: number; credit_limit_cents: number | null; available_credit_cents: number | null; utilization_basis_points: number | null; goals: { id: string; name: string; current_cents: number }[]; goal_cents: number; free_cents: number | null; money_in_cents: number; money_out_cents: number; last_activity_on: string | null };
 /** Every account and how they add up, as of today (whatever period is on screen). */
 export type AccountsOverview = { accounts: AccountBalance[]; spending_cents: number; savings_cents: number; assets_cents: number; owed_cents: number; net_worth_cents: number; goal_cents: number; goal_shortfall_cents: number };
-export type Account = { id: string; name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day: number | null };
+export type Account = { id: string; name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day: number | null; card_paid_on: string | null };
 /** A credit card's next payment (from its due day) and what's owed on it now. */
 export type CardPayment = { account_id: string; account_name: string; due_on: string; days_until_due: number; owed_cents: number; paid_on: string | null };
 export type Category = { id: string; name: string; colour_token: string; kind: "income" | "spending"; parent_id: string | null; custom: boolean };
-export type Transaction = { id: string; description: string; category: string; account_id: string; category_id: string | null; amount_cents: number; kind: "income" | "spending"; occurred_on: string; necessity: "need" | "want" | null; auto_categorized: boolean; bill_id: string | null; paid_automatically: boolean | null; unusual: boolean };
+export type Transaction = { id: string; description: string; category: string; account_id: string; category_id: string | null; amount_cents: number; kind: "income" | "spending"; occurred_on: string; necessity: "need" | "want" | null; auto_categorized: boolean; bill_id: string | null; paid_automatically: boolean | null; unusual: boolean; history_only: boolean; group_id: string | null };
 export type Budget = { id: string; category_id: string; category_name: string; month_start: string; limit_cents: number; spent_cents: number; remaining_cents: number; usage_basis_points: number; carried_over: boolean };
 export type GoalContribution = { id: string; amount_cents: number; from_account_id: string; to_account_id: string | null; occurred_on: string; source: "you" | "penny" };
 export type SavingsGoal = { id: string; name: string; target_cents: number; current_cents: number; target_date: string | null; status: "active" | "completed" | "paused"; progress_basis_points: number; monthly_needed_cents: number | null; account_id: string | null; contributed_this_month_cents: number; recent_contributions: GoalContribution[] };
@@ -85,6 +85,7 @@ export type Dashboard = {
   cash_warnings: CashWarning[];
   /** Transfers and card payments in the period on screen, newest first. */
   transfers: Transfer[];
+  splits: SplitsOverview | null;
   /** A real account with no budget, bills, or pay schedule yet: offer the setup. */
   needs_onboarding: boolean;
   /** How long Safe to spend has to last; null when the period shown doesn't include today. */
@@ -94,7 +95,13 @@ export type Dashboard = {
 
 /** Money the user moved between their own accounts in their bank (Penny records it; it never moves money). */
 export type TransferWrite = { from_account_id: string; to_account_id: string; amount_cents: number; occurred_on: string; note: string | null };
-export type Transfer = TransferWrite & { id: string; kind: "transfer" | "card_payment" };
+export type Transfer = TransferWrite & { id: string; kind: "transfer" | "card_payment" | "split"; group_id: string | null };
+export type SplitGroupWrite = { name: string; member_ids: string[] };
+export type SplitGroup = SplitGroupWrite & { id: string; expense_count: number; spent_cents: number };
+/** A friend's balance: positive, they owe you; negative, you owe them. */
+export type SplitFriend = { account_id: string; name: string; balance_cents: number; last_activity_on: string | null };
+export type SplitActivity = { id: string; kind: "lent" | "borrowed" | "paid_back" | "you_paid_back"; friend_id: string; friend_name: string; description: string; amount_cents: number; occurred_on: string; group_id: string | null; transfer_id: string | null; transaction_id: string | null };
+export type SplitsOverview = { owed_to_you_cents: number; you_owe_cents: number; net_cents: number; friends: SplitFriend[]; groups: SplitGroup[]; activity: SplitActivity[] };
 export type CashWarning = { account_id: string; account_name: string; due_cents: number; balance_cents: number; short_cents: number; bill_names: string[]; first_due_on: string; cover_account_id: string | null; cover_account_name: string | null };
 /** One recurring bill's share of the month's budget: paid so far plus what's still due. */
 export type FixedCost = { bill_id: string; name: string; category_id: string | null; kind: "bill" | "subscription"; amount_cents: number; paid_cents: number; due_cents: number; next_due_on: string | null };
@@ -116,11 +123,11 @@ export type History = {
 export type CategorySuggestion = { category_id: string | null; category_name: string | null; necessity: "need" | "want" | null; matched: string | null; source: "rules" | "ai" | null };
 export type CreditUtilization = { balance_cents: number; credit_limit_cents: number; utilization_basis_points: number; within_common_guideline: boolean };
 
-export type TransactionWrite = Omit<Transaction, "id" | "category" | "necessity" | "auto_categorized" | "bill_id" | "paid_automatically" | "unusual"> & { repeat?: { frequency: BillFrequency; next_due: string | null; auto_record: boolean } | null };
+export type TransactionWrite = Omit<Transaction, "id" | "category" | "necessity" | "auto_categorized" | "bill_id" | "paid_automatically" | "unusual" | "history_only" | "group_id"> & { repeat?: { frequency: BillFrequency; next_due: string | null; auto_record: boolean } | null; history_only?: boolean };
 /** One purchase or deposit across several accounts; the API saves one transaction per account. */
 export type SplitTransactionWrite = Omit<TransactionWrite, "account_id" | "amount_cents"> & { splits: { account_id: string; amount_cents: number }[] };
 /** A purchase split with friends: your share is spending; when you paid, `owed_by` is what each friend owes you. */
-export type SharedPurchaseWrite = { description: string; category_id: string | null; occurred_on: string; paid_from: string; my_share_cents: number; owed_by: { account_id: string; amount_cents: number }[] };
+export type SharedPurchaseWrite = { description: string; category_id: string | null; occurred_on: string; paid_from: string; my_share_cents: number; owed_by: { account_id: string; amount_cents: number }[]; group_id: string | null };
 type GoalWrite = Pick<SavingsGoal, "name" | "target_cents" | "current_cents" | "target_date" | "account_id">;
 export type CoachRole = "user" | "assistant";
 export type CoachFact = { label: string; display: string; cents: number | null; basis_points: number | null; source: string };
@@ -220,6 +227,9 @@ export const dashboardApi = {
   createTransaction: (body: TransactionWrite, month?: string) => request(inMonth("/api/v1/transactions", month), { method: "POST", body: JSON.stringify(body) }),
   createSplitTransaction: (body: SplitTransactionWrite, month?: string) => request(inMonth("/api/v1/transactions/split", month), { method: "POST", body: JSON.stringify(body) }),
   createSharedPurchase: (body: SharedPurchaseWrite, month?: string) => request(inMonth("/api/v1/transactions/shared", month), { method: "POST", body: JSON.stringify(body) }),
+  createSplitGroup: (body: SplitGroupWrite, month?: string) => request(inMonth("/api/v1/split-groups", month), { method: "POST", body: JSON.stringify(body) }),
+  updateSplitGroup: (id: string, body: SplitGroupWrite, month?: string) => request(inMonth(`/api/v1/split-groups/${id}`, month), { method: "PUT", body: JSON.stringify(body) }),
+  deleteSplitGroup: (id: string, month?: string) => request(inMonth(`/api/v1/split-groups/${id}`, month), { method: "DELETE" }),
   updateTransaction: (id: string, body: Partial<TransactionWrite>, month?: string) => request(inMonth(`/api/v1/transactions/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
   deleteTransaction: (id: string, month?: string) => request(inMonth(`/api/v1/transactions/${id}`, month), { method: "DELETE" }),
   createBudget: (body: { category_id: string; month_start: string; limit_cents: number }, month?: string) => request(inMonth("/api/v1/budgets", month), { method: "POST", body: JSON.stringify(body) }),
@@ -254,7 +264,7 @@ export const dashboardApi = {
   createCategory: (body: { name: string; kind: Category["kind"]; parent_id: string | null }) => request("/api/v1/categories", { method: "POST", body: JSON.stringify(body) }),
   deleteCategory: (id: string) => request(`/api/v1/categories/${id}`, { method: "DELETE" }),
   createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day?: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
-  updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number; card_paid_on?: string }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteAccount: (id: string) => request(`/api/v1/accounts/${id}`, { method: "DELETE" }),
   importRows: (account_id: string, rows: ImportRow[]) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; dashboard: Dashboard }>("/api/v1/transactions/import-rows", { method: "POST", body: JSON.stringify({ account_id, rows }) }),
   applyBudgetChanges: (changes: { budget_id: string; limit_cents: number }[], month?: string) => request(inMonth("/api/v1/budgets/changes", month), { method: "POST", body: JSON.stringify({ changes }) }),
@@ -287,7 +297,7 @@ export type CoachBudgetPlan = BudgetPlanSummary & { month: string; summary: stri
 
 export type OnboardingAnswers = {
   opening_balances: Record<string, number>;
-  new_accounts: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day: number | null }[];
+  new_accounts: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_next_due: string | null }[];
   income: { amount_cents: number; frequency: PayFrequency; next_payday: string; interval_days: number | null } | null;
   monthly_money_cents: number | null;
   bills: { name: string; amount_cents: number; category_id: string; frequency: BillFrequency; next_due: string; already_paid?: boolean }[];

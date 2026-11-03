@@ -9,7 +9,7 @@ import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { BackBar } from "./back-bar";
 import { categoryIcon } from "./category-icons";
-import { ACCOUNT_TYPE_LABELS } from "./labels";
+import { ACCOUNT_TYPE_LABELS, settleUp } from "./labels";
 import { accountEmoji } from "./emoji";
 import { BigAmount, cad } from "./shared";
 import { useTransfers } from "./transfer-dialog";
@@ -26,9 +26,7 @@ export function AccountDetail({ dashboard, account, backLabel, onBack }: { dashb
   const owed = credit && account.balance_cents > 0;
   const overdrawn = !friend && account.balance_cents < 0;
   const youOwe = friend && account.balance_cents < 0;
-  // Settling up with a friend: pay them what you owe, or record them paying you back.
-  const home = dashboard.accounts.find((a) => a.account_type === "chequing")?.id;
-  const settle = account.balance_cents < 0 ? { from: home, to: account.id, amountCents: -account.balance_cents } : { from: account.id, to: home, amountCents: account.balance_cents };
+  const settle = settleUp(dashboard.accounts, account.id, account.balance_cents);
   const used = account.utilization_basis_points;
   const categories = new Map(dashboard.categories.map((category) => [category.id, category]));
   const rows = dashboard.transactions.filter((item) => item.account_id === account.id).slice(0, 20);

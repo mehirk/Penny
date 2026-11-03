@@ -20,6 +20,10 @@ from app.dashboard_models import (
     PaySource,
     Period,
     RecurringSummary,
+    SplitActivity,
+    SplitFriend,
+    SplitGroupSummary,
+    SplitsOverview,
     Transfer,
     UpcomingPay,
 )
@@ -30,11 +34,15 @@ from app.domain.financial_health import METHODOLOGY, health_factors, health_scor
 from app.domain.money_days import DayScore
 from app.domain.periods import describe_period
 from app.domain.recurring import detect_fixed_series
+from app.domain.splits import split_totals
 from app.models import Account, Transaction
 from app.store.sections import bill_due_dates, build_calendar, build_recurring, score_month
 from app.store.state import StoreState, invalid, same_month
 
 UNUSUAL_MULTIPLE = 3
+# A friend's share of a purchase the user paid for, as noted before shares had their own kind.
+SHARE_NOTE = "Their share: "
+SPLIT_ACTIVITY_LIMIT = 200
 UNUSUAL_MINIMUM_CENTS = 4_000
 
 
@@ -324,6 +332,114 @@ class StoreInsights(StoreState):
             )
         return warnings
 
+    def _split_activity(self, friends: dict[str, Account]) -> list[SplitActivity]:
+        """Everything that changed what friends and the user owe each other, newest first."""
+        items: list[SplitActivity] = []
+        for transfer in self._transfers.values():
+            to_friend = friends.get(transfer.to_account_id)
+            from_friend = friends.get(transfer.from_account_id)
+            if bool(to_friend) == bool(from_friend):
+                continue
+            note = transfer.note or ""
+            if to_friend:
+                friend = to_friend
+                lent = transfer.kind == "split" or note.startswith(SHARE_NOTE)
+                kind = "lent" if lent else "you_paid_back"
+                description = (
+                    note.removeprefix(SHARE_NOTE)
+                    if lent
+                    else note or f"You paid {friend.name} back"
+                )
+            else:
+                friend = from_friend  # type: ignore[assignment]
+                kind = "paid_back"
+                description = note or f"{friend.name} paid you back"
+            items.append(
+                SplitActivity(
+                    id=transfer.id,
+                    kind=kind,
+                    friend_id=friend.id,
+                    friend_name=friend.name,
+                    description=description or "Shared purchase",
+                    amount_cents=transfer.amount_cents,
+                    occurred_on=transfer.occurred_on,
+                    group_id=transfer.group_id,
+                    transfer_id=transfer.id,
+                )
+            )
+        for transaction in self._transactions.values():
+            friend = friends.get(transaction.account_id)
+            if friend and transaction.kind == "spending":
+                items.append(
+                    SplitActivity(
+                        id=transaction.id,
+                        kind="borrowed",
+                        friend_id=friend.id,
+                        friend_name=friend.name,
+                        description=transaction.description,
+                        amount_cents=transaction.amount_cents,
+                        occurred_on=transaction.occurred_on,
+                        group_id=transaction.group_id,
+                        transaction_id=transaction.id,
+                    )
+                )
+        # Newest first. On the same day, transfers recorded later come first, and so do purchases.
+        items.reverse()
+        items.sort(key=lambda item: item.occurred_on, reverse=True)
+        return items
+
+    def _splits_overview(self) -> SplitsOverview:
+        friends = {
+            account.id: account
+            for account in self._accounts.values()
+            if account.account_type == "person"
+        }
+        activity = self._split_activity(friends)
+        last: dict[str, date] = {}
+        for item in activity:
+            last.setdefault(item.friend_id, item.occurred_on)
+        totals = split_totals(account.balance_cents for account in friends.values())
+        groups = []
+        for group in self._split_groups.values():
+            mine = [
+                t
+                for t in self._transactions.values()
+                if t.group_id == group.id and t.kind == "spending"
+            ]
+            shares = [
+                t for t in self._transfers.values() if t.group_id == group.id and t.kind == "split"
+            ]
+            purchases = {(t.occurred_on, t.description) for t in mine} | {
+                (t.occurred_on, (t.note or "").removeprefix(SHARE_NOTE)) for t in shares
+            }
+            groups.append(
+                SplitGroupSummary(
+                    **group.model_dump(),
+                    expense_count=len(purchases),
+                    spent_cents=sum(t.amount_cents for t in mine)
+                    + sum(t.amount_cents for t in shares),
+                )
+            )
+        return SplitsOverview(
+            owed_to_you_cents=totals.owed_to_you_cents,
+            you_owe_cents=totals.you_owe_cents,
+            net_cents=totals.net_cents,
+            friends=sorted(
+                (
+                    SplitFriend(
+                        account_id=account.id,
+                        name=account.name,
+                        balance_cents=account.balance_cents,
+                        last_activity_on=last.get(account.id),
+                    )
+                    for account in friends.values()
+                ),
+                key=lambda friend: (-abs(friend.balance_cents), friend.name.casefold()),
+            ),
+            groups=groups,
+            activity=activity[:SPLIT_ACTIVITY_LIMIT],
+        )
+
     def _card_payments(self) -> list[CardPayment]:
         """Credit cards with a payment due day, soonest first. A card payment recorded since its
         previous due date pays the coming one, so the card shows the following month's."""
@@ -335,6 +451,8 @@ class StoreInsights(StoreState):
             paid_dates = [
                 t.occurred_on for t in self._transfers.values() if t.to_account_id == account.id
             ]
+            if account.card_paid_on:
+                paid_dates.append(account.card_paid_on)
             due, paid_on = card_cycle(today, account.payment_due_day, paid_dates)
             payments.append(
                 CardPayment(

@@ -48,6 +48,11 @@ class AccountOps(DashboardViews):
             if "credit_limit_cents" in changes and account.account_type != "credit":
                 raise invalid("Only credit cards have a limit")
             require_card_for_due_day(account.account_type, changes.get("payment_due_day"))
+            paid_on = changes.get("card_paid_on")
+            if paid_on and account.account_type != "credit":
+                raise invalid("Only credit cards can be marked paid")
+            if paid_on and paid_on > self.today():
+                raise invalid("That payment date is in the future")
             self._accounts[account_id] = account.model_copy(update=changes)
             return self._snapshot()
 
@@ -70,6 +75,16 @@ class AccountOps(DashboardViews):
                     "This account has transactions, bills, or your paycheque. Move them first."
                 )
             del self._accounts[account_id]
+            # A friend leaves their groups; a group with nobody left goes too.
+            for group in list(self._split_groups.values()):
+                if account_id in group.member_ids:
+                    members = [m for m in group.member_ids if m != account_id]
+                    if members:
+                        self._split_groups[group.id] = group.model_copy(
+                            update={"member_ids": members}
+                        )
+                    else:
+                        del self._split_groups[group.id]
             return self._snapshot()
 
     def set_spending_from(self, user_id: str, value: str) -> DashboardResponse:

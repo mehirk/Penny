@@ -10,6 +10,7 @@ from app.store.pay import PayOps
 from app.store.planning import PlanningOps
 from app.store.reports import ReportViews
 from app.store.seed import demo_snapshot, empty_snapshot
+from app.store.splits import SplitOps
 from app.store.transactions import TransactionOps
 
 
@@ -19,6 +20,7 @@ class DashboardStore(
     GoalOps,
     BillOps,
     AccountOps,
+    SplitOps,
     PayOps,
     LearningOps,
     ReportViews,

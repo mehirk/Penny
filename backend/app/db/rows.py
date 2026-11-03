@@ -9,7 +9,15 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from app.dashboard_models import Bill, Category, GoalContribution, Mission, PaySchedule, Transfer
+from app.dashboard_models import (
+    Bill,
+    Category,
+    GoalContribution,
+    Mission,
+    PaySchedule,
+    SplitGroup,
+    Transfer,
+)
 from app.learning.engine import Attempt, Learner, LessonResult
 from app.learning.models import AttemptView, LearnProfile
 from app.models import Account, DemoUser, Transaction
@@ -32,6 +40,7 @@ TABLE_KEYS: dict[str, tuple[str, ...]] = {
     "missions": ("id",),
     "pay_schedules": ("id",),
     "transfers": ("id",),
+    "split_groups": ("id",),
     "learn_profiles": (),
     "learn_results": ("lesson_id",),
     "learn_activity": ("day",),
@@ -100,6 +109,7 @@ def to_rows(snapshot: StoreSnapshot) -> Rows:
         "missions": [item.model_dump() for item in snapshot.missions],
         "pay_schedules": [item.model_dump() for item in snapshot.pay_schedules],
         "transfers": [item.model_dump() for item in snapshot.transfers],
+        "split_groups": [item.model_dump() for item in snapshot.split_groups],
         "learn_profiles": [learner.profile.model_dump()],
         "learn_results": [
             {
@@ -166,6 +176,7 @@ def from_rows(user_id: str, profile: Row, tables: dict[str, list[Row]]) -> Store
         missions=[Mission.model_validate(row) for row in tables.get("missions", [])],
         bills=[Bill.model_validate(row) for row in tables.get("bills", [])],
         transfers=[Transfer.model_validate(row) for row in tables.get("transfers", [])],
+        split_groups=[SplitGroup.model_validate(row) for row in tables.get("split_groups", [])],
         pay_schedules=sorted(
             (PaySchedule.model_validate(row) for row in pay), key=lambda item: item.id
         ),
