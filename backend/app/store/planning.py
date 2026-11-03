@@ -10,11 +10,11 @@ from app.dashboard_models import (
     OnboardingApply,
     PaySchedule,
 )
+from app.domain.card_due import due_day_from
 from app.domain.finance import add_months
 from app.domain.smart_budget import CategoryBase, SmartPlan, smart_budget
 from app.domain.starter_budget import StarterPlan, monthly_income_cents, starter_plan
 from app.models import Account
-from app.store.accounts import require_card_for_due_day
 from app.store.budgets import BudgetOps
 from app.store.sections import following_due, monthly_equivalent_cents
 from app.store.state import conflict, invalid, new_id
@@ -135,7 +135,13 @@ class PlanningOps(BudgetOps):
         for new in answers.new_accounts:
             if (new.account_type == "credit") != (new.credit_limit_cents is not None):
                 raise invalid("Credit cards need a limit; other accounts can't have one")
-            require_card_for_due_day(new.account_type, new.payment_due_day)
+            if new.payment_next_due and new.account_type != "credit":
+                raise invalid("Only credit cards have a payment due date")
+            if new.payment_next_due:
+                try:
+                    due_day_from(self.today(), new.payment_next_due)
+                except ValueError as error:
+                    raise invalid(f"{new.name}: {error}") from error
         income = answers.income
         if income and (income.frequency == "custom") != (income.interval_days is not None):
             raise invalid("Set the days between paydays only for a custom schedule")
@@ -158,7 +164,17 @@ class PlanningOps(BudgetOps):
                     update={"balance_cents": cents}
                 )
             for new in answers.new_accounts:
-                account = Account(id=new_id("acct", 10), **new.model_dump())
+                due_day, paid = (
+                    due_day_from(self.today(), new.payment_next_due)
+                    if new.payment_next_due
+                    else (None, False)
+                )
+                account = Account(
+                    id=new_id("acct", 10),
+                    **new.model_dump(exclude={"payment_next_due"}),
+                    payment_due_day=due_day,
+                    card_paid_on=self.today() if paid else None,
+                )
                 self._accounts[account.id] = account
             # Pay and bills go to the first everyday account there is.
             home = next(

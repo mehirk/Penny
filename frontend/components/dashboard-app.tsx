@@ -22,6 +22,7 @@ import { MENU, NAVIGATION, type View } from "@/components/penny/shared";
 import { type SpendingTab, SpendingView } from "@/components/penny/spending-view";
 import { slide, spotlight, withViewTransition } from "@/components/penny/subpage";
 import { TodayView } from "@/components/penny/today-view";
+import type { TransactionTarget } from "@/components/penny/transaction-dialog";
 import { TransferContext, TransferDialog, type TransferPrefill } from "@/components/penny/transfer-dialog";
 import { useDashboard } from "@/components/penny/use-dashboard";
 import { useKeyboardShortcuts } from "@/components/penny/use-keyboard-shortcuts";
@@ -53,7 +54,7 @@ function PennyApp() {
   });
   const [setupOpen, setSetupOpen] = useState(false);
 
-  const [transactionTarget, setTransactionTarget] = useState<Transaction | "new" | null>(null);
+  const [transactionTarget, setTransactionTarget] = useState<TransactionTarget | null>(null);
   const [budgetTarget, setBudgetTarget] = useState<Budget | "new" | null>(null);
   const [transferTarget, setTransferTarget] = useState<TransferPrefill | null>(null);
   const [billShort, setBillShort] = useState<Bill | null>(null);
@@ -236,8 +237,8 @@ function PennyApp() {
           {/* A period that isn't cached yet shows a skeleton until its data arrives, never stale numbers. */}
           {monthLoading && <PageSkeleton />}
           <div key={view} className={monthLoading ? "hidden" : "animate-fade"} aria-busy={monthLoading}>
-            {view === "today" && <TodayView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} onEditTransaction={setTransactionTarget} onSetUp={() => setSetupOpen(true)} />}
-            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: (bill, recordOnly) => markBillPaid(bill, { recordOnly }), onSave: saveBill, onDelete: confirmDeleteBill }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} />}
+            {view === "today" && <TodayView dashboard={dashboard} splits={{ save: mutate, onAddExpense: (share) => setTransactionTarget({ share }) }} onNavigate={navigate} onAsk={askPenny} onEditTransaction={setTransactionTarget} onSetUp={() => setSetupOpen(true)} />}
+            {view === "spending" && <SpendingView dashboard={dashboard} historyVersion={historyVersion} tab={spendingTab} onTabChange={setSpendingTab} recurring={{ onMarkPaid: (bill, recordOnly) => markBillPaid(bill, { recordOnly }), onSave: saveBill, onDelete: confirmDeleteBill, onCardPaid: (card) => void mutate(() => dashboardApi.updateAccount(card.account_id, { card_paid_on: dashboard.money_calendar.today ?? new Date().toISOString().slice(0, 10) }), `${card.account_name} recorded as paid`) }} onAsk={askPenny} onSelectMonth={goToMonth} onChangePeriod={goToPeriod} onAddTransaction={() => setTransactionTarget("new")} onEditTransaction={setTransactionTarget} onDeleteTransaction={confirmDeleteTransaction} />}
             {view === "accounts" && <AccountsView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
             {view === "goals" && <GoalsView dashboard={dashboard} onAsk={askPenny} onAdd={() => setGoalTarget("new")} onEdit={setGoalTarget} onAddMoney={setAddMoneyTarget} onComplete={(goal) => void mutate(() => dashboardApi.updateGoal(goal.id, { status: "completed" }, month), `${goal.name} reached`)} />}
             {view === "charts" && <ChartsView dashboard={dashboard} />}

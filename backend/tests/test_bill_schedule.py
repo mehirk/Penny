@@ -156,3 +156,13 @@ def test_setup_skips_a_bill_already_paid_today() -> None:
     assert result.bills[0].next_due == _month_after(today)
     assert result.bills[0].last_paid_on == today
     assert result.transactions == []
+
+
+def test_removing_a_record_only_payment_leaves_the_balance_alone() -> None:
+    store = fresh_store(USER, None)
+    bill = _bill(store, store.today())
+    store.mark_bill_paid(USER, bill.id, record_only=True)
+    payment = next(t for t in store.dashboard_for_user(USER).transactions if t.bill_id == bill.id)
+    assert payment.history_only
+    store.delete_transaction(USER, payment.id)
+    assert _balance(store) == 0

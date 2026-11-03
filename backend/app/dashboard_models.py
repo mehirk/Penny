@@ -393,8 +393,74 @@ class TransferWrite(DashboardModel):
 
 class Transfer(TransferWrite):
     id: str = Field(min_length=1, max_length=80)
-    # "card_payment" when it pays down a credit card. Neither is spending or income.
-    kind: Literal["transfer", "card_payment"]
+    # "card_payment" when it pays down a credit card; "split" for a friend's share of a purchase
+    # the user paid for (what they now owe). None of them is spending or income.
+    kind: Literal["transfer", "card_payment", "split"]
+    # The split group a friend's share was added in, if any.
+    group_id: str | None = None
+
+
+class SplitGroupWrite(DashboardModel):
+    """Friends who often share costs (roommates, a trip), to split with in one tap."""
+
+    name: str = Field(min_length=1, max_length=60)
+    member_ids: list[str] = Field(min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def _members_once(self) -> "SplitGroupWrite":
+        if len(set(self.member_ids)) != len(self.member_ids):
+            raise ValueError("Each friend can be in a group only once")
+        return self
+
+
+class SplitGroup(SplitGroupWrite):
+    id: str = Field(min_length=1, max_length=80)
+
+
+class SplitFriend(DashboardModel):
+    """A friend and where things stand: positive, they owe the user; negative, the user owes."""
+
+    account_id: str
+    name: str
+    balance_cents: int
+    last_activity_on: date | None
+
+
+class SplitActivity(DashboardModel):
+    """One thing that changed what a friend and the user owe each other, newest first.
+
+    `lent`: the user paid and the friend owes their share. `borrowed`: the friend paid and the
+    user owes their share. `paid_back`: the friend paid the user back. `you_paid_back`: the
+    user paid the friend back. `amount_cents` is how much that moved."""
+
+    id: str
+    kind: Literal["lent", "borrowed", "paid_back", "you_paid_back"]
+    friend_id: str
+    friend_name: str
+    description: str
+    amount_cents: int = Field(gt=0)
+    occurred_on: date
+    group_id: str | None = None
+    # What to remove to undo it: a transfer, or (for `borrowed`) the user's share transaction.
+    transfer_id: str | None = None
+    transaction_id: str | None = None
+
+
+class SplitGroupSummary(SplitGroup):
+    # Purchases split in this group, and their total (everyone's shares).
+    expense_count: int = Field(ge=0)
+    spent_cents: int = Field(ge=0)
+
+
+class SplitsOverview(DashboardModel):
+    """Everything shared with friends, all time (not just the period on screen)."""
+
+    owed_to_you_cents: int = Field(ge=0)
+    you_owe_cents: int = Field(ge=0)
+    net_cents: int
+    friends: list[SplitFriend]
+    groups: list[SplitGroupSummary]
+    activity: list[SplitActivity]
 
 
 class CashWarning(DashboardModel):
@@ -464,6 +530,7 @@ class DashboardResponse(DashboardModel):
     cash_warnings: list[CashWarning] = Field(default_factory=list)
     # Transfers and card payments in the period on screen, newest first.
     transfers: list[Transfer] = Field(default_factory=list)
+    splits: SplitsOverview | None = None
     # A real (non-demo) account with no budget, bills, or pay schedule yet: offer the setup.
     needs_onboarding: bool = False
     # Only while the period shown includes today.
@@ -488,6 +555,8 @@ class TransactionWrite(DashboardModel):
     kind: Literal["income", "spending"]
     occurred_on: date
     repeat: TransactionRepeat | None = None
+    # Already paid (on or before today) and already in the balance the user entered.
+    history_only: bool = False
 
 
 class TransactionSplit(DashboardModel):
@@ -523,8 +592,10 @@ class SharedPurchaseWrite(DashboardModel):
     category_id: str | None = None
     occurred_on: date
     paid_from: str
-    my_share_cents: int = Field(gt=0)
-    owed_by: list[TransactionSplit] = Field(default_factory=list, max_length=20)
+    # 0 when the user paid only for friends.
+    my_share_cents: int = Field(ge=0)
+    owed_by: list[TransactionSplit] = Field(default_factory=list, max_length=50)
+    group_id: str | None = None
 
     @model_validator(mode="after")
     def _one_share_per_friend(self) -> "SharedPurchaseWrite":
@@ -741,6 +812,8 @@ class AccountPatch(DashboardModel):
     balance_cents: int | None = Field(default=None, ge=0)
     credit_limit_cents: int | None = Field(default=None, gt=0)
     payment_due_day: int | None = Field(default=None, ge=1, le=31)
+    # For a credit card: the day the user paid it outside Penny ("already paid, just record it").
+    card_paid_on: date | None = None
 
 
 class ImportRow(DashboardModel):
@@ -783,7 +856,8 @@ class OnboardingAccount(DashboardModel):
     # For a credit card: what's owed on it now.
     balance_cents: int = Field(default=0, ge=0)
     credit_limit_cents: int | None = Field(default=None, gt=0)
-    payment_due_day: int | None = Field(default=None, ge=1, le=31)
+    # For a credit card: the next payment's date. Next month's means this month's is paid.
+    payment_next_due: date | None = None
 
 
 class OnboardingIncome(DashboardModel):

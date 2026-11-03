@@ -227,6 +227,7 @@ class DashboardViews(StoreInsights):
                 budget_plan=plan,
                 cash_warnings=self._cash_warnings(recurring) if month == month_start(today) else [],
                 transfers=self._transfers_between(month, month_end(month)),
+                splits=self._splits_overview(),
                 needs_onboarding=self._needs_onboarding(),
                 spending_runway=(
                     SpendingRunway(

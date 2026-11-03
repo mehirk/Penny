@@ -11,16 +11,21 @@ import { categoryIcon } from "./category-icons";
 import { AccountDetail } from "./account-detail";
 import { SafeDetail } from "./safe-detail";
 import { SpentDetail } from "./spent-detail";
-import { ACCOUNT_TYPE_LABELS, friendStatus } from "./labels";
+import { ACCOUNT_TYPE_LABELS, isOwnAccount } from "./labels";
+import type { SaveChange } from "./settings-view";
+import type { SharedDraft } from "./split-with-friends";
+import { SplitsView, splitsNet } from "./splits-view";
 import { accountEmoji } from "./emoji";
 import { AmountsToggle, BigAmount, cad, type View } from "./shared";
 import { useSubpage } from "./subpage";
 import { useTransfers } from "./transfer-dialog";
 
 // Accounts read like the sum: what you have, then what you owe.
-const ACCOUNT_ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "person", "credit"];
+const ACCOUNT_ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "credit"];
 
 type Props = {
+  /** What the Splits page (opened from Home) needs to save and to add a shared expense. */
+  splits: { save: SaveChange; onAddExpense: (share: SharedDraft) => void };
   dashboard: Dashboard;
   onNavigate: (view: View, anchor?: string, motion?: "push" | "pop") => void;
   onAsk: (question: string) => void;
@@ -54,11 +59,12 @@ const AI_PROMPTS = [
   { icon: TrendingUp, text: "Should I invest or save?" },
 ];
 
-export function TodayView({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp }: Props) {
+export function TodayView({ dashboard, splits, onNavigate, onAsk, onEditTransaction, onSetUp }: Props) {
   // An account ("#today/<account id>") or the month's spending ("#today/spent") opens as its own page.
   const [pageId, openPage, back] = useSubpage("today");
   const account = dashboard.accounts_overview.accounts.find((item) => item.id === pageId);
   if (account) return <AccountDetail dashboard={dashboard} account={account} backLabel="Home" onBack={back} />;
+  if (pageId === "splits") return <SplitsView dashboard={dashboard} save={splits.save} onAddExpense={splits.onAddExpense} onBack={back} />;
   if (pageId === "spent") return <SpentDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} />;
   if (pageId === "safe") return <SafeDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} onAsk={onAsk} />;
   return <HomeOverview dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} onEditTransaction={onEditTransaction} onSetUp={onSetUp} onOpenPage={openPage} />;
@@ -92,9 +98,10 @@ const CARD = "overflow-hidden rounded-[var(--radius-card)] border border-line bg
  * column on phones; on wide screens the headline spans the top and the rest sits in two columns.
  * The charts and score live on Spending, Goals, and Learn. Every figure comes from the API.
  */
-function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp, onOpenPage }: Props & { onOpenPage: (id: string) => void }) {
-  const { home, totals, period, accounts_overview: overview } = dashboard;
-  const accounts = [...overview.accounts].sort((a, b) => ACCOUNT_ORDER.indexOf(a.account_type) - ACCOUNT_ORDER.indexOf(b.account_type));
+function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp, onOpenPage }: Omit<Props, "splits"> & { onOpenPage: (id: string) => void }) {
+  const { home, totals, period, accounts_overview: overview, splits } = dashboard;
+  // Friends are summed into one Splits row below, so 50 friends are still one line.
+  const accounts = overview.accounts.filter(isOwnAccount).sort((a, b) => ACCOUNT_ORDER.indexOf(a.account_type) - ACCOUNT_ORDER.indexOf(b.account_type));
   const change = home.spending_change_basis_points;
   return (
     <div className="mx-auto max-w-6xl space-y-6 lg:space-y-10">
@@ -115,14 +122,19 @@ function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp
         <ul className={STACK}>
           {accounts.map((account) => {
             const owed = account.account_type === "credit" && account.balance_cents > 0;
-            const friend = account.account_type === "person";
             const overdrawn = account.balance_cents < 0;
             const detail = account.account_type === "credit" && account.utilization_basis_points !== null
               ? `${percent(account.utilization_basis_points)} of limit used`
-              : friend ? friendStatus(account.balance_cents) : overdrawn ? "Overdrawn" : account.goal_cents > 0 ? <><span className="tabular">{cad(account.goal_cents)}</span> set aside for goals</> : ACCOUNT_TYPE_LABELS[account.account_type];
+              : overdrawn ? "Overdrawn" : account.goal_cents > 0 ? <><span className="tabular">{cad(account.goal_cents)}</span> set aside for goals</> : ACCOUNT_TYPE_LABELS[account.account_type];
             return <Glance key={account.id} emoji={accountEmoji(account.name, account.account_type)} label={account.name} detail={detail} value={owed ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)} tone={owed || overdrawn ? "text-danger" : undefined} onOpen={() => onOpenPage(account.id)} />;
           })}
         </ul>
+        {splits && splits.friends.length > 0 && (
+          <ul className={cn(STACK, "mt-2.5")}>
+            <Glance emoji="🤝" label="Splits" value={splitsNet(splits.net_cents).text} tone={splitsNet(splits.net_cents).tone} onOpen={() => onOpenPage("splits")}
+              detail={splits.net_cents > 0 ? "You’re owed overall" : splits.net_cents < 0 ? "You owe overall" : "All settled up"} />
+          </ul>
+        )}
         <ul className={cn(STACK, "mt-2.5")}>
           <Glance emoji="🧾" label={`Spent ${period.phrase}`} value={cad(totals.spending_cents)} onOpen={() => onOpenPage("spent")}
             detail={change === null ? undefined : `${percent(change)} ${change <= 0 ? "less" : "more"} than ${period.phrase === "this month" ? "last month" : "the period before"}`} />

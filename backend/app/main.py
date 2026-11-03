@@ -18,6 +18,7 @@ from app.api import (
     dashboard,
     goals,
     learning,
+    splits,
     transactions,
 )
 from app.config import get_settings
@@ -75,5 +76,16 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok", service="penny-api", version=app.version)
 
 
-for module in (dashboard, transactions, budgets, goals, bills, accounts, assist, learning, coach):
+for module in (
+    dashboard,
+    transactions,
+    budgets,
+    goals,
+    bills,
+    accounts,
+    splits,
+    assist,
+    learning,
+    coach,
+):
     app.include_router(module.router)

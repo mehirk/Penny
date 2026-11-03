@@ -29,6 +29,21 @@ def _shift(due: date, months: int, due_day: int) -> date:
     return _on_day(index // 12, index % 12 + 1, due_day)
 
 
+def due_day_from(today: date, next_due: date) -> tuple[int, bool]:
+    """The due day for a card whose next payment is `next_due`, and whether that means the
+    payment coming up first is already paid (next_due is the month after it).
+
+    Raises ValueError unless next_due is the coming due date on that day or the one after it.
+    """
+    day = next_due.day
+    coming = next_card_due(today, day)
+    if next_due == coming:
+        return day, False
+    if next_due == _shift(coming, 1, day):
+        return day, True
+    raise ValueError("Pick the card's next payment date, within the next two months")
+
+
 def card_cycle(today: date, due_day: int, payments: Iterable[date]) -> tuple[date, date | None]:
     """The due date to show, and the latest payment that paid the current cycle (or None).
 

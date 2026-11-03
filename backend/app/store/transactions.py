@@ -21,7 +21,7 @@ from app.domain.transfers import FRIEND
 from app.models import Transaction
 from app.store.dashboard import DashboardViews
 from app.store.sections import next_due_after
-from app.store.state import invalid, new_id
+from app.store.state import invalid, new_id, not_found
 
 
 class TransactionOps(DashboardViews):
@@ -83,6 +83,10 @@ class TransactionOps(DashboardViews):
                 request.kind,
                 request.occurred_on,
             )
+            if request.history_only:
+                if request.occurred_on > self.today():
+                    raise invalid("Only something already paid can skip the balance")
+                transaction = transaction.model_copy(update={"history_only": True})
             bill = self._bill_from(transaction, request.repeat) if request.repeat else None
             self._apply_account_effect(transaction, 1, allow_overdraft=True)
             if bill:
@@ -135,17 +139,26 @@ class TransactionOps(DashboardViews):
                 raise invalid("When a friend paid, record just your share")
             if payer.account_type != FRIEND and not friends:
                 raise invalid("Pick who you split it with")
-            transaction = self._new_transaction(
-                request.description,
-                request.category_id,
-                payer.id,
-                request.my_share_cents,
-                "spending",
-                request.occurred_on,
+            if payer.account_type == FRIEND and not request.my_share_cents:
+                raise invalid("Enter your share")
+            if request.group_id and request.group_id not in self._split_groups:
+                raise not_found("Group not found")
+            transaction = (
+                self._new_transaction(
+                    request.description,
+                    request.category_id,
+                    payer.id,
+                    request.my_share_cents,
+                    "spending",
+                    request.occurred_on,
+                ).model_copy(update={"group_id": request.group_id})
+                if request.my_share_cents
+                else None
             )
             accounts_before = self._accounts.copy()
             try:
-                self._apply_account_effect(transaction, 1, allow_overdraft=True)
+                if transaction:
+                    self._apply_account_effect(transaction, 1, allow_overdraft=True)
                 lent = []
                 for share in request.owed_by:
                     self._change_balance(payer.id, -share.amount_cents, allow_overdraft=True)
@@ -153,18 +166,20 @@ class TransactionOps(DashboardViews):
                     lent.append(
                         Transfer(
                             id=new_id("transfer", 10),
-                            kind="transfer",
+                            kind="split",
                             from_account_id=payer.id,
                             to_account_id=share.account_id,
                             amount_cents=share.amount_cents,
                             occurred_on=request.occurred_on,
                             note=f"Their share: {request.description}"[:120],
+                            group_id=request.group_id,
                         )
                     )
             except HTTPException:
                 self._accounts = accounts_before
                 raise
-            self._transactions[transaction.id] = transaction
+            if transaction:
+                self._transactions[transaction.id] = transaction
             self._transfers.update({item.id: item for item in lent})
             return self._snapshot()
 
