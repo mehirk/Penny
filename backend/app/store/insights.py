@@ -17,6 +17,7 @@ from app.dashboard_models import (
     HomeSummary,
     MoneyCalendar,
     PayOverview,
+    PaySchedule,
     PaySource,
     Period,
     RecurringSummary,
@@ -32,6 +33,7 @@ from app.domain.cash_check import Cash, Due, due_soon, shortfalls
 from app.domain.finance import add_months, ceil_div, months_until
 from app.domain.financial_health import METHODOLOGY, health_factors, health_score
 from app.domain.money_days import DayScore
+from app.domain.pay_received import received_paydays
 from app.domain.periods import describe_period
 from app.domain.recurring import detect_fixed_series
 from app.domain.splits import split_totals
@@ -43,6 +45,8 @@ UNUSUAL_MULTIPLE = 3
 # A friend's share of a purchase the user paid for, as noted before shares had their own kind.
 SHARE_NOTE = "Their share: "
 SPLIT_ACTIVITY_LIMIT = 200
+# A payday without a recorded paycheque asks "Did you get paid?" for this many days (today too).
+PAY_CONFIRM_DAYS = 7
 UNUSUAL_MINIMUM_CENTS = 4_000
 
 
@@ -170,6 +174,8 @@ class StoreInsights(StoreState):
             self._pay_schedules.values(),
             key=lambda item: (item.id != (main.id if main else None), item.name, item.id),
         )
+        window = (today - timedelta(days=40), today + timedelta(days=34))
+        received = {schedule.id: self._paid_days(schedule, *window) for schedule in ordered}
         sources = [
             PaySource(
                 **schedule.model_dump(),
@@ -185,9 +191,26 @@ class StoreInsights(StoreState):
                     name=schedule.name,
                     on=day,
                     amount_cents=schedule.amount_cents,
+                    received=day in received[schedule.id],
                 )
                 for schedule in ordered
                 for day in self._upcoming_paydays(schedule, today, today + timedelta(days=34))
+            ),
+            key=lambda item: (item.on, item.name),
+        )
+        to_confirm = sorted(
+            (
+                UpcomingPay(
+                    pay_id=schedule.id,
+                    name=schedule.name,
+                    on=day,
+                    amount_cents=schedule.amount_cents,
+                )
+                for schedule in ordered
+                for day in self._upcoming_paydays(
+                    schedule, today - timedelta(days=PAY_CONFIRM_DAYS - 1), today
+                )
+                if day not in received[schedule.id]
             ),
             key=lambda item: (item.on, item.name),
         )
@@ -195,7 +218,27 @@ class StoreInsights(StoreState):
             monthly_cents=sum(source.monthly_cents for source in sources),
             sources=sources,
             upcoming=upcoming,
+            to_confirm=to_confirm,
         )
+
+    def _paid_days(self, schedule: PaySchedule, start: date, end: date) -> set[date]:
+        """This source's paydays in [start, end] that have a paycheque recorded: one marked
+        received for it, or income added by hand on its account under its name."""
+        name = schedule.name.casefold()
+        received = [
+            t.occurred_on
+            for t in self._transactions.values()
+            if t.kind == "income"
+            and (
+                t.pay_id == schedule.id
+                or (
+                    t.pay_id is None
+                    and t.account_id == schedule.account_id
+                    and t.description.casefold() == name
+                )
+            )
+        ]
+        return received_paydays(self._upcoming_paydays(schedule, start, end), received)
 
     def _recurring(self) -> RecurringSummary:
         return build_recurring(

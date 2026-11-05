@@ -165,6 +165,18 @@ class UpcomingPay(DashboardModel):
     name: str
     on: date
     amount_cents: int = Field(gt=0)
+    # A paycheque is recorded for this payday (app.domain.pay_received).
+    received: bool = False
+
+
+class PayReceivedWrite(DashboardModel):
+    """ "I got paid": record a paycheque from one source of pay."""
+
+    occurred_on: date
+    # What actually landed; it can differ from the usual amount (overtime, fewer shifts).
+    amount_cents: int = Field(gt=0)
+    # False when the balance the user entered already includes it: history only.
+    affect_balance: bool = True
 
 
 class PayOverview(DashboardModel):
@@ -173,6 +185,8 @@ class PayOverview(DashboardModel):
     monthly_cents: int = Field(ge=0)
     sources: list[PaySource]
     upcoming: list[UpcomingPay]  # every payday in the next 35 days, soonest first
+    # Paydays from the last week (today included) with no paycheque recorded yet.
+    to_confirm: list[UpcomingPay] = []
 
 
 class AccountGoal(DashboardModel):
@@ -802,6 +816,9 @@ class AccountWrite(DashboardModel):
     balance_cents: int = Field(default=0, ge=0)
     credit_limit_cents: int | None = Field(default=None, gt=0)
     payment_due_day: int | None = Field(default=None, ge=1, le=31)
+    # For a credit card, instead of the day: the next payment's date. Next month's date means
+    # this month's is already paid (app.domain.card_due.due_day_from).
+    payment_next_due: date | None = None
 
 
 class AccountPatch(DashboardModel):
@@ -814,6 +831,8 @@ class AccountPatch(DashboardModel):
     payment_due_day: int | None = Field(default=None, ge=1, le=31)
     # For a credit card: the day the user paid it outside Penny ("already paid, just record it").
     card_paid_on: date | None = None
+    # For a credit card: the next payment's date (sets the due day; next month's means paid).
+    payment_next_due: date | None = None
 
 
 class ImportRow(DashboardModel):

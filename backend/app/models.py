@@ -82,6 +82,8 @@ class Transaction(StrictModel):
     history_only: bool = False
     # A purchase split in a friends' group (the user's share, or a friend paying for it).
     group_id: str | None = None
+    # A paycheque the user marked as received ("I got paid") for this source of pay.
+    pay_id: str | None = None
 
 
 class Summary(StrictModel):

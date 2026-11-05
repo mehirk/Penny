@@ -12,7 +12,7 @@ import { ACCOUNT_TYPE_LABELS } from "./labels";
 import { accountEmoji } from "./emoji";
 import { PalettePicker, ThemePicker } from "./app-shell";
 import { DEFAULT_PALETTE, DEFAULT_SURFACE, usePreferences } from "./preferences";
-import { addMonths } from "@/lib/format";
+import { monthEndAfter } from "@/lib/format";
 import { cad, describeError, Field } from "./shared";
 
 /** Starting suggestions only; every amount is the user's to change. */
@@ -307,7 +307,7 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
                     {item.type === "credit" && (
                       <div className="grid grid-cols-2 gap-2">
                         <Field label="Credit limit">{(props) => <Input {...props} inputMode="decimal" placeholder="1000.00" value={item.limit} onChange={(e) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, limit: e.target.value } : a)))} className="min-h-11 text-base" />}</Field>
-                        <Field label="Next payment due">{(props) => <DatePicker id={props.id} value={item.due} min={today} max={addMonths(`${today.slice(0, 7)}-01`, 2)} onChange={(v) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, due: v } : a)))} />}</Field>
+                        <Field label="Next payment due">{(props) => <DatePicker id={props.id} value={item.due} min={today} max={monthEndAfter(today, 2)} onChange={(v) => setNewAccounts(newAccounts.map((a, i) => (i === index ? { ...a, due: v } : a)))} />}</Field>
                         <p className="col-span-2 text-xs text-ink-subtle">Already paid this month’s? Pick next month’s date. Penny then shows it as paid.</p>
                       </div>
                     )}

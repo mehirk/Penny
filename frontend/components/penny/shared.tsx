@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 import { Bot, ChartColumnBig, Eye, EyeOff, GraduationCap, Home, Landmark, PiggyBank, ReceiptText, Settings, Target, type LucideIcon } from "lucide-react";
-import { Label, Select } from "@/components/ui/input";
+import { Label } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
 import { formatCad } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -26,22 +26,6 @@ export const NAVIGATION: { id: View; label: string; title: string; description: 
   { id: "learn", label: "Learn", title: "Learn", description: "Lessons and challenges for Canada or the US, from Easy to Hard.", icon: GraduationCap, primary: false },
   { id: "settings", label: "Settings", title: "Settings", description: "Accounts, appearance, and how your data is protected.", icon: Settings, primary: false },
 ];
-
-/** 1st, 2nd, 3rd, 4th … 31st. */
-function ordinal(day: number): string {
-  const tail = day % 100 >= 11 && day % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[day % 10] ?? "th";
-  return `${day}${tail}`;
-}
-
-/** "Payment due on the …": a card's due day of the month. Short months use their last day. */
-export function DueDaySelect({ value, onChange, ...props }: { value: string; onChange: (value: string) => void; id?: string; "aria-describedby"?: string; "aria-invalid"?: boolean; className?: string }) {
-  return (
-    <Select {...props} value={value} onChange={(event) => onChange(event.target.value)} className={cn("min-h-11 text-base", props.className)}>
-      <option value="">Pick a day</option>
-      {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{ordinal(day)} of the month</option>)}
-    </Select>
-  );
-}
 
 /** Views shown in the sidebar and tab bar. */
 export const MENU = NAVIGATION.filter((item) => item.inMenu !== false);

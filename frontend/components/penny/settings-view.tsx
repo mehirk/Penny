@@ -7,7 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input, Select } from "@/components/ui/input";
 import { type Dashboard, dashboardApi } from "@/lib/api";
 import { biometryName, clearSignIn, faceIdStatus, type FaceIdStatus, isCancelled, saveSignIn, setFaceIdDeclined } from "@/lib/face-id";
-import { formatShortDate } from "@/lib/format";
+import { DatePicker, isoToday } from "@/components/ui/date-picker";
+import { formatShortDate, monthEndAfter } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { createSupabaseBrowserClient, getSupabaseUserEmail } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -15,7 +16,7 @@ import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, ThemePicker } fr
 import { ACCOUNT_TYPE_LABELS, friendStatus } from "./labels";
 import { accountEmoji } from "./emoji";
 import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
-import { cad, DueDaySelect, Field } from "./shared";
+import { cad, Field } from "./shared";
 import { BackBar } from "./back-bar";
 import { PaySection } from "./pay-section";
 import { StatementImport } from "./statement-import";
@@ -271,6 +272,7 @@ function useWideScreen(): boolean {
 }
 
 function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
+  const today = dashboard.money_calendar.today ?? isoToday();
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -289,7 +291,7 @@ function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: Save
         {dashboard.accounts.map((account) => (
           <li key={account.id} className="rounded-[var(--radius-card)] border border-line bg-surface">
             {editing === account.id
-              ? <EditAccount account={account} onCancel={() => setEditing(null)} onSave={async (body) => { if (await run(() => dashboardApi.updateAccount(account.id, body), "Account updated")) setEditing(null); }} onDelete={async () => { if (await run(() => dashboardApi.deleteAccount(account.id), "Account removed")) setEditing(null); }} />
+              ? <EditAccount account={account} today={today} nextDue={dashboard.card_payments.find((payment) => payment.account_id === account.id)?.due_on ?? ""} onCancel={() => setEditing(null)} onSave={async (body) => { if (await run(() => dashboardApi.updateAccount(account.id, body), "Account updated")) setEditing(null); }} onDelete={async () => { if (await run(() => dashboardApi.deleteAccount(account.id), "Account removed")) setEditing(null); }} />
               : (
                 <div className="flex min-h-16 items-center gap-3 px-4 py-3">
                   <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-lg" aria-hidden="true">{accountEmoji(account.name, account.account_type)}</span>
@@ -313,30 +315,46 @@ function AccountsSection({ dashboard, save }: { dashboard: Dashboard; save: Save
             <DialogDescription>Add a chequing, savings, cash, or card account. Use fictional amounts.</DialogDescription>
           </DialogHeader>
           {adding && error && <p role="alert" className="rounded-xl bg-danger-soft p-3 text-sm text-danger">{error}</p>}
-          {adding && <AddAccount onAdd={async (body, success) => { const ok = await run(() => dashboardApi.createAccount(body), success); if (ok) setAdding(false); return ok; }} />}
+          {adding && <AddAccount today={today} onAdd={async (body, success) => { const ok = await run(() => dashboardApi.createAccount(body), success); if (ok) setAdding(false); return ok; }} />}
         </DialogContent>
       </Dialog>
     </section>
   );
 }
 
-function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboard["accounts"][number]; onSave: (body: { name: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number }) => Promise<void>; onCancel: () => void; onDelete: () => Promise<void> }) {
+type AccountChanges = { name: string; balance_cents?: number; credit_limit_cents?: number; payment_next_due?: string };
+
+/** A card's next payment date, like setup: the coming one, or next month's when this month's is paid. */
+function CardDueField({ today, value, onChange, label }: { today: string; value: string; onChange: (value: string) => void; label: string }) {
+  return (
+    <div className="space-y-1 sm:col-span-2">
+      <Field label={label}>{(props) => <DatePicker id={props.id} value={value} min={today} max={monthEndAfter(today, 2)} onChange={onChange} />}</Field>
+      <p className="text-xs text-ink-subtle">Already paid this month’s? Pick next month’s date. Penny then shows it as paid and moves on.</p>
+    </div>
+  );
+}
+
+function EditAccount({ account, today, nextDue, onSave, onCancel, onDelete }: { account: Dashboard["accounts"][number]; today: string; nextDue: string; onSave: (body: AccountChanges) => Promise<void>; onCancel: () => void; onDelete: () => Promise<void> }) {
   const credit = account.account_type === "credit";
   const [name, setName] = useState(account.name);
   const savedBalance = centsToInput(String(account.balance_cents));
   const [balance, setBalance] = useState(savedBalance);
   const [limit, setLimit] = useState(account.credit_limit_cents ? centsToInput(String(account.credit_limit_cents)) : "");
-  const [dueDay, setDueDay] = useState(account.payment_due_day ? String(account.payment_due_day) : "");
+  const [due, setDue] = useState(nextDue);
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) { setError("Give the account a name"); return; }
-    if (credit && !dueDay) { setError("Pick the day your card payment is due"); return; }
+    if (credit && !due) { setError("Pick when the card's next payment is due"); return; }
     try {
       // The balance is sent only when changed, so an overdrawn account can still be renamed.
-      const body: { name: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number } = { name: name.trim(), ...(balance === savedBalance ? {} : { balance_cents: parseCadToCents(balance || "0") }) };
-      if (credit) { body.credit_limit_cents = parseCadToCents(limit); body.payment_due_day = Number(dueDay); }
+      const body: AccountChanges = { name: name.trim(), ...(balance === savedBalance ? {} : { balance_cents: parseCadToCents(balance || "0") }) };
+      if (credit) {
+        body.credit_limit_cents = parseCadToCents(limit);
+        // Only a new date is sent: it also says whether this month's payment is done.
+        if (due !== nextDue) body.payment_next_due = due;
+      }
       setError("");
       await onSave(body);
     } catch { setError(credit ? "Enter the amount owed and the credit limit" : "Enter a valid balance"); }
@@ -348,7 +366,7 @@ function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboa
       <div className={cn("grid gap-3", credit && "sm:grid-cols-2")}>
         <Field label={credit ? "Owed now" : "Balance"} hint="Correct it to match your real account.">{(props) => <Input {...props} inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="min-h-11 text-base tabular" />}</Field>
         {credit && <Field label="Credit limit">{(props) => <Input {...props} inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} className="min-h-11 text-base tabular" />}</Field>}
-        {credit && <Field label="Payment due" hint="The day your card bill is due each month.">{(props) => <DueDaySelect {...props} value={dueDay} onChange={setDueDay} />}</Field>}
+        {credit && <CardDueField today={today} value={due} onChange={setDue} label="Next payment due" />}
       </div>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
       <div className="flex flex-wrap items-center gap-2">
@@ -363,27 +381,27 @@ function EditAccount({ account, onSave, onCancel, onDelete }: { account: Dashboa
   );
 }
 
-function AddAccount({ onAdd }: { onAdd: (body: Parameters<typeof dashboardApi.createAccount>[0], success: string) => Promise<boolean> }) {
+function AddAccount({ today, onAdd }: { today: string; onAdd: (body: Parameters<typeof dashboardApi.createAccount>[0], success: string) => Promise<boolean> }) {
   const [name, setName] = useState("");
   const [type, setType] = useState<keyof typeof ACCOUNT_TYPE_LABELS>("chequing");
   const [balance, setBalance] = useState("0.00");
   const [limit, setLimit] = useState("");
-  const [dueDay, setDueDay] = useState("");
+  const [due, setDue] = useState("");
   const [error, setError] = useState("");
   const credit = type === "credit";
   async function add(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) { setError("Give the account a name"); return; }
     let balanceCents: number;
-    if (credit && !dueDay) { setError("Pick the day your card payment is due"); return; }
+    if (credit && !due) { setError("Pick when the card's next payment is due"); return; }
     let limitCents: number | null = null;
     try {
       balanceCents = parseCadToCents(balance);
       if (credit) limitCents = parseCadToCents(limit);
     } catch { setError(credit ? "Enter what's owed (0.00 if nothing) and the credit limit" : "Enter the balance (0.00 if empty)"); return; }
     setError("");
-    if (await onAdd({ name: name.trim(), account_type: type, balance_cents: balanceCents, credit_limit_cents: limitCents, payment_due_day: credit ? Number(dueDay) : null }, `${name.trim()} added`)) {
-      setName(""); setBalance("0.00"); setLimit(""); setDueDay("");
+    if (await onAdd({ name: name.trim(), account_type: type, balance_cents: balanceCents, credit_limit_cents: limitCents, payment_next_due: credit ? due : null }, `${name.trim()} added`)) {
+      setName(""); setBalance("0.00"); setLimit(""); setDue("");
     }
   }
   return (
@@ -393,7 +411,7 @@ function AddAccount({ onAdd }: { onAdd: (body: Parameters<typeof dashboardApi.cr
         <Field label="Type">{(props) => <Select {...props} value={type} onChange={(e) => setType(e.target.value as keyof typeof ACCOUNT_TYPE_LABELS)} className="min-h-11 text-base">{Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select>}</Field>
         <Field label={credit ? "Owed now" : "Balance"} hint={credit ? "0.00 if the card is paid off." : "Required. 0.00 if it's empty."}>{(props) => <Input {...props} required inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} className="min-h-11 text-base tabular" />}</Field>
         {credit && <Field label="Credit limit">{(props) => <Input {...props} required inputMode="decimal" placeholder="1000.00" value={limit} onChange={(e) => setLimit(e.target.value)} className="min-h-11 text-base tabular" />}</Field>}
-        {credit && <Field label="When is the payment due?" hint="The day your card bill is due each month. Penny shows it in Coming up.">{(props) => <DueDaySelect {...props} value={dueDay} onChange={setDueDay} />}</Field>}
+        {credit && <CardDueField today={today} value={due} onChange={setDue} label="When is the next payment due?" />}
       </div>
       {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
       <Button type="submit" className="mt-5 min-h-11 w-full"><Plus className="size-4" aria-hidden="true" />Add account</Button>
