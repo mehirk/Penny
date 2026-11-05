@@ -12,6 +12,7 @@ import { AccountDetail } from "./account-detail";
 import { SafeDetail } from "./safe-detail";
 import { SpentDetail } from "./spent-detail";
 import { ACCOUNT_TYPE_LABELS, isOwnAccount } from "./labels";
+import { PaydayPrompt } from "./pay-section";
 import type { SaveChange } from "./settings-view";
 import type { SharedDraft } from "./split-with-friends";
 import { SplitsView, splitsNet } from "./splits-view";
@@ -67,7 +68,7 @@ export function TodayView({ dashboard, splits, onNavigate, onAsk, onEditTransact
   if (pageId === "splits") return <SplitsView dashboard={dashboard} save={splits.save} onAddExpense={splits.onAddExpense} onBack={back} />;
   if (pageId === "spent") return <SpentDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} />;
   if (pageId === "safe") return <SafeDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} onAsk={onAsk} />;
-  return <HomeOverview dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} onEditTransaction={onEditTransaction} onSetUp={onSetUp} onOpenPage={openPage} />;
+  return <HomeOverview dashboard={dashboard} save={splits.save} onNavigate={onNavigate} onAsk={onAsk} onEditTransaction={onEditTransaction} onSetUp={onSetUp} onOpenPage={openPage} />;
 }
 
 // ------------------------------------------------------------------ overview
@@ -98,7 +99,7 @@ const CARD = "overflow-hidden rounded-[var(--radius-card)] border border-line bg
  * column on phones; on wide screens the headline spans the top and the rest sits in two columns.
  * The charts and score live on Spending, Goals, and Learn. Every figure comes from the API.
  */
-function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp, onOpenPage }: Omit<Props, "splits"> & { onOpenPage: (id: string) => void }) {
+function HomeOverview({ dashboard, save, onNavigate, onAsk, onEditTransaction, onSetUp, onOpenPage }: Omit<Props, "splits"> & { save: SaveChange; onOpenPage: (id: string) => void }) {
   const { home, totals, period, accounts_overview: overview, splits } = dashboard;
   // Friends are summed into one Splits row below, so 50 friends are still one line.
   const accounts = overview.accounts.filter(isOwnAccount).sort((a, b) => ACCOUNT_ORDER.indexOf(a.account_type) - ACCOUNT_ORDER.indexOf(b.account_type));
@@ -113,6 +114,7 @@ function HomeOverview({ dashboard, onNavigate, onAsk, onEditTransaction, onSetUp
         </button>
       )}
       <SafeToSpendHero dashboard={dashboard} onOpen={() => onOpenPage("safe")} onSetBudgets={() => onNavigate("budgets")} />
+      <PaydayPrompt dashboard={dashboard} save={save} />
       {dashboard.cash_warnings.length > 0 && <CashHeadsUp dashboard={dashboard} onOpenAccount={onOpenPage} />}
       <div className="grid gap-6 lg:grid-cols-2 lg:gap-8 [&>*]:min-w-0">
       <div className="space-y-6">

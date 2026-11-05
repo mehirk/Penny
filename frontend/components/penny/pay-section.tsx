@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarDays, Pencil, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, Check, History, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, isoToday } from "@/components/ui/date-picker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
-import { type Dashboard, dashboardApi, type PayFrequency, type PayScheduleWrite, type PaySource } from "@/lib/api";
+import { type Dashboard, dashboardApi, type PayFrequency, type PayScheduleWrite, type PaySource, type UpcomingPay } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
@@ -49,6 +49,7 @@ export function PaySection({ dashboard, save }: { dashboard: Dashboard; save: Sa
 
   return (
     <section aria-labelledby="pay-title" className="space-y-5">
+      <PaydayPrompt dashboard={dashboard} save={save} />
       {pay ? (
         <div className="rounded-2xl bg-sage-soft p-4">
           <p className="text-sm text-ink-muted">Coming in, about</p>
@@ -63,6 +64,7 @@ export function PaySection({ dashboard, save }: { dashboard: Dashboard; save: Sa
                     <p className="text-xs font-semibold text-ink-subtle">{formatShortDate(item.on)}</p>
                     <p className="mt-0.5 flex items-center gap-1.5 truncate text-sm font-semibold text-ink"><span className="size-2 shrink-0 rounded-full" style={{ background: colour(item.pay_id) }} aria-hidden="true" />{item.name}</p>
                     <p className="tabular text-sm text-ink-muted">{cad(item.amount_cents)}</p>
+                    {item.received && <p className="mt-0.5 flex items-center gap-1 text-xs font-semibold text-money-in"><Check className="size-3.5" aria-hidden="true" />Received</p>}
                   </li>
                 ))}
               </ol>
@@ -182,6 +184,79 @@ function PayForm({ dashboard, source, save, onDone }: { dashboard: Dashboard; so
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const lastDay = (year: number, month: number) => new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+/**
+ * "Payday!" for each payday from the last week with no paycheque recorded: one tap opens
+ * "I got paid". Hidden while a past month is shown (it's about today).
+ */
+export function PaydayPrompt({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
+  const [open, setOpen] = useState<UpcomingPay | null>(null);
+  const today = dashboard.money_calendar.today;
+  const items = today ? dashboard.pay?.to_confirm ?? [] : [];
+  if (items.length === 0) return null;
+  return (
+    <section aria-label="Payday" className="space-y-2.5">
+      {items.map((item) => (
+        <div key={`${item.pay_id}:${item.on}`} className="flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-money-in/30 bg-money-in-soft p-4 animate-enter">
+          <span className="grid size-11 shrink-0 place-items-center rounded-full bg-surface text-xl" aria-hidden="true">💰</span>
+          <div className="min-w-0 flex-1 basis-48">
+            <p className="font-semibold text-ink">{item.on === today ? "It’s payday!" : `Payday was ${formatShortDate(item.on)}`}</p>
+            <p className="tabular text-sm text-ink-muted">{item.name} · usually {cad(item.amount_cents)}. Did it land?</p>
+          </div>
+          <Button className="min-h-11 w-full shrink-0 sm:w-auto" onClick={() => setOpen(item)}><Check className="size-4" aria-hidden="true" />I got paid</Button>
+        </div>
+      ))}
+      <Dialog open={open !== null} onOpenChange={(value) => { if (!value) setOpen(null); }}>
+        <DialogContent>
+          {open && <GotPaidForm dashboard={dashboard} payday={open} save={save} onDone={() => setOpen(null)} />}
+        </DialogContent>
+      </Dialog>
+    </section>
+  );
+}
+
+/** Record one paycheque: what actually landed (it can differ from the usual), and when. */
+function GotPaidForm({ dashboard, payday, save, onDone }: { dashboard: Dashboard; payday: UpcomingPay; save: SaveChange; onDone: () => void }) {
+  const today = dashboard.money_calendar.today ?? isoToday();
+  const source = dashboard.pay?.sources.find((item) => item.id === payday.pay_id);
+  const account = dashboard.accounts.find((item) => item.id === source?.account_id)?.name ?? "your account";
+  const [amount, setAmount] = useState(centsToInput(String(payday.amount_cents)));
+  const [on, setOn] = useState(payday.on <= today ? payday.on : today);
+  const [inBalance, setInBalance] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    let cents: number;
+    try { cents = parseCadToCents(amount); } catch { setError("Enter what landed, like 1264.00"); return; }
+    if (cents <= 0) { setError("Enter what landed, like 1264.00"); return; }
+    setBusy(true);
+    const result = await save(() => dashboardApi.recordPay(payday.pay_id, { occurred_on: on, amount_cents: cents, affect_balance: !inBalance }), `${payday.name} added`);
+    setBusy(false);
+    if (result) setError(result); else onDone();
+  }
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <DialogHeader>
+        <DialogTitle>I got paid</DialogTitle>
+        <DialogDescription>{payday.name} goes in as income on {account}. Change the amount if this one was different.</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Amount that landed (CAD)">{(props) => <Input {...props} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="min-h-11 text-base tabular" />}</Field>
+        <Field label="When it arrived">{(props) => <DatePicker id={props.id} value={on} max={today} onChange={setOn} />}</Field>
+      </div>
+      <label className={cn("flex min-h-14 cursor-pointer items-center gap-3 rounded-2xl border px-3 py-2 transition-colors", inBalance ? "border-info/40 bg-info-soft/40" : "border-line")}>
+        <input type="checkbox" checked={inBalance} onChange={(event) => setInBalance(event.target.checked)} className="size-5 shrink-0 accent-[var(--color-accent)]" />
+        <span className="min-w-0"><span className="flex items-center gap-1.5 text-sm font-semibold text-ink"><History className="size-4 text-info" aria-hidden="true" />Already in my balance</span><span className="block text-xs text-ink-subtle">Just record it. {account}’s balance won’t change.</span></span>
+      </label>
+      {error && <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+      <div className="flex gap-2">
+        <Button type="submit" className="min-h-11 flex-1" disabled={busy}>Add paycheque</Button>
+        <Button type="button" variant="ghost" className="min-h-11" onClick={onDone}>Cancel</Button>
+      </div>
+    </form>
+  );
+}
 
 /**
  * The first `count` paydays on or after `anchor`, for the form's preview only (dates, no money).

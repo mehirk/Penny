@@ -10,7 +10,7 @@ export type Account = { id: string; name: string; account_type: AccountType; bal
 /** A credit card's next payment (from its due day) and what's owed on it now. */
 export type CardPayment = { account_id: string; account_name: string; due_on: string; days_until_due: number; owed_cents: number; paid_on: string | null };
 export type Category = { id: string; name: string; colour_token: string; kind: "income" | "spending"; parent_id: string | null; custom: boolean };
-export type Transaction = { id: string; description: string; category: string; account_id: string; category_id: string | null; amount_cents: number; kind: "income" | "spending"; occurred_on: string; necessity: "need" | "want" | null; auto_categorized: boolean; bill_id: string | null; paid_automatically: boolean | null; unusual: boolean; history_only: boolean; group_id: string | null };
+export type Transaction = { id: string; description: string; category: string; account_id: string; category_id: string | null; amount_cents: number; kind: "income" | "spending"; occurred_on: string; necessity: "need" | "want" | null; auto_categorized: boolean; bill_id: string | null; paid_automatically: boolean | null; unusual: boolean; history_only: boolean; group_id: string | null; pay_id: string | null };
 export type Budget = { id: string; category_id: string; category_name: string; month_start: string; limit_cents: number; spent_cents: number; remaining_cents: number; usage_basis_points: number; carried_over: boolean };
 export type GoalContribution = { id: string; amount_cents: number; from_account_id: string; to_account_id: string | null; occurred_on: string; source: "you" | "penny" };
 export type SavingsGoal = { id: string; name: string; target_cents: number; current_cents: number; target_date: string | null; status: "active" | "completed" | "paused"; progress_basis_points: number; monthly_needed_cents: number | null; account_id: string | null; contributed_this_month_cents: number; recent_contributions: GoalContribution[] };
@@ -39,7 +39,11 @@ export type PayScheduleWrite = { name: string; amount_cents: number; account_id:
 export type PaySchedule = PayScheduleWrite & { id: string };
 export type PaySource = PaySchedule & { monthly_cents: number; upcoming: string[] };
 /** Every source of pay, their monthly total, and every payday in the next 35 days. */
-export type PayOverview = { monthly_cents: number; sources: PaySource[]; upcoming: { pay_id: string; name: string; on: string; amount_cents: number }[] };
+/** One payday; `received` once a paycheque is recorded for it. */
+export type UpcomingPay = { pay_id: string; name: string; on: string; amount_cents: number; received: boolean };
+/** `to_confirm`: paydays from the last week (today too) with no paycheque recorded yet. */
+export type PayOverview = { monthly_cents: number; sources: PaySource[]; upcoming: UpcomingPay[]; to_confirm: UpcomingPay[] };
+export type PayReceivedWrite = { occurred_on: string; amount_cents: number; affect_balance: boolean };
 export type RecurringExpense = { id: string; name: string; category_name: string | null; amount_cents: number; monthly_cents: number; frequency: BillFrequency; next_due: string; days_until_due: number; kind: "bill" | "subscription"; auto_record: boolean; last_paid_on: string | null; payment_count: number; total_paid_cents: number; paid_this_month: boolean; status: "overdue" | "due_soon" | "later" };
 export type RecurringPayment = { bill_id: string; name: string; occurred_on: string; amount_cents: number; paid_automatically: boolean | null };
 export type UpcomingPayment = { bill_id: string; name: string; due_on: string; days_until_due: number; amount_cents: number; auto_record: boolean; kind: "bill" | "subscription" };
@@ -123,7 +127,7 @@ export type History = {
 export type CategorySuggestion = { category_id: string | null; category_name: string | null; necessity: "need" | "want" | null; matched: string | null; source: "rules" | "ai" | null };
 export type CreditUtilization = { balance_cents: number; credit_limit_cents: number; utilization_basis_points: number; within_common_guideline: boolean };
 
-export type TransactionWrite = Omit<Transaction, "id" | "category" | "necessity" | "auto_categorized" | "bill_id" | "paid_automatically" | "unusual" | "history_only" | "group_id"> & { repeat?: { frequency: BillFrequency; next_due: string | null; auto_record: boolean } | null; history_only?: boolean };
+export type TransactionWrite = Omit<Transaction, "id" | "category" | "necessity" | "auto_categorized" | "bill_id" | "paid_automatically" | "unusual" | "history_only" | "group_id" | "pay_id"> & { repeat?: { frequency: BillFrequency; next_due: string | null; auto_record: boolean } | null; history_only?: boolean };
 /** One purchase or deposit across several accounts; the API saves one transaction per account. */
 export type SplitTransactionWrite = Omit<TransactionWrite, "account_id" | "amount_cents"> & { splits: { account_id: string; amount_cents: number }[] };
 /** A purchase split with friends: your share is spending; when you paid, `owed_by` is what each friend owes you. */
@@ -261,10 +265,11 @@ export const dashboardApi = {
   addPay: (body: PayScheduleWrite) => request("/api/v1/pay-schedules", { method: "POST", body: JSON.stringify(body) }),
   updatePay: (id: string, body: PayScheduleWrite) => request(`/api/v1/pay-schedules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deletePay: (id: string) => request(`/api/v1/pay-schedules/${id}`, { method: "DELETE" }),
+  recordPay: (id: string, body: PayReceivedWrite, month?: string) => request(inMonth(`/api/v1/pay-schedules/${id}/received`, month), { method: "POST", body: JSON.stringify(body) }),
   createCategory: (body: { name: string; kind: Category["kind"]; parent_id: string | null }) => request("/api/v1/categories", { method: "POST", body: JSON.stringify(body) }),
   deleteCategory: (id: string) => request(`/api/v1/categories/${id}`, { method: "DELETE" }),
-  createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day?: number | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
-  updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number; card_paid_on?: string }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day?: number | null; payment_next_due?: string | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
+  updateAccount: (id: string, body: { name?: string; balance_cents?: number; credit_limit_cents?: number; payment_due_day?: number; payment_next_due?: string; card_paid_on?: string }) => request(`/api/v1/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteAccount: (id: string) => request(`/api/v1/accounts/${id}`, { method: "DELETE" }),
   importRows: (account_id: string, rows: ImportRow[]) => authorizedRequest<{ imported: number; skipped: number; errors: string[]; dashboard: Dashboard }>("/api/v1/transactions/import-rows", { method: "POST", body: JSON.stringify({ account_id, rows }) }),
   applyBudgetChanges: (changes: { budget_id: string; limit_cents: number }[], month?: string) => request(inMonth("/api/v1/budgets/changes", month), { method: "POST", body: JSON.stringify({ changes }) }),

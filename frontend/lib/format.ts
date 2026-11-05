@@ -35,3 +35,10 @@ export function addMonths(month: string, count: number): string {
   const index = year * 12 + (monthNumber - 1) + count;
   return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}-01`;
 }
+
+/** The last day (YYYY-MM-DD) of the month `count` months after `day`'s month. */
+export function monthEndAfter(day: string, count: number): string {
+  const [year, month] = addMonths(`${day.slice(0, 7)}-01`, count).split("-").map(Number);
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}

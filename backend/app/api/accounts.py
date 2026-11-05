@@ -10,6 +10,7 @@ from app.dashboard_models import (
     CreditUtilizationRequest,
     CreditUtilizationResponse,
     DashboardResponse,
+    PayReceivedWrite,
     PayScheduleWrite,
     TransferWrite,
 )
@@ -96,6 +97,23 @@ def update_pay_schedule(
 @router.delete("/pay-schedules/{pay_id}", response_model=DashboardResponse, tags=["pay cycle"])
 def delete_pay_schedule(pay_id: str, current_user: AuthenticatedUser) -> DashboardResponse:
     return user_store(current_user).delete_pay_schedule(current_user.id, pay_id)
+
+
+@router.post(
+    "/pay-schedules/{pay_id}/received", response_model=DashboardResponse, tags=["pay cycle"]
+)
+def record_pay(
+    pay_id: str,
+    request: PayReceivedWrite,
+    current_user: AuthenticatedUser,
+    month: ViewMonth = None,
+) -> DashboardResponse:
+    """"I got paid": record a paycheque from this source as income on its account."""
+    return in_view(
+        user_store(current_user).record_pay(current_user.id, pay_id, request),
+        current_user,
+        month,
+    )
 
 
 @router.post("/categories", response_model=DashboardResponse, tags=["categories"])

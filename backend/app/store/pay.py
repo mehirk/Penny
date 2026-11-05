@@ -3,8 +3,14 @@
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from app.dashboard_models import DashboardResponse, PaySchedule, PayScheduleWrite
+from app.dashboard_models import (
+    DashboardResponse,
+    PayReceivedWrite,
+    PaySchedule,
+    PayScheduleWrite,
+)
 from app.domain.pay_cycle import DayBalance, Event, cycles_around, forecast
+from app.models import Transaction
 from app.store.dashboard import DashboardViews
 from app.store.sections import SPENDABLE_TYPES, bill_due_dates
 from app.store.state import conflict, invalid, new_id, not_found
@@ -58,6 +64,40 @@ class PayOps(DashboardViews):
             self.require_owner(user_id)
             if self._pay_schedules.pop(pay_id, None) is None:
                 raise not_found("Pay not found")
+            return self._snapshot()
+
+    def record_pay(self, user_id: str, pay_id: str, request: PayReceivedWrite) -> DashboardResponse:
+        """ "I got paid": the paycheque goes in as income on the account the pay lands in,
+        linked to its source so that payday shows as received."""
+        with self._lock:
+            self.require_owner(user_id)
+            schedule = self._pay_schedules.get(pay_id)
+            if not schedule:
+                raise not_found("Pay not found")
+            if request.occurred_on > self.today():
+                raise invalid("You can only mark pay you've already received")
+            category_id = next(
+                (
+                    c.id
+                    for c in self._categories.values()
+                    if c.kind == "income" and c.name.casefold() == "paycheque"
+                ),
+                None,
+            )
+            transaction = Transaction(
+                id=new_id("tx"),
+                description=schedule.name,
+                category=self._category_name(category_id),
+                account_id=schedule.account_id,
+                category_id=category_id,
+                amount_cents=request.amount_cents,
+                kind="income",
+                occurred_on=request.occurred_on,
+                pay_id=schedule.id,
+                history_only=not request.affect_balance,
+            )
+            self._apply_account_effect(transaction, 1, allow_overdraft=True)
+            self._transactions[transaction.id] = transaction
             return self._snapshot()
 
     def pay_cycle_outlook(self, user_id: str, offset: int = 0) -> PayCycleOutlook:

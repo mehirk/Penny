@@ -1,5 +1,7 @@
 """Accounts, categories, and money moved between the user's own accounts."""
 
+from datetime import date
+
 from app.dashboard_models import (
     AccountPatch,
     AccountWrite,
@@ -9,6 +11,7 @@ from app.dashboard_models import (
     Transfer,
     TransferWrite,
 )
+from app.domain.card_due import due_day_from
 from app.domain.transfers import move, undo
 from app.models import Account
 from app.store.dashboard import DashboardViews
@@ -20,6 +23,24 @@ def require_card_for_due_day(account_type: str, due_day: int | None) -> None:
         raise invalid("Only credit cards have a payment due day")
 
 
+def due_from_next_payment(
+    account_type: str, due_day: int | None, next_due: date | None, today: date
+) -> tuple[int | None, bool]:
+    """The card's due day and whether this month's payment is already paid, from either the
+    due day or the next payment's date (one, not both)."""
+    require_card_for_due_day(account_type, due_day)
+    if next_due is None:
+        return due_day, False
+    if account_type != "credit":
+        raise invalid("Only credit cards have a payment due date")
+    if due_day is not None:
+        raise invalid("Send the due day or the next payment date, not both")
+    try:
+        return due_day_from(today, next_due)
+    except ValueError as error:
+        raise invalid(str(error)) from error
+
+
 class AccountOps(DashboardViews):
     # ------------------------------------------------------------------ accounts
 
@@ -28,8 +49,18 @@ class AccountOps(DashboardViews):
             self.require_owner(user_id)
             if (request.account_type == "credit") != (request.credit_limit_cents is not None):
                 raise invalid("Credit accounts need a credit limit; other accounts can't have one")
-            require_card_for_due_day(request.account_type, request.payment_due_day)
-            account = Account(id=new_id("acct", 10), **request.model_dump())
+            due_day, paid = due_from_next_payment(
+                request.account_type,
+                request.payment_due_day,
+                request.payment_next_due,
+                self.today(),
+            )
+            account = Account(
+                id=new_id("acct", 10),
+                **request.model_dump(exclude={"payment_due_day", "payment_next_due"}),
+                payment_due_day=due_day,
+                card_paid_on=self.today() if paid else None,
+            )
             self._accounts[account.id] = account
             return self._snapshot()
 
@@ -47,7 +78,17 @@ class AccountOps(DashboardViews):
                 changes["name"] = changes["name"].strip()
             if "credit_limit_cents" in changes and account.account_type != "credit":
                 raise invalid("Only credit cards have a limit")
-            require_card_for_due_day(account.account_type, changes.get("payment_due_day"))
+            next_due = changes.pop("payment_next_due", None)
+            due_day, paid = due_from_next_payment(
+                account.account_type, changes.get("payment_due_day"), next_due, self.today()
+            )
+            if next_due is not None:
+                if "card_paid_on" in changes:
+                    raise invalid("Send the next payment date or a payment, not both")
+                # The date says it all: next month's means this month's is paid; this cycle's
+                # means it isn't (yet).
+                changes["payment_due_day"] = due_day
+                changes["card_paid_on"] = self.today() if paid else None
             paid_on = changes.get("card_paid_on")
             if paid_on and account.account_type != "credit":
                 raise invalid("Only credit cards can be marked paid")
