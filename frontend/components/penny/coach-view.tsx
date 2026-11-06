@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { type BudgetSuggestion, coachApi, type CoachBrief, type CoachBudgetPlan, type CoachProposal, type CoachReply, type CoachRole, type Dashboard, type SavedConversation } from "@/lib/api";
+import { ApiError, type BudgetSuggestion, coachApi, type CoachBrief, type CoachBudgetPlan, type CoachProposal, type CoachReply, type CoachRole, type Dashboard, type SavedConversation } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { cad, describeError } from "./shared";
 import { PlanBreakdown } from "./smart-cards";
@@ -19,6 +19,36 @@ type ProposalState = "approving" | "approved" | "dismissed";
 type CoachMessage = { id: string; role: CoachRole; content: string; reply?: CoachReply };
 type ChatError = { title: string; detail: string };
 type Conversation = { id: string; title: string; updated_at: string; messages: CoachMessage[]; proposals: Record<string, ProposalState> };
+
+/** Resolves once the app is on screen. */
+function whenVisible(): Promise<void> {
+  if (document.visibilityState === "visible") return Promise.resolve();
+  return new Promise((resolve) => {
+    const shown = () => {
+      if (document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", shown);
+      resolve();
+    };
+    document.addEventListener("visibilitychange", shown);
+  });
+}
+
+/** iOS drops a request when the app goes to the background. If the app was hidden while Penny
+ * was answering and the connection failed, ask again once the app is back on screen. */
+async function chatThroughBackground(messages: { role: CoachRole; content: string }[]): Promise<CoachReply> {
+  let hidden = document.visibilityState === "hidden";
+  const changed = () => { if (document.visibilityState === "hidden") hidden = true; };
+  document.addEventListener("visibilitychange", changed);
+  try {
+    return await coachApi.chat(messages);
+  } catch (reason) {
+    if (!hidden || reason instanceof ApiError) throw reason;
+    await whenVisible();
+    return await coachApi.chat(messages);
+  } finally {
+    document.removeEventListener("visibilitychange", changed);
+  }
+}
 
 const STORAGE_KEY = "penny-coach-chats";
 /** Set once this device's older, device-only chats have been uploaded to the account. */
@@ -138,7 +168,7 @@ export function useCoachChat() {
     try {
       const history = thread.slice(-HISTORY_LIMIT - 1).map(({ role, content }) => ({ role, content }));
       while (history[0]?.role === "assistant") history.shift();
-      const reply = await coachApi.chat(history);
+      const reply = await chatThroughBackground(history);
       update(conversationId, (conversation) => ({ ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: "assistant", content: reply.reply, reply }] }));
     } catch (reason) {
       setError(describeError(reason, "Penny couldn’t answer"));

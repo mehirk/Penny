@@ -11,6 +11,7 @@ import { formatShortDate } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { isOwnAccount } from "./labels";
+import { PaydayCheckIn } from "./payday-check-in";
 import { cad, Field } from "./shared";
 import type { SaveChange } from "./settings-view";
 
@@ -193,9 +194,10 @@ export function PaydayPrompt({ dashboard, save }: { dashboard: Dashboard; save: 
   const [open, setOpen] = useState<UpcomingPay | null>(null);
   const today = dashboard.money_calendar.today;
   const items = today ? dashboard.pay?.to_confirm ?? [] : [];
-  if (items.length === 0) return null;
+  // Recording the paycheque removes its prompt; the dialog stays open for the check-in.
+  if (items.length === 0 && !open) return null;
   return (
-    <section aria-label="Payday" className="space-y-2.5">
+    <section aria-label="Payday" className={cn("space-y-2.5", items.length === 0 && "hidden")}>
       {items.map((item) => (
         <div key={`${item.pay_id}:${item.on}`} className="flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-money-in/30 bg-money-in-soft p-4 animate-enter">
           <span className="grid size-11 shrink-0 place-items-center rounded-full bg-surface text-xl" aria-hidden="true">💰</span>
@@ -215,8 +217,15 @@ export function PaydayPrompt({ dashboard, save }: { dashboard: Dashboard; save: 
   );
 }
 
-/** Record one paycheque: what actually landed (it can differ from the usual), and when. */
+/** Record one paycheque: what actually landed (it can differ from the usual), and when. Then
+ * the payday check-in. */
 function GotPaidForm({ dashboard, payday, save, onDone }: { dashboard: Dashboard; payday: UpcomingPay; save: SaveChange; onDone: () => void }) {
+  const [landed, setLanded] = useState<number | null>(null);
+  if (landed !== null) return <PaydayCheckIn dashboard={dashboard} amountCents={landed} payId={payday.pay_id} save={save} onDone={onDone} />;
+  return <GotPaidFields dashboard={dashboard} payday={payday} save={save} onDone={onDone} onRecorded={setLanded} />;
+}
+
+function GotPaidFields({ dashboard, payday, save, onDone, onRecorded }: { dashboard: Dashboard; payday: UpcomingPay; save: SaveChange; onDone: () => void; onRecorded: (cents: number) => void }) {
   const today = dashboard.money_calendar.today ?? isoToday();
   const source = dashboard.pay?.sources.find((item) => item.id === payday.pay_id);
   const account = dashboard.accounts.find((item) => item.id === source?.account_id)?.name ?? "your account";
@@ -233,7 +242,7 @@ function GotPaidForm({ dashboard, payday, save, onDone }: { dashboard: Dashboard
     setBusy(true);
     const result = await save(() => dashboardApi.recordPay(payday.pay_id, { occurred_on: on, amount_cents: cents, affect_balance: !inBalance }), `${payday.name} added`);
     setBusy(false);
-    if (result) setError(result); else onDone();
+    if (result) setError(result); else onRecorded(cents);
   }
   return (
     <form onSubmit={submit} className="space-y-4">

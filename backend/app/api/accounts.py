@@ -1,6 +1,8 @@
 """Accounts, transfers between them, sources of pay, and categories."""
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from app.api.deps import AuthenticatedUser, ViewMonth, in_view, user_store
 from app.dashboard_models import (
@@ -10,6 +12,7 @@ from app.dashboard_models import (
     CreditUtilizationRequest,
     CreditUtilizationResponse,
     DashboardResponse,
+    PaydayPlanView,
     PayReceivedWrite,
     PayScheduleWrite,
     TransferWrite,
@@ -99,6 +102,18 @@ def delete_pay_schedule(pay_id: str, current_user: AuthenticatedUser) -> Dashboa
     return user_store(current_user).delete_pay_schedule(current_user.id, pay_id)
 
 
+@router.get("/payday-plan", response_model=PaydayPlanView, tags=["pay cycle"])
+def payday_plan(
+    current_user: AuthenticatedUser,
+    amount_cents: Annotated[int, Query(gt=0, le=100_000_000)],
+    pay_id: str | None = None,
+) -> PaydayPlanView:
+    """The payday check-in for money that just came in: what's due before the next payday,
+    and suggestions to act on. `pay_id` names the source of pay; without it, the money isn't
+    pay (a bonus, a gift). Changes nothing."""
+    return user_store(current_user).payday_plan(current_user.id, amount_cents, pay_id)
+
+
 @router.post(
     "/pay-schedules/{pay_id}/received", response_model=DashboardResponse, tags=["pay cycle"]
 )
@@ -108,7 +123,7 @@ def record_pay(
     current_user: AuthenticatedUser,
     month: ViewMonth = None,
 ) -> DashboardResponse:
-    """"I got paid": record a paycheque from this source as income on its account."""
+    """ "I got paid": record a paycheque from this source as income on its account."""
     return in_view(
         user_store(current_user).record_pay(current_user.id, pay_id, request),
         current_user,

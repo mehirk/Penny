@@ -13,6 +13,7 @@ import { type RecurringActions, RecurringView } from "./recurring-view";
 import { cad, EmptyState, SectionHeading } from "./shared";
 import { BudgetSuggestionsDialog, RebalanceCard, SpendingTake } from "./smart-cards";
 import { useSubpage } from "./subpage";
+import type { SaveChange } from "./settings-view";
 import { TransactionDetail } from "./transaction-detail";
 import { RecentTransactions, TransactionsPanel } from "./transactions-panel";
 import { useHistory } from "./use-history";
@@ -31,6 +32,7 @@ type Props = {
   onAddTransaction: () => void;
   onEditTransaction: (item: Transaction) => void;
   onDeleteTransaction: (item: Transaction) => void;
+  save: SaveChange;
 };
 
 function budgetStatus(budget: Budget): { label: string; tone: "danger" | "gold" | "accent"; bar: string } {
@@ -52,7 +54,7 @@ export function SpendingView(props: Props) {
     return <TransactionsPanel dashboard={dashboard} onChangePeriod={props.onChangePeriod} onAdd={props.onAddTransaction} onOpen={(item) => openPage(`tx:${item.id}`)} onDelete={props.onDeleteTransaction} onBack={back} />;
   }
   if (pageId?.startsWith("tx:")) {
-    return <TransactionDetail dashboard={dashboard} id={pageId.slice(3)} backLabel="Back" onBack={back} onEdit={props.onEditTransaction} onDelete={props.onDeleteTransaction} />;
+    return <TransactionDetail dashboard={dashboard} id={pageId.slice(3)} backLabel="Back" save={props.save} onBack={back} onEdit={props.onEditTransaction} onDelete={props.onDeleteTransaction} />;
   }
   return (
     <div className="mx-auto max-w-6xl space-y-6">
