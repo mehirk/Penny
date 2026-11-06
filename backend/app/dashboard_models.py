@@ -189,6 +189,72 @@ class PayOverview(DashboardModel):
     to_confirm: list[UpcomingPay] = []
 
 
+class PlanDue(DashboardModel):
+    """A bill or card payment due before the next payday."""
+
+    name: str
+    due_on: date
+    amount_cents: int = Field(gt=0)
+    kind: Literal["bill", "card"]
+
+
+class PlanCard(DashboardModel):
+    """A card balance a windfall could pay down."""
+
+    account_id: str
+    account_name: str
+    owed_cents: int = Field(gt=0)
+    amount_cents: int = Field(gt=0)
+
+
+class PlanSave(DashboardModel):
+    # None: no savings goal yet, so the app offers to start one.
+    goal_id: str | None
+    goal_name: str | None
+    amount_cents: int = Field(gt=0)
+
+
+class PaydayPlanView(DashboardModel):
+    """The payday check-in (app.domain.payday_plan): what's due before the next payday, and
+    suggestions the user can act on one by one. Nothing changes until they do."""
+
+    amount_cents: int = Field(gt=0)
+    usual_cents: int = Field(ge=0)
+    extra_cents: int = Field(ge=0)
+    windfall: bool
+    # The main pay's next payday; None without a pay schedule (the plan then looks 30 days out).
+    next_payday: date | None
+    until: date
+    # Where a suggested card payment or saving would come from.
+    from_account_id: str
+    from_account_name: str
+    spendable_cents: int
+    due: list[PlanDue]
+    due_cents: int = Field(ge=0)
+    short_cents: int = Field(ge=0)
+    card: PlanCard | None
+    save: PlanSave | None
+    yours_cents: int = Field(ge=0)
+    methodology: str
+
+
+class CalendarExportWrite(DashboardModel):
+    """Which money dates go in the calendar file, and how they read."""
+
+    bills: bool = True
+    cards: bool = True
+    pay: bool = True
+    show_amounts: bool = True
+    reminder: Literal["none", "same_day", "day_before"] = "day_before"
+
+
+class CalendarExport(DashboardModel):
+    # Opens the .ics file without signing in, until it expires.
+    path: str
+    event_count: int = Field(gt=0)
+    expires_in_seconds: int = Field(gt=0)
+
+
 class AccountGoal(DashboardModel):
     id: str
     name: str

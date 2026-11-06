@@ -4,6 +4,7 @@ in this package (each adds one area: transactions, budgets, goals, bills, and so
 from app.dashboard_models import DashboardResponse
 from app.store.accounts import AccountOps
 from app.store.bills import BillOps
+from app.store.calendar import CalendarOps
 from app.store.goals import GoalOps
 from app.store.learning import LearningOps
 from app.store.pay import PayOps
@@ -22,6 +23,7 @@ class DashboardStore(
     AccountOps,
     SplitOps,
     PayOps,
+    CalendarOps,
     LearningOps,
     ReportViews,
 ):

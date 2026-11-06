@@ -293,7 +293,7 @@ function TopicRow({ topic, onOpen }: { topic: TopicPath; onOpen: (lesson: Lesson
         <h3 className="text-lg font-semibold tracking-tight text-ink">{topic.label} <span className="text-sm font-normal text-ink-subtle">· {topic.blurb}</span></h3>
         <span className="text-xs font-semibold text-ink-subtle">{passed === topic.lessons.length ? <span className="inline-flex items-center gap-1 text-accent-strong"><Trophy className="size-3.5" aria-hidden="true" />Mastered</span> : `${passed} of ${topic.lessons.length} levels`}</span>
       </div>
-      <ol className="mt-4 grid gap-3 md:grid-cols-3">
+      <ol className={cn("mt-4 grid gap-3", topic.lessons.length > 3 ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3")}>
         {topic.lessons.map((lesson, index) => {
           const style = TIER_STYLE[lesson.tier];
           const previous = topic.lessons[index - 1];

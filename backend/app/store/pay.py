@@ -5,17 +5,31 @@ from datetime import date, timedelta
 
 from app.dashboard_models import (
     DashboardResponse,
+    PaydayPlanView,
     PayReceivedWrite,
     PaySchedule,
     PayScheduleWrite,
+    PlanCard,
+    PlanDue,
+    PlanSave,
 )
+from app.domain.finance import format_cad
 from app.domain.pay_cycle import DayBalance, Event, cycles_around, forecast
+from app.domain.payday_plan import (
+    SAVE_BASIS_POINTS,
+    WINDFALL_MIN_BASIS_POINTS,
+    WINDFALL_MIN_CENTS,
+    WINDFALL_WORK_BASIS_POINTS,
+    plan_payday,
+)
 from app.models import Transaction
 from app.store.dashboard import DashboardViews
 from app.store.sections import SPENDABLE_TYPES, bill_due_dates
 from app.store.state import conflict, invalid, new_id, not_found
 
 MAX_PAY_SCHEDULES = 8
+# Without a pay schedule, the payday check-in looks this far ahead.
+PLAN_DAYS_WITHOUT_PAY = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +113,134 @@ class PayOps(DashboardViews):
             self._apply_account_effect(transaction, 1, allow_overdraft=True)
             self._transactions[transaction.id] = transaction
             return self._snapshot()
+
+    def payday_plan(self, user_id: str, amount_cents: int, pay_id: str | None) -> PaydayPlanView:
+        """The payday check-in for money that just came in: a paycheque from `pay_id`, or money
+        that isn't pay (a bonus, a gift) when it's None. Suggestions only; nothing changes."""
+        with self._lock:
+            self.require_owner(user_id)
+            schedule = self._pay_schedules.get(pay_id) if pay_id else None
+            if pay_id and not schedule:
+                raise not_found("Pay not found")
+            today = self.today()
+            main = self._main_pay()
+            next_payday = (
+                next(
+                    iter(
+                        self._upcoming_paydays(
+                            main, today + timedelta(days=1), today + timedelta(days=400)
+                        )
+                    ),
+                    None,
+                )
+                if main
+                else None
+            )
+            until = next_payday or today + timedelta(days=PLAN_DAYS_WITHOUT_PAY)
+            last_day = until - timedelta(days=1)
+            spendable = {item.id for item in self._accounts_of(*SPENDABLE_TYPES)}
+            due = [
+                PlanDue(name=bill.name, due_on=day, amount_cents=bill.amount_cents, kind="bill")
+                for bill in self._bills.values()
+                if bill.account_id in spendable
+                for day in bill_due_dates(bill, bill.next_due, last_day)
+            ]
+            due += [
+                PlanDue(
+                    name=f"{card.account_name} payment",
+                    due_on=card.due_on,
+                    amount_cents=card.owed_cents,
+                    kind="card",
+                )
+                for card in self._card_payments()
+                if card.due_on <= last_day and card.owed_cents > 0
+            ]
+            due.sort(key=lambda item: (item.due_on, item.name))
+            due_cards = {
+                card.account_id for card in self._card_payments() if card.due_on <= last_day
+            }
+            card = max(
+                (
+                    account
+                    for account in self._accounts_of("credit")
+                    if account.balance_cents > 0 and account.id not in due_cards
+                ),
+                key=lambda account: (account.balance_cents, account.name),
+                default=None,
+            )
+            goal = min(
+                (
+                    item
+                    for item in self._goals.values()
+                    if item["status"] == "active" and item["current_cents"] < item["target_cents"]
+                ),
+                key=lambda item: (
+                    item["target_date"] is None,
+                    item["target_date"] or date.max,
+                    item["name"],
+                ),
+                default=None,
+            )
+            source_id = (
+                schedule.account_id
+                if schedule and schedule.account_id in spendable
+                else self._default_source()
+            )
+            usual = schedule.amount_cents if schedule else 0
+            spendable_cents = self._spendable_cents()
+            due_cents = sum(item.amount_cents for item in due)
+            plan = plan_payday(
+                amount_cents=amount_cents,
+                usual_cents=usual,
+                spendable_cents=spendable_cents,
+                due_cents=due_cents,
+                card_owed_cents=card.balance_cents if card else 0,
+                goal_left_cents=goal["target_cents"] - goal["current_cents"] if goal else None,
+            )
+            return PaydayPlanView(
+                amount_cents=amount_cents,
+                usual_cents=usual,
+                extra_cents=plan.extra_cents,
+                windfall=plan.windfall,
+                next_payday=next_payday,
+                until=until,
+                from_account_id=source_id,
+                from_account_name=self._accounts[source_id].name,
+                spendable_cents=spendable_cents,
+                due=due,
+                due_cents=due_cents,
+                short_cents=plan.short_cents,
+                card=(
+                    PlanCard(
+                        account_id=card.id,
+                        account_name=card.name,
+                        owed_cents=card.balance_cents,
+                        amount_cents=plan.card_cents,
+                    )
+                    if card and plan.card_cents
+                    else None
+                ),
+                save=(
+                    PlanSave(
+                        goal_id=goal["id"] if goal else None,
+                        goal_name=goal["name"] if goal else None,
+                        amount_cents=plan.save_cents,
+                    )
+                    if plan.save_cents
+                    else None
+                ),
+                yours_cents=plan.yours_cents,
+                methodology=(
+                    "First, everything due before your next payday stays put: bills and card "
+                    "payments paid from chequing or cash. From what's left, Penny suggests "
+                    f"saving {SAVE_BASIS_POINTS // 100}% of a usual paycheque. Money at least "
+                    f"{format_cad(WINDFALL_MIN_CENTS)} and {WINDFALL_MIN_BASIS_POINTS // 100}% "
+                    "above the usual is a windfall: "
+                    f"{WINDFALL_WORK_BASIS_POINTS // 100}% of the extra goes to a card balance "
+                    "first (card interest costs more than savings earn), then savings, and the "
+                    "rest is yours. Educational guidance, not financial advice."
+                ),
+            )
 
     def pay_cycle_outlook(self, user_id: str, offset: int = 0) -> PayCycleOutlook:
         """Chequing and cash day by day over a pay cycle (0 is the current one, 1 the next).

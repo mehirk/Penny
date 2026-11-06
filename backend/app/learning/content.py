@@ -1634,6 +1634,73 @@ RULES_US = (
 
 # ------------------------------------------------------------------ investing
 
+# Before investing: what usually comes first. General education; Penny never picks investments.
+INVESTING_READY = LessonContent(
+    "investing-ready",
+    "investing",
+    "easy",
+    None,
+    "Am I ready to invest?",
+    "What usually comes first: a cushion, no card debt, a budget that works.",
+    (
+        "Investing is for money you won’t need for at least a few years. Before that, three "
+        "things usually come first. This is general education, not advice for your situation.",
+        "A cushion. An emergency fund of a few weeks to a few months of essential costs means a "
+        "surprise bill doesn’t force you to sell investments after they’ve dropped.",
+        "No high-interest debt. A credit card at about 20% a year costs more than investments "
+        "usually earn, so paying it off is a sure return.",
+        "Bills covered and a budget that works. If your money runs out before payday, investing "
+        "can wait until it doesn’t.",
+        "When those are in place, a common start is a low-fee, diversified fund held for years. "
+        "Penny doesn’t pick investments or connect to a broker.",
+    ),
+    (
+        order(
+            "q1",
+            "Put these in the order most people tackle them.",
+            [
+                "Cover bills and essentials",
+                "Build a small emergency fund",
+                "Pay off high-interest card debt",
+                "Invest for the long term",
+            ],
+            "Essentials first, then a small cushion so a surprise doesn’t become new debt, then "
+            "the expensive debt, then investing.",
+        ),
+        number(
+            "q2",
+            "Your card charges 20% a year on a $1,000 balance. About how much interest is that "
+            "in a year?",
+            "200",
+            "$1,000 × 20% = $200, money that paying the card off saves for sure.",
+        ),
+        choice(
+            "q3",
+            "You have $500 left after bills, a $600 card balance at 20%, and no savings. What "
+            "usually comes first?",
+            "Pay down the card while keeping a small cushion",
+            [
+                "Buy a stock that’s been rising",
+                "Put it all in crypto",
+                "Leave the card and invest for growth",
+            ],
+            "Card interest is a guaranteed cost. Investments aren’t a guaranteed gain.",
+        ),
+        multi(
+            "q4",
+            "Which are signs you might be ready to start investing? Select all that apply.",
+            [
+                "Your emergency fund covers a few months of essentials",
+                "You have no high-interest debt",
+                "You won’t need the money for five years or more",
+            ],
+            ["A friend made money on a stock last week", "You need the money for rent next month"],
+            "Readiness is about your cushion, your debt, and your time horizon, not what’s hot.",
+        ),
+    ),
+    Task("Check your emergency fund goal", "goals"),
+)
+
 INVESTING_SHARED = (
     LessonContent(
         "investing-easy",
@@ -1891,6 +1958,7 @@ ALL_LESSONS: tuple[LessonContent, ...] = (
     *CREDIT_US,
     *RULES_CA,
     *RULES_US,
+    INVESTING_READY,
     INVESTING_SHARED[0],
     INVESTING_CA,
     INVESTING_US,

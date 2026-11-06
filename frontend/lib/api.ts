@@ -44,6 +44,19 @@ export type UpcomingPay = { pay_id: string; name: string; on: string; amount_cen
 /** `to_confirm`: paydays from the last week (today too) with no paycheque recorded yet. */
 export type PayOverview = { monthly_cents: number; sources: PaySource[]; upcoming: UpcomingPay[]; to_confirm: UpcomingPay[] };
 export type PayReceivedWrite = { occurred_on: string; amount_cents: number; affect_balance: boolean };
+/** The payday check-in (backend app/domain/payday_plan.py). Suggestions only. */
+export type PlanDue = { name: string; due_on: string; amount_cents: number; kind: "bill" | "card" };
+export type PaydayPlan = {
+  amount_cents: number; usual_cents: number; extra_cents: number; windfall: boolean;
+  next_payday: string | null; until: string; from_account_id: string; from_account_name: string;
+  spendable_cents: number; due: PlanDue[]; due_cents: number; short_cents: number;
+  card: { account_id: string; account_name: string; owed_cents: number; amount_cents: number } | null;
+  save: { goal_id: string | null; goal_name: string | null; amount_cents: number } | null;
+  yours_cents: number; methodology: string;
+};
+export type CalendarReminder = "none" | "same_day" | "day_before";
+export type CalendarExportWrite = { bills: boolean; cards: boolean; pay: boolean; show_amounts: boolean; reminder: CalendarReminder };
+export type CalendarExport = { path: string; event_count: number; expires_in_seconds: number };
 export type RecurringExpense = { id: string; name: string; category_name: string | null; amount_cents: number; monthly_cents: number; frequency: BillFrequency; next_due: string; days_until_due: number; kind: "bill" | "subscription"; auto_record: boolean; last_paid_on: string | null; payment_count: number; total_paid_cents: number; paid_this_month: boolean; status: "overdue" | "due_soon" | "later" };
 export type RecurringPayment = { bill_id: string; name: string; occurred_on: string; amount_cents: number; paid_automatically: boolean | null };
 export type UpcomingPayment = { bill_id: string; name: string; due_on: string; days_until_due: number; amount_cents: number; auto_record: boolean; kind: "bill" | "subscription" };
@@ -266,6 +279,8 @@ export const dashboardApi = {
   updatePay: (id: string, body: PayScheduleWrite) => request(`/api/v1/pay-schedules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deletePay: (id: string) => request(`/api/v1/pay-schedules/${id}`, { method: "DELETE" }),
   recordPay: (id: string, body: PayReceivedWrite, month?: string) => request(inMonth(`/api/v1/pay-schedules/${id}/received`, month), { method: "POST", body: JSON.stringify(body) }),
+  /** The check-in for money that came in; `payId` null for money that isn't pay. Changes nothing. */
+  paydayPlan: (amountCents: number, payId: string | null) => authorizedRequest<PaydayPlan>(`/api/v1/payday-plan?amount_cents=${amountCents}${payId ? `&pay_id=${encodeURIComponent(payId)}` : ""}`),
   createCategory: (body: { name: string; kind: Category["kind"]; parent_id: string | null }) => request("/api/v1/categories", { method: "POST", body: JSON.stringify(body) }),
   deleteCategory: (id: string) => request(`/api/v1/categories/${id}`, { method: "DELETE" }),
   createAccount: (body: { name: string; account_type: AccountType; balance_cents: number; credit_limit_cents: number | null; payment_due_day?: number | null; payment_next_due?: string | null }) => request("/api/v1/accounts", { method: "POST", body: JSON.stringify(body) }),
@@ -386,6 +401,12 @@ export const calculationsApi = {
 /** A Penny AI chat as saved on the server. `reply` is set on Penny's messages. */
 export type SavedChatMessage = { id: string; role: CoachRole; content: string; reply?: CoachReply | null };
 export type SavedConversation = { id: string; title: string; updated_at: string; messages: SavedChatMessage[]; proposals: Record<string, "approving" | "approved" | "dismissed"> };
+
+export const calendarApi = {
+  /** Makes the .ics file; its link works without signing in, for a few minutes. */
+  export: (body: CalendarExportWrite) => authorizedRequest<CalendarExport>("/api/v1/calendar/exports", { method: "POST", body: JSON.stringify(body) }),
+  fileUrl: (path: string) => `${API_BASE}${path}`,
+};
 
 export const coachApi = {
   conversations: () => authorizedRequest<SavedConversation[]>("/api/v1/coach/conversations"),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Banknote, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, RotateCcw, ScanFace, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
+import { Banknote, CalendarPlus, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, RotateCcw, ScanFace, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { accountEmoji } from "./emoji";
 import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
 import { cad, Field } from "./shared";
 import { BackBar } from "./back-bar";
+import { CalendarSection } from "./calendar-section";
 import { PaySection } from "./pay-section";
 import { StatementImport } from "./statement-import";
 import { useSubpage } from "./subpage";
@@ -190,6 +191,7 @@ export function SettingsView({ dashboard, save, onReset }: { dashboard: Dashboar
   useEffect(() => { void faceIdStatus().then(setFaceId); }, []);
   const pages: SettingsPage[] = [
     { id: "pay", labelId: "pay-title", group: "Money", icon: Banknote, title: "When you get paid", summary: pay ? `${pay.sources.length === 1 ? "1 source" : `${pay.sources.length} sources`} · about ${cad(pay.monthly_cents)} a month${nextPay ? ` · next ${formatShortDate(nextPay)}` : ""}` : "Not set up yet", body: <PaySection dashboard={dashboard} save={save} /> },
+    { id: "calendar", labelId: "calendar-title", group: "Money", icon: CalendarPlus, title: "Add to calendar", summary: "Bills, card payments, and paydays", body: <CalendarSection dashboard={dashboard} /> },
     { id: "accounts", labelId: "accounts-title", group: "Money", icon: Wallet, title: "Accounts", summary: `${dashboard.accounts.length} account${dashboard.accounts.length === 1 ? "" : "s"}`, body: <AccountsSection dashboard={dashboard} save={save} /> },
     { id: "categories", labelId: "categories-title", group: "Money", icon: Tags, title: "Categories", summary: custom ? `${custom} of your own` : "Penny’s defaults", body: <CategoriesSection dashboard={dashboard} save={save} /> },
     { id: "import", labelId: "import-title", group: "Money", icon: FileUp, title: "Import a statement", summary: "PDF, Excel, or CSV · read by Penny AI", body: <StatementImport dashboard={dashboard} save={save} /> },
