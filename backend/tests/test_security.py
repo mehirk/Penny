@@ -203,3 +203,28 @@ def test_without_access_to_signins_the_data_is_still_deleted(conn: FakeConnectio
 def test_settings_never_print_the_database_url() -> None:
     settings = Settings(database_url=SecretStr("postgresql://user:hunter2@db/penny"))
     assert "hunter2" not in repr(settings) and "hunter2" not in str(settings.model_dump())
+
+
+@pytest.mark.parametrize(
+    ("basis_points", "shown"),
+    [
+        (1_219, "12%"),
+        (6_019, "60%"),
+        (1_250, "13%"),
+        (1_000, "10%"),
+        (410, "4.1%"),
+        (999, "10%"),
+        (400, "4%"),
+        (4, "0%"),
+        (0, "0%"),
+        (-1_219, "-12%"),
+        (-45, "-0.5%"),
+    ],
+)
+def test_percents_are_easy_to_read(basis_points: int, shown: str) -> None:
+    from app.coach.facts import FactBook, format_percent
+
+    assert format_percent(basis_points) == shown
+    book = FactBook()
+    book.percent("Change", basis_points, "test")
+    assert book.unverified_figures(f"That's {shown.lstrip('-')}.") == []

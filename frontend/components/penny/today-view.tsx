@@ -194,7 +194,9 @@ function SafeToSpendHero({ dashboard, onOpen, onSetBudgets }: Pick<Props, "dashb
     ) : runway && (
       <p className="text-sm text-ink-muted">
         <span className="inline-flex items-center gap-1.5 font-semibold text-ink"><span className={cn("size-2 rounded-full", RUNWAY_STYLE[runway.status].dot)} aria-hidden="true" />{runwayLabel(runway)}</span>
-        {" · "}about <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} day{runway.days_left === 1 ? "" : "s"}
+        {" · "}{runway.days_left === 1
+          ? <><span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> left for today</>
+          : <>about <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} days</>}
       </p>
     )}
     {safe && safe.budget_cents > 0 && (

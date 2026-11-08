@@ -173,7 +173,7 @@ export default function LoginPage() {
           )}
           {!configured && <p className="mt-4 rounded-xl bg-gold-soft p-3 text-sm text-gold-strong">Sign-in isn’t set up yet. Add the Supabase URL and publishable key to <code>frontend/.env.local</code>, then restart the dev server.</p>}
         </div>
-        <p className="mt-5 flex items-start gap-2 text-xs text-ink-subtle"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />Penny uses only fictional accounts and amounts. No bank is ever connected.</p>
+        <p className="mt-5 flex items-start gap-2 text-xs text-ink-subtle"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />No bank is ever connected. You type in what you want Penny to know, and you can delete it any time.</p>
         <Link href="/" className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-accent-strong hover:underline"><ArrowLeft className="size-4" aria-hidden="true" />Back to Penny</Link>
       </div>
     </main>

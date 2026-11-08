@@ -51,7 +51,7 @@ export function SafeDetail({ dashboard, onBack, onNavigate, onAsk }: { dashboard
         <p className={cn("mt-2 text-5xl font-semibold leading-none tracking-tight", over ? "text-danger" : "text-ink")}><BigAmount cents={Math.abs(safe.safe_cents)} negative={over} /></p>
         {over
           ? <p role="status" className="mt-3 text-sm font-semibold text-danger">You’re <span className="tabular">{cad(safe.over_cents)}</span> over your budget {period.phrase}</p>
-          : runway && safe.safe_cents > 0 && <p className="mt-3 text-sm text-ink-muted">About <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} day{runway.days_left === 1 ? "" : "s"}</p>}
+          : runway && safe.safe_cents > 0 && <p className="mt-3 text-sm text-ink-muted">{runway.days_left === 1 ? <><span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> left for today</> : <>About <span className="tabular font-semibold text-ink">{cad(runway.per_day_cents)}</span> a day for {runway.days_left} days</>}</p>}
         {!safe.has_budget && (
           <button type="button" onClick={() => onNavigate("budgets")} className="mx-auto mt-3 block min-h-11 rounded-xl bg-primary-soft px-4 text-sm font-semibold text-ink">Set a monthly budget</button>
         )}
