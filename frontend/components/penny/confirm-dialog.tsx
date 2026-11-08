@@ -8,15 +8,35 @@ import type { Dashboard } from "@/lib/api";
 import { FormError } from "./form-parts";
 import type { Mutate } from "./use-dashboard";
 
-export type ConfirmRequest = { title: string; description: string; confirmLabel: string; onConfirm: () => Promise<string | null> };
+export type ConfirmRequest = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  onConfirm: () => Promise<string | null>;
+};
 
 /** A confirmed delete whose toast offers Undo by re-creating the record. */
-export function deleteConfirmation(mutate: Mutate, options: { title: string; description: string; confirmLabel: string; remove: () => Promise<Dashboard>; restore: () => Promise<Dashboard>; noun: string }): ConfirmRequest {
+export function deleteConfirmation(
+  mutate: Mutate,
+  options: {
+    title: string;
+    description: string;
+    confirmLabel: string;
+    remove: () => Promise<Dashboard>;
+    restore: () => Promise<Dashboard>;
+    noun: string;
+  },
+): ConfirmRequest {
   return {
     title: options.title,
     description: `${options.description} You can undo this right after.`,
     confirmLabel: options.confirmLabel,
-    onConfirm: () => mutate(options.remove, `${options.noun} deleted`, { label: "Undo", run: options.restore, done: `${options.noun} restored` }),
+    onConfirm: () =>
+      mutate(options.remove, `${options.noun} deleted`, {
+        label: "Undo",
+        run: options.restore,
+        done: `${options.noun} restored`,
+      }),
   };
 }
 
@@ -49,9 +69,16 @@ function ConfirmBody({ request, onClose }: { request: ConfirmRequest; onClose: (
       </DialogHeader>
       <FormError message={error} />
       <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="outline" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
         <Button variant="destructive" onClick={() => void confirm()} disabled={busy}>
-          {busy ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}{request.confirmLabel}
+          {busy ? (
+            <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Trash2 className="size-4" aria-hidden="true" />
+          )}
+          {request.confirmLabel}
         </Button>
       </div>
     </>

@@ -11,14 +11,83 @@ const PALETTE_KEY = "penny-palette";
 export type PaletteSetting = "original" | "graphite" | "noir" | "emerald" | "sapphire" | "bordeaux" | "pearl";
 
 /** Colour styles. Tokens live in globals.css under [data-palette]; swatches are canvas, primary, accent, gold. */
-export const PALETTE_OPTIONS: { value: PaletteSetting; label: string; description: string; font: string; swatches: { light: string[]; dark: string[] } }[] = [
-  { value: "original", label: "Penny", description: "Calm teal and navy. The original look.", font: "Inter", swatches: { light: ["#f6f8fb", "#173f5f", "#15977f", "#efad3d"], dark: ["#0d1720", "#81b9e6", "#4bc2a8", "#e8b95f"] } },
-  { value: "graphite", label: "Graphite", description: "Black, white, and grey. Quiet and minimal.", font: "SF Pro", swatches: { light: ["#f4f4f4", "#0b0b0b", "#666666", "#c9c9c9"], dark: ["#000000", "#f5f5f5", "#9a9a9a", "#3b3b3b"] } },
-  { value: "noir", label: "Noir & Gold", description: "Black lacquer, ivory, and champagne gold.", font: "Didot", swatches: { light: ["#f7f4ee", "#16130e", "#a8842c", "#c9a24a"], dark: ["#0b0a08", "#d4af5a", "#d4af5a", "#d4af5a"] } },
-  { value: "emerald", label: "Emerald Club", description: "Deep emerald with antique brass.", font: "Baskerville", swatches: { light: ["#f5f3ec", "#0f4c3a", "#1f7a5c", "#b8913f"], dark: ["#08140f", "#c9a85a", "#4cb88f", "#c9a85a"] } },
-  { value: "sapphire", label: "Midnight Sapphire", description: "Ink navy with sapphire and platinum.", font: "Avenir Next", swatches: { light: ["#f3f5f9", "#14245c", "#2f56c4", "#c7a35a"], dark: ["#070b1a", "#a9bdf2", "#7d9cf0", "#d8bc7c"] } },
-  { value: "bordeaux", label: "Bordeaux", description: "Wine red with rose gold.", font: "Palatino", swatches: { light: ["#f8f3f0", "#6d1a2e", "#a85a54", "#c49a5a"], dark: ["#140809", "#e6a7a0", "#e3a197", "#d9b57a"] } },
-  { value: "pearl", label: "Pearl & Champagne", description: "Soft pearl, espresso, and champagne.", font: "Optima", swatches: { light: ["#faf8f5", "#3d342c", "#a07d52", "#c5a572"], dark: ["#13110f", "#e3cba4", "#d6b88a", "#d6b88a"] } },
+export const PALETTE_OPTIONS: {
+  value: PaletteSetting;
+  label: string;
+  description: string;
+  font: string;
+  swatches: { light: string[]; dark: string[] };
+}[] = [
+  {
+    value: "original",
+    label: "Penny",
+    description: "Calm teal and navy. The original look.",
+    font: "Inter",
+    swatches: {
+      light: ["#f6f8fb", "#173f5f", "#15977f", "#efad3d"],
+      dark: ["#0d1720", "#81b9e6", "#4bc2a8", "#e8b95f"],
+    },
+  },
+  {
+    value: "graphite",
+    label: "Graphite",
+    description: "Black, white, and grey. Quiet and minimal.",
+    font: "SF Pro",
+    swatches: {
+      light: ["#f4f4f4", "#0b0b0b", "#666666", "#c9c9c9"],
+      dark: ["#000000", "#f5f5f5", "#9a9a9a", "#3b3b3b"],
+    },
+  },
+  {
+    value: "noir",
+    label: "Noir & Gold",
+    description: "Black lacquer, ivory, and champagne gold.",
+    font: "Didot",
+    swatches: {
+      light: ["#f7f4ee", "#16130e", "#a8842c", "#c9a24a"],
+      dark: ["#0b0a08", "#d4af5a", "#d4af5a", "#d4af5a"],
+    },
+  },
+  {
+    value: "emerald",
+    label: "Emerald Club",
+    description: "Deep emerald with antique brass.",
+    font: "Baskerville",
+    swatches: {
+      light: ["#f5f3ec", "#0f4c3a", "#1f7a5c", "#b8913f"],
+      dark: ["#08140f", "#c9a85a", "#4cb88f", "#c9a85a"],
+    },
+  },
+  {
+    value: "sapphire",
+    label: "Midnight Sapphire",
+    description: "Ink navy with sapphire and platinum.",
+    font: "Avenir Next",
+    swatches: {
+      light: ["#f3f5f9", "#14245c", "#2f56c4", "#c7a35a"],
+      dark: ["#070b1a", "#a9bdf2", "#7d9cf0", "#d8bc7c"],
+    },
+  },
+  {
+    value: "bordeaux",
+    label: "Bordeaux",
+    description: "Wine red with rose gold.",
+    font: "Palatino",
+    swatches: {
+      light: ["#f8f3f0", "#6d1a2e", "#a85a54", "#c49a5a"],
+      dark: ["#140809", "#e6a7a0", "#e3a197", "#d9b57a"],
+    },
+  },
+  {
+    value: "pearl",
+    label: "Pearl & Champagne",
+    description: "Soft pearl, espresso, and champagne.",
+    font: "Optima",
+    swatches: {
+      light: ["#faf8f5", "#3d342c", "#a07d52", "#c5a572"],
+      dark: ["#13110f", "#e3cba4", "#d6b88a", "#d6b88a"],
+    },
+  },
 ];
 const PALETTE_VALUES = PALETTE_OPTIONS.map((option) => option.value);
 
@@ -92,13 +161,20 @@ function read<T extends string>(key: string, allowed: readonly T[], fallback: T)
 }
 
 function write(key: string, value: string) {
-  try { window.localStorage.setItem(key, value); } catch { /* storage blocked: keep the in-memory choice */ }
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* storage blocked: keep the in-memory choice */
+  }
 }
 
 /** Briefly enables colour transitions so a manual theme switch cross-fades instead of snapping. */
 function withThemeTransition(apply: () => void) {
   const root = document.documentElement;
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { apply(); return; }
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    apply();
+    return;
+  }
   root.classList.add("theme-transition");
   apply();
   window.setTimeout(() => root.classList.remove("theme-transition"), 250);
@@ -113,25 +189,43 @@ const subscribeToSystemTheme = (onChange: () => void) => {
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   // The boot script has already applied these; reading them lazily keeps React in agreement.
-  const [theme, setThemeState] = useState<ThemeSetting>(() => (typeof window === "undefined" ? "system" : read(THEME_KEY, ["light", "dark", "system"] as const, "system")));
-  const systemDark = useSyncExternalStore(subscribeToSystemTheme, () => window.matchMedia(DARK_QUERY).matches, () => false);
+  const [theme, setThemeState] = useState<ThemeSetting>(() =>
+    typeof window === "undefined" ? "system" : read(THEME_KEY, ["light", "dark", "system"] as const, "system"),
+  );
+  const systemDark = useSyncExternalStore(
+    subscribeToSystemTheme,
+    () => window.matchMedia(DARK_QUERY).matches,
+    () => false,
+  );
 
-  const [palette, setPaletteState] = useState<PaletteSetting>(() => (typeof window === "undefined" ? DEFAULT_PALETTE : read(PALETTE_KEY, PALETTE_VALUES, DEFAULT_PALETTE)));
-  const [surface, setSurfaceState] = useState<SurfaceSetting>(() => (typeof window === "undefined" ? DEFAULT_SURFACE : read(SURFACE_KEY, SURFACE_VALUES, DEFAULT_SURFACE)));
+  const [palette, setPaletteState] = useState<PaletteSetting>(() =>
+    typeof window === "undefined" ? DEFAULT_PALETTE : read(PALETTE_KEY, PALETTE_VALUES, DEFAULT_PALETTE),
+  );
+  const [surface, setSurfaceState] = useState<SurfaceSetting>(() =>
+    typeof window === "undefined" ? DEFAULT_SURFACE : read(SURFACE_KEY, SURFACE_VALUES, DEFAULT_SURFACE),
+  );
   const [hideAmounts, setHideAmountsState] = useState(() => {
     if (typeof window === "undefined") return false;
-    try { return window.localStorage.getItem(HIDE_AMOUNTS_KEY) === "1"; } catch { return false; }
+    try {
+      return window.localStorage.getItem(HIDE_AMOUNTS_KEY) === "1";
+    } catch {
+      return false;
+    }
   });
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
 
   useEffect(() => {
     const root = document.documentElement;
-    if (hideAmounts) root.dataset.hideAmounts = ""; else delete root.dataset.hideAmounts;
+    if (hideAmounts) root.dataset.hideAmounts = "";
+    else delete root.dataset.hideAmounts;
   }, [hideAmounts]);
 
   useEffect(() => {
     const root = document.documentElement;
-    if (root.dataset.theme !== resolvedTheme) withThemeTransition(() => { root.dataset.theme = resolvedTheme; });
+    if (root.dataset.theme !== resolvedTheme)
+      withThemeTransition(() => {
+        root.dataset.theme = resolvedTheme;
+      });
     setKeyboardTheme(resolvedTheme);
   }, [resolvedTheme]);
 
@@ -140,21 +234,44 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     const root = document.documentElement;
     const next = palette === "original" ? undefined : palette;
-    if (root.dataset.palette !== next) withThemeTransition(() => { if (next) root.dataset.palette = next; else delete root.dataset.palette; });
+    if (root.dataset.palette !== next)
+      withThemeTransition(() => {
+        if (next) root.dataset.palette = next;
+        else delete root.dataset.palette;
+      });
   }, [palette]);
 
   useEffect(() => {
     const root = document.documentElement;
     const next = surface === "classic" ? undefined : surface;
-    if (root.dataset.surface !== next) withThemeTransition(() => { if (next) root.dataset.surface = next; else delete root.dataset.surface; });
+    if (root.dataset.surface !== next)
+      withThemeTransition(() => {
+        if (next) root.dataset.surface = next;
+        else delete root.dataset.surface;
+      });
   }, [surface]);
 
-  const setTheme = useCallback((value: ThemeSetting) => { write(THEME_KEY, value); setThemeState(value); }, []);
-  const setPalette = useCallback((value: PaletteSetting) => { write(PALETTE_KEY, value); setPaletteState(value); }, []);
-  const setSurface = useCallback((value: SurfaceSetting) => { write(SURFACE_KEY, value); setSurfaceState(value); }, []);
-  const setHideAmounts = useCallback((value: boolean) => { write(HIDE_AMOUNTS_KEY, value ? "1" : "0"); setHideAmountsState(value); }, []);
+  const setTheme = useCallback((value: ThemeSetting) => {
+    write(THEME_KEY, value);
+    setThemeState(value);
+  }, []);
+  const setPalette = useCallback((value: PaletteSetting) => {
+    write(PALETTE_KEY, value);
+    setPaletteState(value);
+  }, []);
+  const setSurface = useCallback((value: SurfaceSetting) => {
+    write(SURFACE_KEY, value);
+    setSurfaceState(value);
+  }, []);
+  const setHideAmounts = useCallback((value: boolean) => {
+    write(HIDE_AMOUNTS_KEY, value ? "1" : "0");
+    setHideAmountsState(value);
+  }, []);
 
-  const value = useMemo(() => ({ theme, resolvedTheme, setTheme, palette, setPalette, surface, setSurface, hideAmounts, setHideAmounts }), [theme, resolvedTheme, setTheme, palette, setPalette, surface, setSurface, hideAmounts, setHideAmounts]);
+  const value = useMemo(
+    () => ({ theme, resolvedTheme, setTheme, palette, setPalette, surface, setSurface, hideAmounts, setHideAmounts }),
+    [theme, resolvedTheme, setTheme, palette, setPalette, surface, setSurface, hideAmounts, setHideAmounts],
+  );
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;
 }
 

@@ -5,9 +5,15 @@ const nativeBuild = process.env.PENNY_NATIVE_BUILD === "1";
 // The iOS Simulator shares the Mac's network, so `npm run ios:build:sim` may keep localhost.
 const simulatorBuild = process.env.PENNY_IOS_SIMULATOR === "1";
 
-if (nativeBuild && !simulatorBuild && /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(process.env.NEXT_PUBLIC_API_BASE_URL ?? "localhost")) {
+if (
+  nativeBuild &&
+  !simulatorBuild &&
+  /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(process.env.NEXT_PUBLIC_API_BASE_URL ?? "localhost")
+) {
   // On a phone, localhost is the phone itself, so every API call would fail.
-  throw new Error("Set NEXT_PUBLIC_API_BASE_URL to an address your iPhone can reach, e.g. http://<your-mac-ip>:8000 (see README, iPhone app).");
+  throw new Error(
+    "Set NEXT_PUBLIC_API_BASE_URL to an address your iPhone can reach, e.g. http://<your-mac-ip>:8000 (see README, iPhone app).",
+  );
 }
 
 /** Where the browser may connect: Penny's API and Supabase (sign-in, including its websocket). */
@@ -19,7 +25,9 @@ function connectSources(): string {
       const { origin, host, protocol } = new URL(url);
       origins.add(origin);
       origins.add(`${protocol === "https:" ? "wss" : "ws"}://${host}`);
-    } catch { /* not a URL: left out */ }
+    } catch {
+      /* not a URL: left out */
+    }
   }
   return [...origins].join(" ");
 }

@@ -27,10 +27,28 @@ export function nextAfter(day: string, frequency: BillFrequency): string {
 }
 
 /** Auto vs manual payment, as two clear choices with what each one means. */
-export function PaymentMode({ value, onChange, disabled }: { value: boolean; onChange: (auto: boolean) => void; disabled?: boolean }) {
+export function PaymentMode({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: boolean;
+  onChange: (auto: boolean) => void;
+  disabled?: boolean;
+}) {
   const options = [
-    { auto: true, icon: Zap, title: "Pay automatically", body: "Recorded for you on each due date. Best for fixed amounts like rent or a phone plan." },
-    { auto: false, icon: Hand, title: "I’ll mark it paid", body: "Penny reminds you, and you tap Paid. Best for bills that change, like electricity." },
+    {
+      auto: true,
+      icon: Zap,
+      title: "Pay automatically",
+      body: "Recorded for you on each due date. Best for fixed amounts like rent or a phone plan.",
+    },
+    {
+      auto: false,
+      icon: Hand,
+      title: "I’ll mark it paid",
+      body: "Penny reminds you, and you tap Paid. Best for bills that change, like electricity.",
+    },
   ];
   return (
     <fieldset>
@@ -39,9 +57,34 @@ export function PaymentMode({ value, onChange, disabled }: { value: boolean; onC
         {options.map(({ auto, icon: Icon, title, body }) => {
           const selected = value === auto;
           return (
-            <button key={title} type="button" role="radio" aria-checked={selected} disabled={disabled} onClick={() => onChange(auto)} className={cn("flex items-start gap-3 rounded-2xl border-2 p-3 text-left transition-colors disabled:opacity-60", selected ? "border-primary bg-primary-soft" : "border-line hover:bg-sage-soft")}>
-              <span className={cn("grid size-9 shrink-0 place-items-center rounded-xl", selected ? "bg-primary text-on-primary" : "bg-sage text-ink-muted")} aria-hidden="true"><Icon className="size-4" /></span>
-              <span><span className="flex items-center gap-1.5 text-sm font-semibold text-ink">{title}{selected && <Check className="size-4 text-primary" aria-hidden="true" />}</span><span className="mt-0.5 block text-xs leading-relaxed text-ink-muted">{body}</span></span>
+            <button
+              key={title}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={disabled}
+              onClick={() => onChange(auto)}
+              className={cn(
+                "flex items-start gap-3 rounded-2xl border-2 p-3 text-left transition-colors disabled:opacity-60",
+                selected ? "border-primary bg-primary-soft" : "border-line hover:bg-sage-soft",
+              )}
+            >
+              <span
+                className={cn(
+                  "grid size-9 shrink-0 place-items-center rounded-xl",
+                  selected ? "bg-primary text-on-primary" : "bg-sage text-ink-muted",
+                )}
+                aria-hidden="true"
+              >
+                <Icon className="size-4" />
+              </span>
+              <span>
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                  {title}
+                  {selected && <Check className="size-4 text-primary" aria-hidden="true" />}
+                </span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-ink-muted">{body}</span>
+              </span>
             </button>
           );
         })}
@@ -49,4 +92,3 @@ export function PaymentMode({ value, onChange, disabled }: { value: boolean; onC
     </fieldset>
   );
 }
-

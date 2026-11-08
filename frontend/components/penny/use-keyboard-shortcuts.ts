@@ -11,7 +11,9 @@ const isTyping = (target: EventTarget | null) =>
 /** Single-key shortcuts, ignored while typing in a field or while a dialog is open. */
 export function useKeyboardShortcuts(shortcuts: Record<string, () => void>) {
   const latest = useRef(shortcuts);
-  useEffect(() => { latest.current = shortcuts; });
+  useEffect(() => {
+    latest.current = shortcuts;
+  });
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return;

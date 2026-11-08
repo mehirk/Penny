@@ -128,13 +128,6 @@ class AccountOps(DashboardViews):
                         del self._split_groups[group.id]
             return self._snapshot()
 
-    def set_spending_from(self, user_id: str, value: str) -> DashboardResponse:
-        """Which accounts count as spending money for Safe to spend."""
-        with self._lock:
-            self.require_owner(user_id)
-            self._profile = self._profile.model_copy(update={"spending_from": value})
-            return self._snapshot()
-
     # ------------------------------------------------------------------ categories
 
     def create_category(self, user_id: str, request: CategoryWrite) -> DashboardResponse:

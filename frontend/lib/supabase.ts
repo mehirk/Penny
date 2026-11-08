@@ -6,10 +6,7 @@ import { setAppSignedIn } from "./face-id";
 let browserClient: SupabaseClient | null = null;
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  );
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
 }
 
 export function createSupabaseBrowserClient(): SupabaseClient {
@@ -17,7 +14,9 @@ export function createSupabaseBrowserClient(): SupabaseClient {
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) throw new Error("Supabase environment variables are not configured");
   // The iOS app's web view doesn't keep cookies on its capacitor:// origin, so the session lives in localStorage there.
-  browserClient ??= Capacitor.isNativePlatform() ? createClient(url, key, { auth: { detectSessionInUrl: false } }) : createBrowserClient(url, key);
+  browserClient ??= Capacitor.isNativePlatform()
+    ? createClient(url, key, { auth: { detectSessionInUrl: false } })
+    : createBrowserClient(url, key);
   return browserClient;
 }
 

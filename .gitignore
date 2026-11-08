@@ -1,13 +1,13 @@
-
-
-#Ignore vscode AI rules
-.github/instructions/codacy.instructions.md
-
 # Environment and secrets
 .env
 .env.local
 .env.*.local
 !.env.example
+
+# Editor and tool settings (per developer)
+.vscode/
+.codacy/
+.github/instructions/codacy.instructions.md
 
 # JavaScript / Next.js
 node_modules/
@@ -26,3 +26,6 @@ __pycache__/
 # Supabase local runtime
 supabase/.branches/
 supabase/.temp/
+
+# Launch videos made with /brag
+brag-output*/

@@ -5,7 +5,9 @@ export function formatShortDate(value: string): string {
 }
 
 export function formatLongDate(value: string): string {
-  return new Intl.DateTimeFormat("en-CA", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(utc(value));
+  return new Intl.DateTimeFormat("en-CA", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(
+    utc(value),
+  );
 }
 
 export function formatMonth(value: string): string {
@@ -38,7 +40,9 @@ export function addMonths(month: string, count: number): string {
 
 /** The last day (YYYY-MM-DD) of the month `count` months after `day`'s month. */
 export function monthEndAfter(day: string, count: number): string {
-  const [year, month] = addMonths(`${day.slice(0, 7)}-01`, count).split("-").map(Number);
+  const [year, month] = addMonths(`${day.slice(0, 7)}-01`, count)
+    .split("-")
+    .map(Number);
   const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return `${year}-${String(month).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
 }

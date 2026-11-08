@@ -13,13 +13,9 @@
 
   --color-canvas: #f6f8fb;
 
-  /* Daily Money Score zones (WHOOP-style). Fills and rings only; pair with ink text. */
+  /* Success green (correct answers, goals reached). Fills and rings only; pair with ink text. */
   --color-zone-green: #16a36a;
   --color-zone-green-soft: #dcf5e8;
-  --color-zone-yellow: #e7a91c;
-  --color-zone-yellow-soft: #fdf1d3;
-  --color-zone-red: #dc4b43;
-  --color-zone-red-soft: #fde4e2;
   --color-surface: #ffffff;
   --color-sage: #e5f1ed;
   --color-sage-soft: #f0f7f5;
@@ -34,7 +30,7 @@
   --color-primary-hover: #0f2f49;
   --color-primary-soft: #e7f0f7;
   --color-on-primary: #ffffff;
-  /* Large brand panels (balance card, Council recommendation). Deep green in both themes. */
+  /* Large brand panels (the balance card). Deep green in both themes. */
   --color-hero: #173f5f;
   --color-overlay: rgb(15 47 73 / 0.48);
 
@@ -135,10 +131,6 @@
   --color-on-money: #08110c;
   --color-zone-green: #3ccf8e;
   --color-zone-green-soft: #173d2e;
-  --color-zone-yellow: #f2c14e;
-  --color-zone-yellow-soft: #3d3420;
-  --color-zone-red: #f27a72;
-  --color-zone-red-soft: #43211f;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
   --shadow-raised: 0 10px 30px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
 
@@ -665,33 +657,83 @@
   --chart-axis: #3f3f43;
   --chart-reference: #9a9a9a;
 }
-:root[data-palette="graphite"]:not([data-theme="dark"]) { --color-money-in: #0d7a47; --color-money-out: #c0262d; }
-:root[data-palette="graphite"][data-theme="dark"] { --color-money-in: #5fd39a; --color-money-out: #ff7b7b; }
+:root[data-palette="graphite"]:not([data-theme="dark"]) {
+  --color-money-in: #0d7a47;
+  --color-money-out: #c0262d;
+}
+:root[data-palette="graphite"][data-theme="dark"] {
+  --color-money-in: #5fd39a;
+  --color-money-out: #ff7b7b;
+}
 /* Graphite + Glass: cards stay nearly solid so they read as raised panels, with a light top edge. */
-:root[data-palette="graphite"][data-surface="glass"] .bg-surface { background-color: color-mix(in srgb, var(--color-surface) 90%, transparent); }
-:root[data-palette="graphite"][data-surface="glass"][data-theme="dark"] .bg-surface.border { border-color: rgb(255 255 255 / 0.07); }
+:root[data-palette="graphite"][data-surface="glass"] .bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 90%, transparent);
+}
+:root[data-palette="graphite"][data-surface="glass"][data-theme="dark"] .bg-surface.border {
+  border-color: rgb(255 255 255 / 0.07);
+}
 :root[data-palette="graphite"][data-surface="glass"][data-theme="dark"] body {
   --shadow-card: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 10px 30px rgb(0 0 0 / 0.5);
 }
 /* Graphite headings are plain sans, not a display serif. */
-:root[data-palette="graphite"] :is(h1, h2) { letter-spacing: -0.01em; }
+:root[data-palette="graphite"] :is(h1, h2) {
+  letter-spacing: -0.01em;
+}
 
 /* Headings take the palette's display face; body text stays in the readable sans. */
-:root[data-palette] h1, :root[data-palette] h2 { font-family: var(--font-display); letter-spacing: 0.005em; }
+:root[data-palette] h1,
+:root[data-palette] h2 {
+  font-family: var(--font-display);
+  letter-spacing: 0.005em;
+}
 /* A hairline of the accent on raised surfaces gives the luxury palettes a finished edge. */
-:root[data-palette] .dialog-content { box-shadow: var(--shadow-raised), inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent); }
+:root[data-palette] .dialog-content {
+  box-shadow:
+    var(--shadow-raised),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
 
 /* Money colours per palette (light, then dark). */
-:root[data-palette="noir"]:not([data-theme="dark"]) { --color-money-in: #0f7446; --color-money-out: #b1202d; }
-:root[data-palette="noir"][data-theme="dark"] { --color-money-in: #5fdba2; --color-money-out: #ff7b80; }
-:root[data-palette="emerald"]:not([data-theme="dark"]) { --color-money-in: #0a7240; --color-money-out: #b52a24; }
-:root[data-palette="emerald"][data-theme="dark"] { --color-money-in: #5ce49d; --color-money-out: #ff8673; }
-:root[data-palette="sapphire"]:not([data-theme="dark"]) { --color-money-in: #06775a; --color-money-out: #c01f3d; }
-:root[data-palette="sapphire"][data-theme="dark"] { --color-money-in: #41dcab; --color-money-out: #ff7189; }
-:root[data-palette="bordeaux"]:not([data-theme="dark"]) { --color-money-in: #16754a; --color-money-out: #c11d29; }
-:root[data-palette="bordeaux"][data-theme="dark"] { --color-money-in: #73dcaa; --color-money-out: #ff7c74; }
-:root[data-palette="pearl"]:not([data-theme="dark"]) { --color-money-in: #1f7349; --color-money-out: #b5321f; }
-:root[data-palette="pearl"][data-theme="dark"] { --color-money-in: #82daa9; --color-money-out: #f48a74; }
+:root[data-palette="noir"]:not([data-theme="dark"]) {
+  --color-money-in: #0f7446;
+  --color-money-out: #b1202d;
+}
+:root[data-palette="noir"][data-theme="dark"] {
+  --color-money-in: #5fdba2;
+  --color-money-out: #ff7b80;
+}
+:root[data-palette="emerald"]:not([data-theme="dark"]) {
+  --color-money-in: #0a7240;
+  --color-money-out: #b52a24;
+}
+:root[data-palette="emerald"][data-theme="dark"] {
+  --color-money-in: #5ce49d;
+  --color-money-out: #ff8673;
+}
+:root[data-palette="sapphire"]:not([data-theme="dark"]) {
+  --color-money-in: #06775a;
+  --color-money-out: #c01f3d;
+}
+:root[data-palette="sapphire"][data-theme="dark"] {
+  --color-money-in: #41dcab;
+  --color-money-out: #ff7189;
+}
+:root[data-palette="bordeaux"]:not([data-theme="dark"]) {
+  --color-money-in: #16754a;
+  --color-money-out: #c11d29;
+}
+:root[data-palette="bordeaux"][data-theme="dark"] {
+  --color-money-in: #73dcaa;
+  --color-money-out: #ff7c74;
+}
+:root[data-palette="pearl"]:not([data-theme="dark"]) {
+  --color-money-in: #1f7349;
+  --color-money-out: #b5321f;
+}
+:root[data-palette="pearl"][data-theme="dark"] {
+  --color-money-in: #82daa9;
+  --color-money-out: #f48a74;
+}
 
 /* ------------------------------------------------------------------ surface styles
    How cards and panels are built (glass, soft, clay, flat, bold), independent of the colour
@@ -727,19 +769,31 @@
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
 }
-:root[data-surface="glass"] .bg-surface.border { border-color: rgb(255 255 255 / 0.6); }
-:root[data-surface="glass"][data-theme="dark"] .bg-surface.border { border-color: rgb(255 255 255 / 0.09); }
+:root[data-surface="glass"] .bg-surface.border {
+  border-color: rgb(255 255 255 / 0.6);
+}
+:root[data-surface="glass"][data-theme="dark"] .bg-surface.border {
+  border-color: rgb(255 255 255 / 0.09);
+}
 /* Dialogs and menus stay more opaque so text over busy content stays readable. */
-:root[data-surface="glass"] .dialog-content, :root[data-surface="glass"] [role="dialog"].bg-surface, :root[data-surface="glass"] [role="group"].bg-surface {
+:root[data-surface="glass"] .dialog-content,
+:root[data-surface="glass"] [role="dialog"].bg-surface,
+:root[data-surface="glass"] [role="group"].bg-surface {
   background-color: color-mix(in srgb, var(--color-surface) 86%, transparent);
 }
-:root[data-surface="glass"] aside { background: color-mix(in srgb, var(--color-canvas) 55%, transparent); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+:root[data-surface="glass"] aside {
+  background: color-mix(in srgb, var(--color-canvas) 55%, transparent);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
 
 /* Soft (neumorphism): panels the same colour as the page, lifted by a light and a dark shadow.
    A faint border is kept so edges stay visible for low-vision users. */
 :root[data-surface="soft"] body {
-  --shadow-card: 12px 12px 28px color-mix(in srgb, var(--color-ink) 14%, transparent), -12px -12px 28px rgb(255 255 255 / 0.95);
-  --shadow-raised: 14px 14px 36px color-mix(in srgb, var(--color-ink) 16%, transparent), -10px -10px 30px rgb(255 255 255 / 0.7);
+  --shadow-card:
+    12px 12px 28px color-mix(in srgb, var(--color-ink) 14%, transparent), -12px -12px 28px rgb(255 255 255 / 0.95);
+  --shadow-raised:
+    14px 14px 36px color-mix(in srgb, var(--color-ink) 16%, transparent), -10px -10px 30px rgb(255 255 255 / 0.7);
   --radius-card: 1.75rem;
   /* The page is a touch darker here, so the lightest text is darkened to keep 4.5:1 contrast. */
   --color-ink-subtle: var(--color-ink-muted);
@@ -748,31 +802,64 @@
   --shadow-card: 8px 8px 20px rgb(0 0 0 / 0.5), -6px -6px 16px rgb(255 255 255 / 0.035);
   --shadow-raised: 14px 14px 36px rgb(0 0 0 / 0.6), -8px -8px 24px rgb(255 255 255 / 0.04);
 }
-:root[data-surface="soft"] body { background: color-mix(in srgb, var(--color-canvas) 95%, var(--color-ink)); }
-:root[data-surface="soft"] .bg-surface.border, :root[data-surface="soft"] aside, :root[data-surface="soft"] header { background-color: color-mix(in srgb, var(--color-canvas) 95%, var(--color-ink)); }
-:root[data-surface="soft"] .bg-surface.border { border-color: color-mix(in srgb, var(--color-line) 45%, transparent); }
-:root[data-surface="soft"][data-theme="dark"] body, :root[data-surface="soft"][data-theme="dark"] .bg-surface.border, :root[data-surface="soft"][data-theme="dark"] aside, :root[data-surface="soft"][data-theme="dark"] header { background: var(--color-surface); }
-:root[data-surface="soft"] input.bg-surface, :root[data-surface="soft"] select.bg-surface, :root[data-surface="soft"] textarea.bg-surface {
-  background-color: var(--color-canvas);
-  box-shadow: inset 3px 3px 7px color-mix(in srgb, var(--color-ink) 10%, transparent), inset -3px -3px 7px rgb(255 255 255 / 0.8);
+:root[data-surface="soft"] body {
+  background: color-mix(in srgb, var(--color-canvas) 95%, var(--color-ink));
 }
-:root[data-surface="soft"][data-theme="dark"] input.bg-surface, :root[data-surface="soft"][data-theme="dark"] select.bg-surface {
-  box-shadow: inset 3px 3px 7px rgb(0 0 0 / 0.5), inset -3px -3px 7px rgb(255 255 255 / 0.03);
+:root[data-surface="soft"] .bg-surface.border,
+:root[data-surface="soft"] aside,
+:root[data-surface="soft"] header {
+  background-color: color-mix(in srgb, var(--color-canvas) 95%, var(--color-ink));
+}
+:root[data-surface="soft"] .bg-surface.border {
+  border-color: color-mix(in srgb, var(--color-line) 45%, transparent);
+}
+:root[data-surface="soft"][data-theme="dark"] body,
+:root[data-surface="soft"][data-theme="dark"] .bg-surface.border,
+:root[data-surface="soft"][data-theme="dark"] aside,
+:root[data-surface="soft"][data-theme="dark"] header {
+  background: var(--color-surface);
+}
+:root[data-surface="soft"] input.bg-surface,
+:root[data-surface="soft"] select.bg-surface,
+:root[data-surface="soft"] textarea.bg-surface {
+  background-color: var(--color-canvas);
+  box-shadow:
+    inset 3px 3px 7px color-mix(in srgb, var(--color-ink) 10%, transparent),
+    inset -3px -3px 7px rgb(255 255 255 / 0.8);
+}
+:root[data-surface="soft"][data-theme="dark"] input.bg-surface,
+:root[data-surface="soft"][data-theme="dark"] select.bg-surface {
+  box-shadow:
+    inset 3px 3px 7px rgb(0 0 0 / 0.5),
+    inset -3px -3px 7px rgb(255 255 255 / 0.03);
 }
 
 /* Clay: puffy, rounded panels with soft inner highlights and a floating drop shadow. */
 :root[data-surface="clay"] body {
-  --shadow-card: 0 22px 40px -16px color-mix(in srgb, var(--color-primary) 45%, transparent), inset 0 -8px 16px color-mix(in srgb, var(--color-ink) 8%, transparent), inset 0 8px 16px rgb(255 255 255 / 0.9);
-  --shadow-raised: 0 30px 60px -18px color-mix(in srgb, var(--color-primary) 40%, transparent), inset 0 -6px 12px color-mix(in srgb, var(--color-ink) 5%, transparent), inset 0 6px 12px rgb(255 255 255 / 0.7);
+  --shadow-card:
+    0 22px 40px -16px color-mix(in srgb, var(--color-primary) 45%, transparent),
+    inset 0 -8px 16px color-mix(in srgb, var(--color-ink) 8%, transparent), inset 0 8px 16px rgb(255 255 255 / 0.9);
+  --shadow-raised:
+    0 30px 60px -18px color-mix(in srgb, var(--color-primary) 40%, transparent),
+    inset 0 -6px 12px color-mix(in srgb, var(--color-ink) 5%, transparent), inset 0 6px 12px rgb(255 255 255 / 0.7);
   --radius-card: 2rem;
 }
 :root[data-surface="clay"][data-theme="dark"] body {
-  --shadow-card: 0 18px 34px -14px rgb(0 0 0 / 0.7), inset 0 -6px 12px rgb(0 0 0 / 0.25), inset 0 6px 12px rgb(255 255 255 / 0.05);
+  --shadow-card:
+    0 18px 34px -14px rgb(0 0 0 / 0.7), inset 0 -6px 12px rgb(0 0 0 / 0.25), inset 0 6px 12px rgb(255 255 255 / 0.05);
   --shadow-raised: 0 30px 60px -18px rgb(0 0 0 / 0.8), inset 0 6px 12px rgb(255 255 255 / 0.05);
 }
-:root[data-surface="clay"] .bg-surface.border { border-color: transparent; background-color: color-mix(in srgb, var(--color-surface) 82%, var(--color-accent-soft)); }
-:root[data-surface="clay"] body { background: color-mix(in srgb, var(--color-canvas) 85%, var(--color-primary-soft)); }
-:root[data-surface="clay"] button.rounded-xl, :root[data-surface="clay"] .rounded-xl.border { border-radius: 1rem; }
+:root[data-surface="clay"] .bg-surface.border {
+  border-color: transparent;
+  background-color: color-mix(in srgb, var(--color-surface) 82%, var(--color-accent-soft));
+}
+:root[data-surface="clay"] body {
+  background: color-mix(in srgb, var(--color-canvas) 85%, var(--color-primary-soft));
+}
+:root[data-surface="clay"] button.rounded-xl,
+:root[data-surface="clay"] .rounded-xl.border {
+  border-radius: 1rem;
+}
 
 /* Flat: no shadows, crisp hairlines, quieter corners. */
 :root[data-surface="flat"] body {
@@ -780,77 +867,138 @@
   --shadow-raised: 0 0 0 1px var(--color-line-strong), 0 12px 32px rgb(0 0 0 / 0.08);
   --radius-card: 0.75rem;
 }
-:root[data-surface="flat"] .bg-surface.border { border-color: var(--color-line-strong); }
-:root[data-surface="flat"] .shadow-sm { box-shadow: none; }
+:root[data-surface="flat"] .bg-surface.border {
+  border-color: var(--color-line-strong);
+}
+:root[data-surface="flat"] .shadow-sm {
+  box-shadow: none;
+}
 
 /* Halo: a fine gradient edge (accent into gold) with a soft glow in the palette's accent. */
 :root[data-surface="halo"] body {
-  --shadow-card: 0 12px 32px -14px color-mix(in srgb, var(--color-accent) 40%, transparent), 0 1px 2px rgb(0 0 0 / 0.04);
-  --shadow-raised: 0 28px 64px -18px color-mix(in srgb, var(--color-accent) 50%, transparent), 0 2px 8px rgb(0 0 0 / 0.08);
+  --shadow-card:
+    0 12px 32px -14px color-mix(in srgb, var(--color-accent) 40%, transparent), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-raised:
+    0 28px 64px -18px color-mix(in srgb, var(--color-accent) 50%, transparent), 0 2px 8px rgb(0 0 0 / 0.08);
   --radius-card: 1.25rem;
 }
 :root[data-surface="halo"][data-theme="dark"] body {
-  --shadow-card: 0 0 0 1px color-mix(in srgb, var(--color-accent) 10%, transparent), 0 16px 40px -14px color-mix(in srgb, var(--color-accent) 48%, transparent), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-card:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 10%, transparent),
+    0 16px 40px -14px color-mix(in srgb, var(--color-accent) 48%, transparent), 0 1px 2px rgb(0 0 0 / 0.4);
 }
 :root[data-surface="halo"] .bg-surface.border {
   border-color: transparent;
   border-width: 1.5px;
   background:
     linear-gradient(var(--color-surface), var(--color-surface)) padding-box,
-    linear-gradient(135deg,
-      color-mix(in srgb, var(--color-accent) 75%, transparent),
-      color-mix(in srgb, var(--color-gold) 60%, transparent) 40%,
-      color-mix(in srgb, var(--color-line) 70%, transparent) 70%,
-      color-mix(in srgb, var(--color-accent) 45%, transparent)) border-box;
+    linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--color-accent) 75%, transparent),
+        color-mix(in srgb, var(--color-gold) 60%, transparent) 40%,
+        color-mix(in srgb, var(--color-line) 70%, transparent) 70%,
+        color-mix(in srgb, var(--color-accent) 45%, transparent)
+      )
+      border-box;
 }
-:root[data-surface="halo"] .dialog-content { box-shadow: var(--shadow-raised), inset 0 0 0 1px color-mix(in srgb, var(--color-gold) 45%, transparent); }
+:root[data-surface="halo"] .dialog-content {
+  box-shadow:
+    var(--shadow-raised),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-gold) 45%, transparent);
+}
 
 /* A brief ring on the section you just jumped to from Home. */
 @keyframes spotlight {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent); }
-  25% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 55%, transparent); }
-  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent); }
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+  25% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
 }
-.penny-spotlight { animation: spotlight 1.6s ease-out; border-radius: var(--radius-card); }
+.penny-spotlight {
+  animation: spotlight 1.6s ease-out;
+  border-radius: var(--radius-card);
+}
 
 /* Smooth colour change when the theme is switched (never on first paint). */
-:root.theme-transition, :root.theme-transition * {
-  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease !important;
+:root.theme-transition,
+:root.theme-transition * {
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease !important;
 }
 
 /* View switches cross-fade where the browser supports view transitions. */
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: 160ms; }
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 160ms;
+}
 
 @keyframes enter {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 @keyframes fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 @keyframes fade-out {
-  to { opacity: 0; }
+  to {
+    opacity: 0;
+  }
 }
 @keyframes dialog-in {
-  from { opacity: 0; transform: translateY(12px) scale(0.98); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 @keyframes dialog-out {
-  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
 }
 
-:root { color-scheme: light; }
-* { box-sizing: border-box; }
+:root {
+  color-scheme: light;
+}
+* {
+  box-sizing: border-box;
+}
 /*
  * A grid's implicit column (phones, before any sm:/md: grid-cols) may shrink below its content,
  * like grid-cols-1. Otherwise a nowrap line such as a truncated account name widens the column
  * past the screen and the whole page pans sideways.
  */
 @layer base {
-  .grid { grid-auto-columns: minmax(0, 1fr); }
+  .grid {
+    grid-auto-columns: minmax(0, 1fr);
+  }
 }
-html { background: var(--color-canvas); -webkit-text-size-adjust: 100%; }
+html {
+  background: var(--color-canvas);
+  -webkit-text-size-adjust: 100%;
+}
 body {
   margin: 0;
   background:
@@ -861,26 +1009,56 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
-button, a { -webkit-tap-highlight-color: transparent; }
-:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
 
 /* Radix dialogs expose data-state; Radix waits for the closing animation before unmounting. */
-.dialog-overlay { background: var(--color-overlay); }
-.dialog-overlay[data-state="open"] { animation: fade 180ms ease-out; }
-.dialog-overlay[data-state="closed"] { animation: fade-out 150ms ease-in forwards; }
-.dialog-content[data-state="open"] { animation: dialog-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1); }
-.dialog-content[data-state="closed"] { animation: dialog-out 150ms ease-in forwards; }
+.dialog-overlay {
+  background: var(--color-overlay);
+}
+.dialog-overlay[data-state="open"] {
+  animation: fade 180ms ease-out;
+}
+.dialog-overlay[data-state="closed"] {
+  animation: fade-out 150ms ease-in forwards;
+}
+.dialog-content[data-state="open"] {
+  animation: dialog-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.dialog-content[data-state="closed"] {
+  animation: dialog-out 150ms ease-in forwards;
+}
 
 /*
  * Phone bottom sheets behave like iOS sheets: they slide up, slide back down (from wherever a
  * drag left them, so no `from` frame), and keep their main action pinned above the home bar.
  */
-@keyframes sheet-in { from { transform: translateY(100%); } }
-@keyframes sheet-out { to { transform: translateY(100%); } }
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-out {
+  to {
+    transform: translateY(100%);
+  }
+}
 @media (max-width: 639px) {
-  .dialog-content { --sheet-pb: max(1.25rem, env(safe-area-inset-bottom)); }
-  .dialog-content[data-state="open"] { animation: sheet-in 340ms cubic-bezier(0.32, 0.72, 0, 1); }
-  .dialog-content[data-state="closed"] { animation: sheet-out 220ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+  .dialog-content {
+    --sheet-pb: max(1.25rem, env(safe-area-inset-bottom));
+  }
+  .dialog-content[data-state="open"] {
+    animation: sheet-in 340ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .dialog-content[data-state="closed"] {
+    animation: sheet-out 220ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  }
   .dialog-content .sheet-footer {
     position: sticky;
     bottom: calc(-1 * var(--sheet-pb));
@@ -898,46 +1076,114 @@ button, a { -webkit-tap-highlight-color: transparent; }
  * slides the other way. The page content has its own transition name, so the header and tab
  * bar (also named) stay put while it moves. See components/penny/subpage.ts.
  */
-#main { view-transition-name: page; }
+#main {
+  view-transition-name: page;
+}
 /* An inner page (an account, a setting) shows its own "‹ Back" bar instead of the app header. */
-@media (max-width: 1023px) { :root[data-subpage] .page-header, :root[data-subpage] .subpage-hidden { display: none; } }
+@media (max-width: 1023px) {
+  :root[data-subpage] .page-header,
+  :root[data-subpage] .subpage-hidden {
+    display: none;
+  }
+}
 /* Snapshots are taken with data-nav set: an opaque page, so the old one doesn't show through. */
-:root[data-nav] #main { background: var(--color-canvas); }
-.page-header { view-transition-name: page-header; }
-.mobile-tab-bar { view-transition-name: tab-bar; }
-.back-bar { view-transition-name: back-bar; }
-@keyframes nav-in-right { from { transform: translateX(100%); } }
-@keyframes nav-out-left { to { transform: translateX(-28%); opacity: 0.6; } }
-@keyframes nav-in-left { from { transform: translateX(-28%); opacity: 0.6; } }
-@keyframes nav-out-right { to { transform: translateX(100%); } }
-:root[data-nav]::view-transition-old(page), :root[data-nav]::view-transition-new(page) {
+:root[data-nav] #main {
+  background: var(--color-canvas);
+}
+.page-header {
+  view-transition-name: page-header;
+}
+.mobile-tab-bar {
+  view-transition-name: tab-bar;
+}
+.back-bar {
+  view-transition-name: back-bar;
+}
+@keyframes nav-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes nav-out-left {
+  to {
+    transform: translateX(-28%);
+    opacity: 0.6;
+  }
+}
+@keyframes nav-in-left {
+  from {
+    transform: translateX(-28%);
+    opacity: 0.6;
+  }
+}
+@keyframes nav-out-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+:root[data-nav]::view-transition-old(page),
+:root[data-nav]::view-transition-new(page) {
   animation-duration: 420ms;
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
   animation-fill-mode: both;
   mix-blend-mode: normal;
 }
-:root[data-nav="push"]::view-transition-old(page) { animation-name: nav-out-left; }
-:root[data-nav="push"]::view-transition-new(page) { animation-name: nav-in-right; }
-:root[data-nav="pop"]::view-transition-old(page) { animation-name: nav-out-right; z-index: 1; }
-:root[data-nav="pop"]::view-transition-new(page) { animation-name: nav-in-left; }
+:root[data-nav="push"]::view-transition-old(page) {
+  animation-name: nav-out-left;
+}
+:root[data-nav="push"]::view-transition-new(page) {
+  animation-name: nav-in-right;
+}
+:root[data-nav="pop"]::view-transition-old(page) {
+  animation-name: nav-out-right;
+  z-index: 1;
+}
+:root[data-nav="pop"]::view-transition-new(page) {
+  animation-name: nav-in-left;
+}
 /* Only the sideways slide: the page area doesn't also morph when the header comes or goes. */
-:root[data-nav]::view-transition-group(page) { overflow: clip; animation: none; }
-@keyframes nav-fade-in { from { opacity: 0; } }
-@keyframes nav-fade-out { to { opacity: 0; } }
-:root[data-nav="fade"]::view-transition-old(page) { animation: nav-fade-out 180ms ease-out both; }
-:root[data-nav="fade"]::view-transition-new(page) { animation: nav-fade-in 220ms ease-out both; }
+:root[data-nav]::view-transition-group(page) {
+  overflow: clip;
+  animation: none;
+}
+@keyframes nav-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes nav-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+:root[data-nav="fade"]::view-transition-old(page) {
+  animation: nav-fade-out 180ms ease-out both;
+}
+:root[data-nav="fade"]::view-transition-new(page) {
+  animation: nav-fade-in 220ms ease-out both;
+}
 /* The page title takes focus after a page change (for screen readers); no ring for that. */
-#page-title:focus, #page-title:focus-visible { outline: none; }
+#page-title:focus,
+#page-title:focus-visible {
+  outline: none;
+}
 
 /* Touch: list rows flash a soft highlight while pressed, like iOS table rows. */
 @media (hover: none) {
-  li > button:not(:disabled) { transition: background-color 120ms ease-out; }
-  li > button:not(:disabled):active { background-color: var(--color-sage-soft); }
+  li > button:not(:disabled) {
+    transition: background-color 120ms ease-out;
+  }
+  li > button:not(:disabled):active {
+    background-color: var(--color-sage-soft);
+  }
 }
 
 /* The eye button: each amount's digits turn transparent (so nothing shifts) and dots sit on top.
    Inputs stay readable for typing. */
-:root[data-hide-amounts] .tabular:not(input, textarea, select, output) { position: relative; -webkit-text-fill-color: transparent; }
+:root[data-hide-amounts] .tabular:not(input, textarea, select, output) {
+  position: relative;
+  -webkit-text-fill-color: transparent;
+}
 :root[data-hide-amounts] .tabular:not(input, textarea, select, output)::after {
   content: "•••••";
   position: absolute;
@@ -950,8 +1196,15 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 
 /* Touch: no grey flash on tap, no 300 ms double-tap wait. */
-html { touch-action: manipulation; }
-[role="button"], [role="tab"], [role="radio"], label { -webkit-tap-highlight-color: transparent; }
+html {
+  touch-action: manipulation;
+}
+[role="button"],
+[role="tab"],
+[role="radio"],
+label {
+  -webkit-tap-highlight-color: transparent;
+}
 
 /* In the iOS app, controls behave like native ones: long-press doesn't select text or open link previews. */
 :root[data-native] :where(button, a, nav, [role="button"], [role="tab"], [role="radio"], img, svg) {
@@ -960,7 +1213,9 @@ html { touch-action: manipulation; }
   -webkit-touch-callout: none;
 }
 /* The tab bar would sit on top of the keyboard; hide it while typing. */
-:root[data-keyboard] .mobile-tab-bar { display: none; }
+:root[data-keyboard] .mobile-tab-bar {
+  display: none;
+}
 
 /* Thin, visible scrollbars for in-card scroll regions. */
 .scroll-area {
@@ -968,17 +1223,23 @@ html { touch-action: manipulation; }
   scrollbar-color: var(--color-line-strong) transparent;
   scroll-behavior: smooth;
 }
-.scroll-area::-webkit-scrollbar { width: 10px; }
+.scroll-area::-webkit-scrollbar {
+  width: 10px;
+}
 .scroll-area::-webkit-scrollbar-thumb {
   background: var(--color-line-strong);
   border: 3px solid var(--color-surface);
   border-radius: 999px;
 }
 
-.tabular { font-variant-numeric: tabular-nums; }
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;

@@ -140,7 +140,6 @@ for module in (
     bills,
     calendar,
     accounts,
-    calendar,
     splits,
     assist,
     learning,

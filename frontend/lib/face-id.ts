@@ -26,7 +26,11 @@ const DECLINED_KEY = "penny-face-id-declined";
 
 export async function faceIdStatus(): Promise<FaceIdStatus> {
   if (!Capacitor.isNativePlatform()) return OFF;
-  try { return await plugin.status(); } catch { return OFF; }
+  try {
+    return await plugin.status();
+  } catch {
+    return OFF;
+  }
 }
 
 /** "Face ID" or "Touch ID", for labels. */
@@ -47,9 +51,18 @@ export async function loadSignIn(): Promise<SavedSignIn | "cancelled" | "failed"
   try {
     return await plugin.load({ reason: "Sign in to Penny" });
   } catch (reason) {
-    const code = typeof reason === "object" && reason !== null && "code" in reason ? (reason as { code?: string }).code : undefined;
+    const code =
+      typeof reason === "object" && reason !== null && "code" in reason
+        ? (reason as { code?: string }).code
+        : undefined;
     // "password": the user tapped Use Password on the Face ID prompt.
-    return code === "cancelled" ? "cancelled" : code === "not_found" ? "none" : code === "password" ? "password" : "failed";
+    return code === "cancelled"
+      ? "cancelled"
+      : code === "not_found"
+        ? "none"
+        : code === "password"
+          ? "password"
+          : "failed";
   }
 }
 
@@ -60,7 +73,9 @@ export async function loadSignIn(): Promise<SavedSignIn | "cancelled" | "failed"
 export function onPasswordRequired(handler: () => void): () => void {
   if (!Capacitor.isNativePlatform()) return () => undefined;
   const handle = plugin.addListener("passwordRequired", handler);
-  return () => { void handle.then((h) => h.remove()); };
+  return () => {
+    void handle.then((h) => h.remove());
+  };
 }
 
 export async function clearSignIn(): Promise<void> {
@@ -76,11 +91,24 @@ export function setAppSignedIn(signedIn: boolean): void {
 }
 
 /** True when the user error came from cancelling the Face ID prompt (no message needed). */
-export const isCancelled = (reason: unknown) => typeof reason === "object" && reason !== null && "code" in reason && (reason as { code?: string }).code === "cancelled";
+export const isCancelled = (reason: unknown) =>
+  typeof reason === "object" &&
+  reason !== null &&
+  "code" in reason &&
+  (reason as { code?: string }).code === "cancelled";
 
 export function faceIdDeclined(): boolean {
-  try { return window.localStorage.getItem(DECLINED_KEY) === "1"; } catch { return false; }
+  try {
+    return window.localStorage.getItem(DECLINED_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 export function setFaceIdDeclined(declined: boolean): void {
-  try { if (declined) window.localStorage.setItem(DECLINED_KEY, "1"); else window.localStorage.removeItem(DECLINED_KEY); } catch { /* storage blocked: ask again next time */ }
+  try {
+    if (declined) window.localStorage.setItem(DECLINED_KEY, "1");
+    else window.localStorage.removeItem(DECLINED_KEY);
+  } catch {
+    /* storage blocked: ask again next time */
+  }
 }

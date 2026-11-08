@@ -1007,7 +1007,3 @@ class OnboardingApply(DashboardModel):
         if any(value < 0 for value in self.everyday_limits.values()):
             raise ValueError("Amounts can't be negative")
         return self
-
-
-class SpendingFromWrite(DashboardModel):
-    spending_from: Literal["chequing", "chequing_and_savings"]

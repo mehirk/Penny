@@ -11,7 +11,6 @@ from app.api.deps import (
     PeriodStart,
     ViewMonth,
     dashboard_for,
-    in_view,
     user_store,
 )
 from app.coach.chats import chat_store
@@ -22,7 +21,6 @@ from app.dashboard_models import (
     DeleteAccountRequest,
     HistoryResponse,
     ResetRequest,
-    SpendingFromWrite,
 )
 from app.models import CurrentUserResponse
 from app.store import stores
@@ -76,18 +74,6 @@ def history(
 ) -> HistoryResponse:
     """Monthly totals and category spending for a range of up to 24 months."""
     return user_store(current_user).history_for_user(current_user.id, start, end)
-
-
-@router.put("/profile/spending-from", response_model=DashboardResponse, tags=["profile"])
-def set_spending_from(
-    request: SpendingFromWrite, current_user: AuthenticatedUser, month: ViewMonth = None
-) -> DashboardResponse:
-    """Which accounts count as spending money for Safe to spend."""
-    return in_view(
-        user_store(current_user).set_spending_from(current_user.id, request.spending_from),
-        current_user,
-        month,
-    )
 
 
 @router.post("/account/reset", response_model=DashboardResponse, tags=["account"])
