@@ -248,3 +248,12 @@ def test_a_paused_goal_is_skipped() -> None:
     store.update_goal(USER, goal_id, GoalPatch(status="paused"))
     view = store.payday_plan(USER, 80_000, None)
     assert view.save is not None and view.save.goal_id is None
+
+
+def test_penny_ai_counts_the_same_bills_before_payday() -> None:
+    from app.coach.context import load_context
+
+    store = fresh_store(USER, None)
+    _setup(store)  # Phone in 3 days (before payday); Rent in 20 (after it)
+    assert load_context(store, USER).unpaid_bills_cents == 4_000
+    assert [item.name for item in store.due_before_next_payday(USER)] == ["Phone"]

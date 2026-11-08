@@ -32,7 +32,7 @@ export function BrandMark({ className }: { className?: string }) {
   return <Image src="/penny-logo.png" alt="" width={256} height={256} priority className={cn("size-10 shrink-0 drop-shadow-sm", className)} />;
 }
 
-function useSignedInEmail() {
+export function useSignedInEmail() {
   const [email, setEmail] = useState<string | null>(null);
   useEffect(() => {
     let active = true;

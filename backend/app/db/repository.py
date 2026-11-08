@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from psycopg import Connection, sql
+from psycopg import Connection, errors, sql
 from psycopg.rows import DictRow
 from psycopg.types.json import Jsonb
 
@@ -137,3 +137,18 @@ def _upsert_sql(table: str, columns: list[str]) -> sql.Composed:
         keys=sql.SQL(", ").join(map(sql.Identifier, keys)),
         action=action,
     )
+
+
+def delete_user(conn: Connection[DictRow], user_id: str) -> bool:
+    """Deletes this person's sign-in (auth.users), which deletes every row of theirs through
+    `on delete cascade`. If the database role isn't allowed to delete sign-ins, deletes their
+    profile instead (which cascades to all their data) and returns False."""
+    try:
+        with conn.transaction():
+            if conn.execute("delete from auth.users where id = %s", (user_id,)).rowcount:
+                return True
+    except (errors.InsufficientPrivilege, errors.UndefinedTable):
+        pass
+    with conn.transaction():
+        conn.execute("delete from public.profiles where user_id = %s", (user_id,))
+    return False

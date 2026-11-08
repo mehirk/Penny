@@ -470,18 +470,18 @@ function Facts({ reply }: { reply: CoachReply }) {
 }
 
 const FALLBACK_LABEL: Record<NonNullable<CoachReply["fallback_reason"]>, string> = {
-  no_api_key: "AI isn’t configured",
-  model_error: "AI was unavailable",
-  timeout: "AI took too long",
-  unverified_numbers: "AI answer failed the number check",
+  no_api_key: "Answered from your numbers",
+  model_error: "Penny AI was busy, so this came straight from your numbers",
+  timeout: "Penny AI took too long, so this came straight from your numbers",
+  unverified_numbers: "Penny double-checked the numbers and answered from your records",
+  ai_limit: "You’ve asked a lot today, so this came straight from your numbers. Penny AI is back soon.",
 };
 
 function SourceLine({ reply }: { reply: CoachReply }) {
   if (reply.source === "ai") {
-    const seconds = (reply.usage.elapsed_ms / 1000).toFixed(1);
-    return <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-subtle"><Badge tone="accent"><Sparkles className="size-3" aria-hidden="true" />AI</Badge>{reply.model} · {seconds}s</p>;
+    return <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-subtle"><Badge tone="accent"><Sparkles className="size-3" aria-hidden="true" />Penny AI</Badge></p>;
   }
-  return <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-subtle"><Badge tone="gold">Built-in answer</Badge>{reply.fallback_reason ? FALLBACK_LABEL[reply.fallback_reason] : null}</p>;
+  return <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-subtle"><Badge tone="gold">Quick answer</Badge>{reply.fallback_reason ? FALLBACK_LABEL[reply.fallback_reason] : null}</p>;
 }
 
 function ProposalCard({ proposal, state, onApprove, onDismiss }: { proposal: CoachProposal; state: ProposalState | undefined; onApprove: (proposal: CoachProposal) => void; onDismiss: (proposal: CoachProposal) => void }) {

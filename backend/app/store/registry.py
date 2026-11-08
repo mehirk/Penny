@@ -75,6 +75,23 @@ class StoreRegistry:
                 store = self._fresh[user_id] = fresh_store(user_id, email)
             return store
 
+    def delete_user(self, user_id: str) -> bool:
+        """Erases everything this person saved; True when their sign-in was deleted too. Never
+        the fictional demo, which other people share."""
+        from app.db import repository
+        from app.db.pool import connection, database_enabled
+
+        if self.demo.is_owner(user_id):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "The fictional demo account can’t be deleted"
+            )
+        if database_enabled():
+            with connection() as conn:
+                return repository.delete_user(conn, user_id)
+        with self._lock:
+            self._fresh.pop(user_id, None)
+        return False
+
     def is_demo(self, user_id: str) -> bool:
         return self.demo.is_owner(user_id)
 

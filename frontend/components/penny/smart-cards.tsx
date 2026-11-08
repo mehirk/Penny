@@ -14,7 +14,7 @@ import { cad, describeError } from "./shared";
 export function SourceBadge({ source }: { source: AssistSource }) {
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold", source === "ai" ? "bg-accent-soft text-accent-strong" : "bg-sage-soft text-ink-subtle")}>
-      {source === "ai" ? <><Sparkles className="size-3" aria-hidden="true" />Penny AI</> : "Built-in"}
+      {source === "ai" ? <><Sparkles className="size-3" aria-hidden="true" />Penny AI</> : "From your numbers"}
     </span>
   );
 }

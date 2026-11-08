@@ -7,6 +7,7 @@ from typing import Any
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
+from app import limits
 from app.config import Settings
 
 MAX_TOOL_ROUNDS = 5
@@ -24,6 +25,15 @@ class CoachDraft(BaseModel):
 
 class ModelUnavailable(RuntimeError):
     pass
+
+
+class AiLimitReached(ModelUnavailable):
+    """This person used their Penny AI calls for now (app.limits)."""
+
+
+def _charge() -> None:
+    if not limits.spend_ai_call():
+        raise AiLimitReached("ai_limit")
 
 
 class CoachModelSession:
@@ -61,6 +71,7 @@ class CoachModelSession:
 
     async def respond(self) -> CoachDraft:
         for _ in range(MAX_TOOL_ROUNDS + 1):
+            _charge()
             response = await self._client.responses.create(
                 model=self._model,
                 instructions=self._instructions,
@@ -145,6 +156,7 @@ async def ask_json(
     """
     if not settings.openai_api_key:
         raise ModelUnavailable("no_api_key")
+    _charge()
     client = AsyncOpenAI(
         api_key=settings.openai_api_key,
         timeout=timeout_seconds or settings.coach_timeout_seconds,

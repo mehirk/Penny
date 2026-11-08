@@ -35,7 +35,9 @@ export async function getSupabaseUserEmail(): Promise<string | null> {
   return data.session?.user.email ?? null;
 }
 
-export async function signOutOfSupabase(): Promise<void> {
+/** `local` only forgets the session on this device (after the account was deleted, the server
+ * no longer knows it). */
+export async function signOutOfSupabase(scope: "global" | "local" = "global"): Promise<void> {
   setAppSignedIn(false);
-  if (isSupabaseConfigured()) await createSupabaseBrowserClient().auth.signOut();
+  if (isSupabaseConfigured()) await createSupabaseBrowserClient().auth.signOut({ scope });
 }

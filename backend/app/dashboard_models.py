@@ -715,6 +715,18 @@ class ResetRequest(DashboardModel):
     confirm: Literal["reset"]
 
 
+class DeleteAccountRequest(DashboardModel):
+    """Deleting the account needs the word typed back, like Reset data."""
+
+    confirm: Literal["delete"]
+
+
+class AccountDeleted(DashboardModel):
+    # False when the database role can't remove sign-ins: the data is gone, but the email and
+    # password still sign in (to a new, empty account) until the sign-in is removed in Supabase.
+    signin_deleted: bool
+
+
 class BudgetChangesRequest(DashboardModel):
     """Budget limits the user approved together, such as a suggested rebalance."""
 

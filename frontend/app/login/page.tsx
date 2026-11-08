@@ -13,7 +13,7 @@ import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabas
 
 function friendlyAuthError(message: string): string {
   if (/invalid login credentials/i.test(message)) return "That email and password don’t match. Check them and try again.";
-  if (/email not confirmed/i.test(message)) return "This account hasn’t been confirmed yet. Ask the team to confirm it in Supabase.";
+  if (/email not confirmed/i.test(message)) return "Confirm your email first: open the link we sent you, then sign in.";
   if (/fetch|network/i.test(message)) return "Couldn’t reach the sign-in service. Check your connection and try again.";
   return message;
 }
@@ -35,8 +35,13 @@ export default function LoginPage() {
     // Signed out: no app lock on top of this page (it asks for Face ID itself).
     setAppSignedIn(false);
     // Sent here by the app lock after Face ID failed twice: go straight to the password.
-    const lockGaveUp = new URLSearchParams(window.location.search).get("faceid") === "failed";
+    const params = new URLSearchParams(window.location.search);
+    const lockGaveUp = params.get("faceid") === "failed";
+    // Sent here after Settings › Delete account.
+    const deleted = params.get("deleted");
     void faceIdStatus().then((status) => {
+      if (deleted === "all") setNotice("Your account and all its data were deleted.");
+      if (deleted === "data") setNotice("All your data was deleted. Your email can still sign in, to a new, empty account.");
       setFaceId(status);
       if (lockGaveUp && status.saved) { setError(`${biometryName(status)} didn’t work. Sign in with your password.`); return; }
       // Opening the app with Face ID on goes straight to the Face ID prompt.
@@ -148,7 +153,7 @@ export default function LoginPage() {
           ) : (
             <>
               <h1 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h1>
-              <p className="mt-1.5 text-sm text-ink-subtle">Use the demo account your team set up. Never use real banking passwords.</p>
+              <p className="mt-1.5 text-sm text-ink-subtle">Welcome back. Never use your bank’s password here.</p>
               {faceId?.available && faceId.saved && (
                 <>
                   <Button variant="outline" className="mt-6 w-full" disabled={!configured || busy} onClick={() => void signInWithFaceId()}><ScanFace className="size-4" aria-hidden="true" />Sign in with {biometryName(faceId)}</Button>

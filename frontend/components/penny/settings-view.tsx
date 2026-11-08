@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Banknote, CalendarPlus, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, RotateCcw, ScanFace, ShieldCheck, Tags, Trash2, Wallet } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Banknote, CalendarPlus, Check, ChevronRight, FileUp, Lock, type LucideIcon, Palette, Pencil, Plus, RotateCcw, ScanFace, ShieldCheck, Tags, Trash2, UserX, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
@@ -10,9 +11,9 @@ import { biometryName, clearSignIn, faceIdStatus, type FaceIdStatus, isCancelled
 import { DatePicker, isoToday } from "@/components/ui/date-picker";
 import { formatShortDate, monthEndAfter } from "@/lib/format";
 import { centsToInput, parseCadToCents } from "@/lib/money";
-import { createSupabaseBrowserClient, getSupabaseUserEmail } from "@/lib/supabase";
+import { createSupabaseBrowserClient, getSupabaseUserEmail, signOutOfSupabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, ThemePicker } from "./app-shell";
+import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, ThemePicker, useSignedInEmail } from "./app-shell";
 import { ACCOUNT_TYPE_LABELS, friendStatus } from "./labels";
 import { accountEmoji } from "./emoji";
 import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
@@ -111,6 +112,67 @@ function ResetDataRow({ save, onReset }: { save: SaveChange; onReset: () => void
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
               <Button type="submit" variant="destructive" disabled={!confirmed || busy}>{busy ? "Resetting…" : "Reset everything"}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/** Device settings kept after an account is deleted; everything else Penny stored here goes. */
+const KEEP_ON_DEVICE = new Set(["penny-theme", "penny-palette", "penny-surface"]);
+
+/**
+ * Settings › Delete account: the account, everything in it, and its sign-in. Real accounts only
+ * (the fictional demo is shared). Typing "delete" confirms, like Reset data.
+ */
+function DeleteAccountRow() {
+  const router = useRouter();
+  const email = useSignedInEmail();
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!email) return null;
+  const confirmed = typed.trim().toLowerCase() === "delete";
+
+  async function remove() {
+    setBusy(true);
+    setError("");
+    let signinDeleted: boolean;
+    try {
+      signinDeleted = (await dashboardApi.deleteMyAccount()).signin_deleted;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Penny couldn’t delete your account. Try again.");
+      setBusy(false);
+      return;
+    }
+    await clearSignIn();
+    try {
+      for (const key of Object.keys(window.localStorage)) if (key.startsWith("penny-") && !KEEP_ON_DEVICE.has(key)) window.localStorage.removeItem(key);
+    } catch { /* storage blocked */ }
+    await signOutOfSupabase("local").catch(() => undefined);
+    router.replace(`/login?deleted=${signinDeleted ? "all" : "data"}`);
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-[var(--radius-card)] font-semibold text-ink-subtle hover:bg-danger-soft hover:text-danger">
+        <UserX className="size-4" aria-hidden="true" />Delete account
+      </button>
+      <Dialog open={open} onOpenChange={(next) => { if (!busy) { setOpen(next); setTyped(""); setError(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete your account?</DialogTitle>
+            <DialogDescription>This deletes {email} and everything in it: transactions, budgets, bills, goals, accounts, pay, Learn progress, and Penny AI chats. You’ll be signed out. This can’t be undone.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); if (confirmed) void remove(); }} className="space-y-4">
+            <Field label="Type delete to confirm">{(props) => <Input {...props} autoComplete="off" autoCapitalize="none" value={typed} onChange={(event) => setTyped(event.target.value)} disabled={busy} className="min-h-11 text-base" />}</Field>
+            {error && <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+              <Button type="submit" variant="destructive" disabled={!confirmed || busy}>{busy ? "Deleting…" : "Delete my account"}</Button>
             </div>
           </form>
         </DialogContent>
@@ -235,6 +297,7 @@ export function SettingsView({ dashboard, save, onReset }: { dashboard: Dashboar
       ))}
       <SignOutRow />
       <ResetDataRow save={save} onReset={onReset} />
+      <DeleteAccountRow />
     </div>
   );
 

@@ -5,11 +5,26 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Query, status
 
+from app import limits
 from app.auth import CurrentUser, get_current_user
 from app.dashboard_models import DashboardResponse
 from app.store import DashboardStore, stores
 
-AuthenticatedUser = Annotated[CurrentUser, Depends(get_current_user)]
+
+async def signed_in(user: Annotated[CurrentUser, Depends(get_current_user)]) -> CurrentUser:
+    """The signed-in person, within their request limit. Async so the person noted for AI
+    charges (app.limits) stays with the request instead of a worker thread."""
+    wait = limits.note_request(user.id)
+    if wait is not None:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too many requests. Wait a moment and try again.",
+            headers={"Retry-After": str(wait)},
+        )
+    return user
+
+
+AuthenticatedUser = Annotated[CurrentUser, Depends(signed_in)]
 # Optional month (any day in it) whose snapshot a mutation should return; defaults to today.
 ViewMonth = Annotated[date | None, Query(description="Month to return, e.g. 2026-09-01")]
 PeriodStart = Annotated[date | None, Query(description="Start of a custom period")]

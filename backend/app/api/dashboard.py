@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import (
     AuthenticatedUser,
@@ -16,8 +16,10 @@ from app.api.deps import (
 )
 from app.coach.chats import chat_store
 from app.dashboard_models import (
+    AccountDeleted,
     ChartsResponse,
     DashboardResponse,
+    DeleteAccountRequest,
     HistoryResponse,
     ResetRequest,
     SpendingFromWrite,
@@ -96,3 +98,20 @@ def reset_account(request: ResetRequest, current_user: AuthenticatedUser) -> Das
     result = user_store(current_user).reset(current_user.id)
     chat_store.delete_all(stores.data_owner(current_user.id))
     return result
+
+
+@router.post("/account/delete", response_model=AccountDeleted, tags=["account"])
+def delete_account(
+    request: DeleteAccountRequest, current_user: AuthenticatedUser
+) -> AccountDeleted:
+    """Delete this account: every transaction, budget, goal, chat and setting, and the sign-in
+    itself (Settings › Delete account). Asks for "delete" in the body; the app confirms first.
+    Can't be undone."""
+    del request  # validated: confirm == "delete"
+    owner = stores.data_owner(current_user.id)
+    if current_user.auth_method == "demo" or stores.is_demo(current_user.id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "The fictional demo account can’t be deleted"
+        )
+    chat_store.delete_all(owner)
+    return AccountDeleted(signin_deleted=stores.delete_user(owner))

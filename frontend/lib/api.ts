@@ -157,7 +157,7 @@ export type CoachReply = {
   proposal: CoachProposal | null;
   budget_plan?: CoachBudgetPlan | null;
   source: "ai" | "built_in";
-  fallback_reason: "no_api_key" | "model_error" | "timeout" | "unverified_numbers" | null;
+  fallback_reason: "no_api_key" | "model_error" | "timeout" | "unverified_numbers" | "ai_limit" | null;
   model: string | null;
   usage: { input_tokens: number; output_tokens: number; elapsed_ms: number };
 };
@@ -257,6 +257,8 @@ export const dashboardApi = {
   updateGoal: (id: string, body: Partial<GoalWrite> & { status?: SavingsGoal["status"] }, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
   /** Erases all of the user's data and Penny AI chats; setup shows again. */
   resetData: () => request("/api/v1/account/reset", { method: "POST", body: JSON.stringify({ confirm: "reset" }) }),
+  /** Deletes the account, its data, and (when the server can) its sign-in. Can't be undone. */
+  deleteMyAccount: () => authorizedRequest<{ signin_deleted: boolean }>("/api/v1/account/delete", { method: "POST", body: JSON.stringify({ confirm: "delete" }) }),
   deleteGoal: (id: string, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}`, month), { method: "DELETE" }),
   contributeToGoal: (id: string, amount_cents: number, fromAccountId: string, month?: string) => request(inMonth(`/api/v1/savings-goals/${id}/contributions`, month), { method: "POST", body: JSON.stringify({ amount_cents, from_account_id: fromAccountId }) }),
   completeMission: (id: string, month?: string) => request(inMonth(`/api/v1/missions/${id}/complete`, month), { method: "POST" }),
