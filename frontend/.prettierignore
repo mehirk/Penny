@@ -1,0 +1,8 @@
+# Generated or vendored: never reformatted.
+.next/
+out/
+ios/
+node_modules/
+public/
+package-lock.json
+next-env.d.ts

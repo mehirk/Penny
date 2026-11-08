@@ -1,6 +1,6 @@
 # Penny Architecture
 
-## Milestone 1 system
+## System
 
 ```text
 Next.js App Router client
@@ -32,8 +32,8 @@ Penny AI chats (messages and the verified replies shown with them) and proposals
 
 - `frontend/` owns presentation, accessibility, Supabase sign-in, and mutation forms. It never calculates financial totals; editable CAD strings are converted to cents with `BigInt` before requests. `components/dashboard-app.tsx` orchestrates views and dialogs; `components/penny/use-dashboard.ts` owns loading, period caching, and applying each change's fresh snapshot.
 - `backend/app/domain/` is the authoritative calculation layer. Pure functions accept and return Python integers representing cents, and each has unit tests.
-- `backend/app/store/` owns each user's financial state and returns a complete authoritative snapshot after each create, update, or delete. `DashboardStore` is assembled from one module per area (`transactions`, `budgets`, `goals`, `bills`, `accounts`, `pay`, `planning`, `learning`, `reports`) on top of `state` (data, lookups, validation) and `dashboard`/`insights` (the snapshot). `seed.py` holds the fictional demo and a fresh account's starting point; `registry.py` picks the store for a signed-in user. The store knows nothing about the database: `snapshot()` and the constructor hand its state to `backend/app/db/`, which loads it per request in one query and saves only changed rows, guarded by a version number (409 on a conflicting edit). Without `PENNY_DATABASE_URL` the state is in memory.
-- `backend/app/api/` exposes typed routes, one router per area; `backend/app/main.py` only wires the app (per-request save, CORS, routers). Every financial endpoint validates the bearer identity (Supabase JWT via JWKS, or the development-only demo token) and passes the user id to the store, which rejects non-owners with 403.
+- `backend/app/store/` owns each user's financial state and returns a complete authoritative snapshot after each create, update, or delete. `DashboardStore` is assembled from one module per area (`transactions`, `budgets`, `goals`, `bills`, `accounts`, `splits`, `pay`, `calendar`, `planning`, `learning`, `reports`) on top of `state` (data, lookups, validation) and `dashboard`/`insights` (the snapshot). `seed.py` holds the fictional demo and a fresh account's starting point; `registry.py` picks the store for a signed-in user. The store knows nothing about the database: `snapshot()` and the constructor hand its state to `backend/app/db/`, which loads it per request in one query and saves only changed rows, guarded by a version number (409 on a conflicting edit). Without `PENNY_DATABASE_URL` the state is in memory.
+- `backend/app/api/` exposes typed routes, one router per area; `backend/app/main.py` only wires the app (per-request save, security headers and request-size limit, CORS, routers). `backend/app/api/deps.py` resolves the signed-in person and applies their request limit; `backend/app/limits.py` also caps Penny AI calls per person. Every financial endpoint validates the bearer identity (Supabase JWT via JWKS, or the development-only demo token) and passes the user id to the store, which rejects non-owners with 403.
 - `backend/app/coach/` owns the financial snapshot, check-in signals, deterministic tools, prompt-injection filtering, number grounding, provider fallback, and single-use goal proposals. Provider output cannot mutate state.
 - `backend/app/assist/` holds the smaller AI helpers (quick add, search, statement reading, budget suggestions, setup, and short explanations). Each has a built-in fallback, quotes only verified figures, and saves nothing.
 - `supabase/migrations/` owns schema evolution. The browser receives only the publishable key; service-role credentials must remain server-side.
@@ -91,7 +91,3 @@ Explicit approval
 ```
 
 The model never calculates. It may quote figures that deterministic code produced, and it can only change data by preparing a proposal that the user must approve. A reply is bounded by `PENNY_COACH_TIMEOUT_SECONDS` (default 45) across all tool rounds.
-
-## Next architecture increment
-
-Replace the in-memory dashboard and proposal repositories with authenticated Supabase adapters while preserving the existing response contracts. Persist proposal ownership, expected goal version, expiry, application timestamp, and an audit event; keep approval as the only mutation path for Penny AI suggestions.

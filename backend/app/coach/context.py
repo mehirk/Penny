@@ -45,10 +45,10 @@ class CoachContext:
             if item.account_type == account_type
         )
 
-    @property
-    def unpaid_bills_cents(self) -> int:
-        """Scheduled bills not yet paid (overdue included) through month end or payday."""
-        return self.dashboard.recurring.unpaid_bills_cents
+    # Bills on chequing or cash and card payments due before the next payday, overdue
+    # included (the payday check-in's list). Not limited to this month: rent due tomorrow
+    # counts on the 31st.
+    unpaid_bills_cents: int = 0
 
     @property
     def typical_surplus_cents(self) -> int:
@@ -91,7 +91,14 @@ def load_context(store: DashboardStore, user_id: str) -> CoachContext:
         add_months(dashboard.active_month, -PRIOR_MONTHS),
         add_months(dashboard.active_month, -1),
     )
-    return CoachContext(store=store, user_id=user_id, dashboard=dashboard, prior=prior)
+    due = store.due_before_next_payday(user_id) if dashboard.money_calendar.today else []
+    return CoachContext(
+        store=store,
+        user_id=user_id,
+        dashboard=dashboard,
+        prior=prior,
+        unpaid_bills_cents=sum(item.amount_cents for item in due),
+    )
 
 
 def month_label(month: date) -> str:
@@ -279,7 +286,9 @@ def build_snapshot(ctx: CoachContext) -> dict[str, object]:
             }
             for bill in d.bills
         ],
-        "bills_due_before_next_payday": f.money("Unpaid bills", ctx.unpaid_bills_cents, "bills"),
+        "bills_due_before_next_payday": f.money(
+            "Bills due before payday", ctx.unpaid_bills_cents, "bills"
+        ),
         "pay_cycle": pay_cycle_snapshot(ctx),
         "savings_goals": goals,
         "credit_card": (

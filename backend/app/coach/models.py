@@ -99,7 +99,9 @@ class ChatResponse(CoachModel):
     proposal: Proposal | None
     budget_plan: BudgetPlanCard | None = None
     source: Literal["ai", "built_in"]
-    fallback_reason: Literal["no_api_key", "model_error", "timeout", "unverified_numbers"] | None
+    fallback_reason: (
+        Literal["no_api_key", "model_error", "timeout", "unverified_numbers", "ai_limit"] | None
+    )
     model: str | None
     usage: Usage
 

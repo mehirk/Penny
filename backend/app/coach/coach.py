@@ -12,7 +12,7 @@ import time
 
 from app.coach.context import CoachContext, build_signals, build_snapshot, load_context
 from app.coach.guard import validate_user_question
-from app.coach.llm import CoachModelSession, ModelUnavailable, history_items
+from app.coach.llm import AiLimitReached, CoachModelSession, ModelUnavailable, history_items
 from app.coach.models import (
     ApprovalResponse,
     BriefResponse,
@@ -133,6 +133,8 @@ class Coach:
             draft = await asyncio.wait_for(
                 self._grounded_draft(session, ctx), self._settings.coach_timeout_seconds
             )
+        except AiLimitReached:
+            return self._built_in(ctx, question, signals, started, "ai_limit", session.model)
         except TimeoutError:
             return self._built_in(ctx, question, signals, started, "timeout", session.model)
         except Exception:

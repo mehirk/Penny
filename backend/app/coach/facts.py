@@ -17,8 +17,15 @@ _PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s?%")
 
 
 def format_percent(basis_points: int) -> str:
-    whole, remainder = divmod(basis_points, 100)
-    return f"{whole}%" if remainder == 0 else f"{whole}.{remainder:02d}".rstrip("0") + "%"
+    """Easy to read: whole percents from 10% ("12%", not "12.19%"), one decimal below that
+    ("4.1%"), rounded half up. unverified_figures accepts both roundings."""
+    sign = "-" if basis_points < 0 else ""
+    size = abs(basis_points)
+    if size >= 1_000:
+        return f"{sign}{(size + 50) // 100}%"
+    tenths = (size + 5) // 10
+    whole, tenth = divmod(tenths, 10)
+    return f"{sign}{whole}%" if tenth == 0 else f"{sign}{whole}.{tenth}%"
 
 
 def parse_cad(text: str) -> int:
@@ -73,7 +80,8 @@ class FactBook:
         """Dollar amounts and percentages in `text` that no verified figure supports."""
         known_cents = {abs(item.cents) for item in self.facts if item.cents is not None}
         known_cents |= self._user_cents
-        known_bp = {item.basis_points for item in self.facts if item.basis_points is not None}
+        # Sizes, like dollar amounts: the sign is read from the words around a figure.
+        known_bp = {abs(item.basis_points) for item in self.facts if item.basis_points is not None}
         problems = []
         for match in _MONEY.finditer(text):
             cents, has_fraction = _quoted_cents(match)

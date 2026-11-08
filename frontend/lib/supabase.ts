@@ -6,10 +6,7 @@ import { setAppSignedIn } from "./face-id";
 let browserClient: SupabaseClient | null = null;
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  );
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
 }
 
 export function createSupabaseBrowserClient(): SupabaseClient {
@@ -17,7 +14,9 @@ export function createSupabaseBrowserClient(): SupabaseClient {
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) throw new Error("Supabase environment variables are not configured");
   // The iOS app's web view doesn't keep cookies on its capacitor:// origin, so the session lives in localStorage there.
-  browserClient ??= Capacitor.isNativePlatform() ? createClient(url, key, { auth: { detectSessionInUrl: false } }) : createBrowserClient(url, key);
+  browserClient ??= Capacitor.isNativePlatform()
+    ? createClient(url, key, { auth: { detectSessionInUrl: false } })
+    : createBrowserClient(url, key);
   return browserClient;
 }
 
@@ -35,7 +34,9 @@ export async function getSupabaseUserEmail(): Promise<string | null> {
   return data.session?.user.email ?? null;
 }
 
-export async function signOutOfSupabase(): Promise<void> {
+/** `local` only forgets the session on this device (after the account was deleted, the server
+ * no longer knows it). */
+export async function signOutOfSupabase(scope: "global" | "local" = "global"): Promise<void> {
   setAppSignedIn(false);
-  if (isSupabaseConfigured()) await createSupabaseBrowserClient().auth.signOut();
+  if (isSupabaseConfigured()) await createSupabaseBrowserClient().auth.signOut({ scope });
 }

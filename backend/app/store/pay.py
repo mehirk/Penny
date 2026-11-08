@@ -114,6 +114,52 @@ class PayOps(DashboardViews):
             self._transactions[transaction.id] = transaction
             return self._snapshot()
 
+    def _due_before_next_payday(self) -> tuple[date | None, date, list[PlanDue]]:
+        """The main pay's next payday (None without pay), the day the window ends (that payday,
+        or 30 days out), and the bills on chequing or cash and card payments due before it,
+        overdue ones included, soonest first."""
+        today = self.today()
+        main = self._main_pay()
+        next_payday = (
+            next(
+                iter(
+                    self._upcoming_paydays(
+                        main, today + timedelta(days=1), today + timedelta(days=400)
+                    )
+                ),
+                None,
+            )
+            if main
+            else None
+        )
+        until = next_payday or today + timedelta(days=PLAN_DAYS_WITHOUT_PAY)
+        last_day = until - timedelta(days=1)
+        spendable = {item.id for item in self._accounts_of(*SPENDABLE_TYPES)}
+        due = [
+            PlanDue(name=bill.name, due_on=day, amount_cents=bill.amount_cents, kind="bill")
+            for bill in self._bills.values()
+            if bill.account_id in spendable
+            for day in bill_due_dates(bill, bill.next_due, last_day)
+        ]
+        due += [
+            PlanDue(
+                name=f"{card.account_name} payment",
+                due_on=card.due_on,
+                amount_cents=card.owed_cents,
+                kind="card",
+            )
+            for card in self._card_payments()
+            if card.due_on <= last_day and card.owed_cents > 0
+        ]
+        due.sort(key=lambda item: (item.due_on, item.name))
+        return next_payday, until, due
+
+    def due_before_next_payday(self, user_id: str) -> list[PlanDue]:
+        """What Penny AI counts as "bills before payday" (the same as the payday check-in)."""
+        with self._lock:
+            self.require_owner(user_id)
+            return self._due_before_next_payday()[2]
+
     def payday_plan(self, user_id: str, amount_cents: int, pay_id: str | None) -> PaydayPlanView:
         """The payday check-in for money that just came in: a paycheque from `pay_id`, or money
         that isn't pay (a bonus, a gift) when it's None. Suggestions only; nothing changes."""
@@ -122,40 +168,9 @@ class PayOps(DashboardViews):
             schedule = self._pay_schedules.get(pay_id) if pay_id else None
             if pay_id and not schedule:
                 raise not_found("Pay not found")
-            today = self.today()
-            main = self._main_pay()
-            next_payday = (
-                next(
-                    iter(
-                        self._upcoming_paydays(
-                            main, today + timedelta(days=1), today + timedelta(days=400)
-                        )
-                    ),
-                    None,
-                )
-                if main
-                else None
-            )
-            until = next_payday or today + timedelta(days=PLAN_DAYS_WITHOUT_PAY)
+            next_payday, until, due = self._due_before_next_payday()
             last_day = until - timedelta(days=1)
             spendable = {item.id for item in self._accounts_of(*SPENDABLE_TYPES)}
-            due = [
-                PlanDue(name=bill.name, due_on=day, amount_cents=bill.amount_cents, kind="bill")
-                for bill in self._bills.values()
-                if bill.account_id in spendable
-                for day in bill_due_dates(bill, bill.next_due, last_day)
-            ]
-            due += [
-                PlanDue(
-                    name=f"{card.account_name} payment",
-                    due_on=card.due_on,
-                    amount_cents=card.owed_cents,
-                    kind="card",
-                )
-                for card in self._card_payments()
-                if card.due_on <= last_day and card.owed_cents > 0
-            ]
-            due.sort(key=lambda item: (item.due_on, item.name))
             due_cards = {
                 card.account_id for card in self._card_payments() if card.due_on <= last_day
             }

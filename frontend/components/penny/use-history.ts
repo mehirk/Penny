@@ -16,10 +16,20 @@ export function useHistory(start: string, end: string, version: number) {
 
   useEffect(() => {
     let active = true;
-    historyApi.load(start, end)
-      .then((result) => { if (active) { setData(result); setOutcome({ key, error: null }); } })
-      .catch((reason: unknown) => { if (active) setOutcome({ key, error: describeError(reason, "History couldn’t load").detail }); });
-    return () => { active = false; };
+    historyApi
+      .load(start, end)
+      .then((result) => {
+        if (active) {
+          setData(result);
+          setOutcome({ key, error: null });
+        }
+      })
+      .catch((reason: unknown) => {
+        if (active) setOutcome({ key, error: describeError(reason, "History couldn’t load").detail });
+      });
+    return () => {
+      active = false;
+    };
   }, [start, end, key]);
 
   return { data, loading: outcome?.key !== key, error: outcome?.key === key ? outcome.error : null };

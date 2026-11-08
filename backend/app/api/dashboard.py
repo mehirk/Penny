@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import (
     AuthenticatedUser,
@@ -11,16 +11,16 @@ from app.api.deps import (
     PeriodStart,
     ViewMonth,
     dashboard_for,
-    in_view,
     user_store,
 )
 from app.coach.chats import chat_store
 from app.dashboard_models import (
+    AccountDeleted,
     ChartsResponse,
     DashboardResponse,
+    DeleteAccountRequest,
     HistoryResponse,
     ResetRequest,
-    SpendingFromWrite,
 )
 from app.models import CurrentUserResponse
 from app.store import stores
@@ -76,18 +76,6 @@ def history(
     return user_store(current_user).history_for_user(current_user.id, start, end)
 
 
-@router.put("/profile/spending-from", response_model=DashboardResponse, tags=["profile"])
-def set_spending_from(
-    request: SpendingFromWrite, current_user: AuthenticatedUser, month: ViewMonth = None
-) -> DashboardResponse:
-    """Which accounts count as spending money for Safe to spend."""
-    return in_view(
-        user_store(current_user).set_spending_from(current_user.id, request.spending_from),
-        current_user,
-        month,
-    )
-
-
 @router.post("/account/reset", response_model=DashboardResponse, tags=["account"])
 def reset_account(request: ResetRequest, current_user: AuthenticatedUser) -> DashboardResponse:
     """Erase all of this person's data and Penny AI chats (Settings › Reset data). Asks for
@@ -96,3 +84,20 @@ def reset_account(request: ResetRequest, current_user: AuthenticatedUser) -> Das
     result = user_store(current_user).reset(current_user.id)
     chat_store.delete_all(stores.data_owner(current_user.id))
     return result
+
+
+@router.post("/account/delete", response_model=AccountDeleted, tags=["account"])
+def delete_account(
+    request: DeleteAccountRequest, current_user: AuthenticatedUser
+) -> AccountDeleted:
+    """Delete this account: every transaction, budget, goal, chat and setting, and the sign-in
+    itself (Settings › Delete account). Asks for "delete" in the body; the app confirms first.
+    Can't be undone."""
+    del request  # validated: confirm == "delete"
+    owner = stores.data_owner(current_user.id)
+    if current_user.auth_method == "demo" or stores.is_demo(current_user.id):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "The fictional demo account can’t be deleted"
+        )
+    chat_store.delete_all(owner)
+    return AccountDeleted(signin_deleted=stores.delete_user(owner))

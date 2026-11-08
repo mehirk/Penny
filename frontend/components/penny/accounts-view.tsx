@@ -1,6 +1,20 @@
 "use client";
 
-import { ArrowDownLeft, ArrowUpRight, Banknote, ChevronRight, CreditCard, Landmark, LineChart, Pencil, PiggyBank, TriangleAlert, Users, Wallet, type LucideIcon } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Banknote,
+  ChevronRight,
+  CreditCard,
+  Landmark,
+  LineChart,
+  Pencil,
+  PiggyBank,
+  TriangleAlert,
+  Users,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,7 +30,11 @@ import { BackBar } from "./back-bar";
 import { AccountsRead } from "./smart-cards";
 import { useSubpage } from "./subpage";
 
-type Props = { dashboard: Dashboard; onNavigate: (view: View, anchor?: string, motion?: "push" | "pop") => void; onAsk: (question: string) => void };
+type Props = {
+  dashboard: Dashboard;
+  onNavigate: (view: View, anchor?: string, motion?: "push" | "pop") => void;
+  onAsk: (question: string) => void;
+};
 
 const TYPE_STYLE: Record<AccountType, { icon: LucideIcon; tone: string }> = {
   chequing: { icon: Wallet, tone: "bg-zone-green-soft text-money-in" },
@@ -40,35 +58,76 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
   if (accounts.length === 0) {
     return (
       <Card className="mx-auto max-w-xl p-5">
-        <EmptyState icon={Landmark} title="No accounts yet" description="Add a chequing, savings, or card account to see your balances here." action={<Button size="sm" onClick={() => onNavigate("settings", "accounts")}>Add an account</Button>} />
+        <EmptyState
+          icon={Landmark}
+          title="No accounts yet"
+          description="Add a chequing, savings, or card account to see your balances here."
+          action={
+            <Button size="sm" onClick={() => onNavigate("settings", "accounts")}>
+              Add an account
+            </Button>
+          }
+        />
       </Card>
     );
   }
   const negative = overview.net_worth_cents < 0;
   const detail = accounts.find((account) => account.id === pageId);
   if (detail) return <AccountDetail dashboard={dashboard} account={detail} backLabel="Accounts" onBack={back} />;
-  const goalHomes = accounts.filter((account) => account.goal_cents > 0).map((account) => `${cad(account.goal_cents)} in ${account.name}`).join(" · ");
+  const goalHomes = accounts
+    .filter((account) => account.goal_cents > 0)
+    .map((account) => `${cad(account.goal_cents)} in ${account.name}`)
+    .join(" · ");
 
   return (
     // On a phone the AI read moves below the list, so the balances come first.
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       {/* Phones reach Accounts from Home ("Net worth"), so it reads as a page with a way back. */}
-      <div className="-mb-6 lg:hidden"><BackBar label="Home" onBack={() => onNavigate("today", undefined, "pop")} /></div>
-      <section id="total-balance" aria-labelledby="total-title" className="scroll-mt-28 grid gap-5 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6 lg:grid-cols-[1fr_1.15fr]">
+      <div className="-mb-6 lg:hidden">
+        <BackBar label="Home" onBack={() => onNavigate("today", undefined, "pop")} />
+      </div>
+      <section
+        id="total-balance"
+        aria-labelledby="total-title"
+        className="scroll-mt-28 grid gap-5 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6 lg:grid-cols-[1fr_1.15fr]"
+      >
         <div>
           <div className="flex items-center justify-between gap-2">
-            <h2 id="total-title" className="text-sm text-ink-subtle">Your total balance (net worth)</h2>
+            <h2 id="total-title" className="text-sm text-ink-subtle">
+              Your total balance (net worth)
+            </h2>
             <AmountsToggle className="-my-2 -mr-2" />
           </div>
-          <p className={cn("tabular mt-1 text-4xl font-semibold tracking-tight", negative ? "text-danger" : "text-ink")}>{cad(overview.net_worth_cents)}</p>
+          <p
+            className={cn("tabular mt-1 text-4xl font-semibold tracking-tight", negative ? "text-danger" : "text-ink")}
+          >
+            {cad(overview.net_worth_cents)}
+          </p>
           <p className="mt-1 text-sm text-ink-muted">
-            <span className="sm:hidden">You have <span className="tabular font-semibold text-ink">{cad(overview.assets_cents)}</span> and owe <span className={cn("tabular font-semibold", overview.owed_cents ? "text-danger" : "text-ink")}>{cad(overview.owed_cents)}</span>.</span>
-            <span className="hidden sm:inline">Everything in your accounts, minus what you owe on cards. As of today.</span>
+            <span className="sm:hidden">
+              You have <span className="tabular font-semibold text-ink">{cad(overview.assets_cents)}</span> and owe{" "}
+              <span className={cn("tabular font-semibold", overview.owed_cents ? "text-danger" : "text-ink")}>
+                {cad(overview.owed_cents)}
+              </span>
+              .
+            </span>
+            <span className="hidden sm:inline">
+              Everything in your accounts, minus what you owe on cards. As of today.
+            </span>
           </p>
           <div className="mt-5 hidden grid-cols-3 gap-2 text-center sm:grid">
             <Sum label="You have" value={cad(overview.assets_cents)} tone="text-ink" />
-            <Sum label="You owe" value={`−${cad(overview.owed_cents)}`} tone={overview.owed_cents ? "text-danger" : "text-ink"} />
-            <Sum label="Total" value={cad(overview.net_worth_cents)} tone={negative ? "text-danger" : "text-money-in"} strong />
+            <Sum
+              label="You owe"
+              value={`−${cad(overview.owed_cents)}`}
+              tone={overview.owed_cents ? "text-danger" : "text-ink"}
+            />
+            <Sum
+              label="Total"
+              value={cad(overview.net_worth_cents)}
+              tone={negative ? "text-danger" : "text-money-in"}
+              strong
+            />
           </div>
         </div>
 
@@ -78,44 +137,84 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
             {accounts.map((account) => (
               <li key={account.id} className="flex items-center justify-between gap-3 py-2">
                 <span className="min-w-0 truncate text-ink-muted">{account.name}</span>
-                <span className={cn("tabular shrink-0 font-semibold", account.net_cents < 0 ? "text-danger" : "text-ink")}>{account.net_cents < 0 ? `−${cad(-account.net_cents)}` : `+${cad(account.net_cents)}`}</span>
+                <span
+                  className={cn("tabular shrink-0 font-semibold", account.net_cents < 0 ? "text-danger" : "text-ink")}
+                >
+                  {account.net_cents < 0 ? `−${cad(-account.net_cents)}` : `+${cad(account.net_cents)}`}
+                </span>
               </li>
             ))}
           </ul>
           <p className="mt-1 flex items-center justify-between gap-3 border-t-2 border-ink/70 pt-2 text-sm font-semibold text-ink">
-            <span>Total balance</span><span className="tabular">{cad(overview.net_worth_cents)}</span>
+            <span>Total balance</span>
+            <span className="tabular">{cad(overview.net_worth_cents)}</span>
           </p>
         </div>
       </section>
 
-      <div className="max-sm:order-1"><AccountsRead version={dashboard.accounts_overview.net_worth_cents} onAsk={onAsk} /></div>
+      <div className="max-sm:order-1">
+        <AccountsRead version={dashboard.accounts_overview.net_worth_cents} onAsk={onAsk} />
+      </div>
 
       <section aria-label="Where your money is" className="hidden gap-3 sm:grid sm:grid-cols-3">
-        <Tile icon={Wallet} tone={TYPE_STYLE.chequing.tone} title="Spending money" value={cad(overview.spending_cents)} detail="Chequing and cash. This is what Home calls available." />
-        <Tile icon={PiggyBank} tone={TYPE_STYLE.savings.tone} title="Set aside for goals" value={cad(overview.goal_cents)} detail={goalHomes || "No goal money yet. Add some from Goals."} onOpen={() => onNavigate("goals")} />
-        <Tile icon={CreditCard} tone={TYPE_STYLE.credit.tone} title="Owed on cards" value={cad(overview.owed_cents)} detail={overview.owed_cents ? "Paying it in full by the due date avoids interest." : "Nothing owed. Nice."} />
+        <Tile
+          icon={Wallet}
+          tone={TYPE_STYLE.chequing.tone}
+          title="Spending money"
+          value={cad(overview.spending_cents)}
+          detail="Chequing and cash. This is what Home calls available."
+        />
+        <Tile
+          icon={PiggyBank}
+          tone={TYPE_STYLE.savings.tone}
+          title="Set aside for goals"
+          value={cad(overview.goal_cents)}
+          detail={goalHomes || "No goal money yet. Add some from Goals."}
+          onOpen={() => onNavigate("goals")}
+        />
+        <Tile
+          icon={CreditCard}
+          tone={TYPE_STYLE.credit.tone}
+          title="Owed on cards"
+          value={cad(overview.owed_cents)}
+          detail={overview.owed_cents ? "Paying it in full by the due date avoids interest." : "Nothing owed. Nice."}
+        />
       </section>
 
       {overview.goal_shortfall_cents > 0 && (
         <p role="status" className="flex items-start gap-2 rounded-2xl bg-gold-soft px-4 py-3 text-sm text-ink">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-gold-strong" aria-hidden="true" />
-          Your goals record {cad(overview.goal_shortfall_cents)} more than their accounts actually hold. Check which account each goal is kept in on Goals.
+          Your goals record {cad(overview.goal_shortfall_cents)} more than their accounts actually hold. Check which
+          account each goal is kept in on Goals.
         </p>
       )}
 
       <section aria-labelledby="accounts-list-title">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 id="accounts-list-title" className="text-lg font-semibold tracking-tight text-ink">Accounts</h2>
-            <p className="text-sm text-ink-subtle"><span className="sm:hidden">Tap an account to see its activity.</span><span className="hidden sm:inline">Balances today, with money in and out so far this month.</span></p>
+            <h2 id="accounts-list-title" className="text-lg font-semibold tracking-tight text-ink">
+              Accounts
+            </h2>
+            <p className="text-sm text-ink-subtle">
+              <span className="sm:hidden">Tap an account to see its activity.</span>
+              <span className="hidden sm:inline">Balances today, with money in and out so far this month.</span>
+            </p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => onNavigate("settings", "accounts")}><Pencil className="size-4" aria-hidden="true" />Add or edit</Button>
+          <Button size="sm" variant="outline" onClick={() => onNavigate("settings", "accounts")}>
+            <Pencil className="size-4" aria-hidden="true" />
+            Add or edit
+          </Button>
         </div>
         <ul className="grid gap-3 sm:gap-4 md:grid-cols-2">
-          {accounts.map((account) => <AccountCard key={account.id} account={account} onOpen={() => openAccount(account.id)} />)}
+          {accounts.map((account) => (
+            <AccountCard key={account.id} account={account} onOpen={() => openAccount(account.id)} />
+          ))}
         </ul>
       </section>
-      <p className="px-1 text-xs text-ink-subtle max-sm:order-2">{dashboard.profile.is_fictional ? "All accounts and balances are fictional. " : ""}No bank is connected; balances change only when you record money in or out.</p>
+      <p className="px-1 text-xs text-ink-subtle max-sm:order-2">
+        {dashboard.profile.is_fictional ? "All accounts and balances are fictional. " : ""}No bank is connected;
+        balances change only when you record money in or out.
+      </p>
     </div>
   );
 }
@@ -129,10 +228,26 @@ function Sum({ label, value, tone, strong }: { label: string; value: string; ton
   );
 }
 
-function Tile({ icon: Icon, tone, title, value, detail, onOpen }: { icon: LucideIcon; tone: string; title: string; value: string; detail: string; onOpen?: () => void }) {
+function Tile({
+  icon: Icon,
+  tone,
+  title,
+  value,
+  detail,
+  onOpen,
+}: {
+  icon: LucideIcon;
+  tone: string;
+  title: string;
+  value: string;
+  detail: string;
+  onOpen?: () => void;
+}) {
   const body = (
     <>
-      <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", tone)} aria-hidden="true"><Icon className="size-5" /></span>
+      <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", tone)} aria-hidden="true">
+        <Icon className="size-5" />
+      </span>
       <span className="min-w-0">
         <span className="block text-sm text-ink-subtle">{title}</span>
         <span className="tabular block text-xl font-semibold tracking-tight text-ink">{value}</span>
@@ -140,8 +255,15 @@ function Tile({ icon: Icon, tone, title, value, detail, onOpen }: { icon: Lucide
       </span>
     </>
   );
-  const className = "flex h-full w-full items-start gap-3 rounded-[var(--radius-card)] border border-line bg-surface p-4 text-left shadow-[var(--shadow-card)]";
-  return onOpen ? <button type="button" onClick={onOpen} className={cn(className, "transition-colors hover:border-accent")}>{body}</button> : <div className={className}>{body}</div>;
+  const className =
+    "flex h-full w-full items-start gap-3 rounded-[var(--radius-card)] border border-line bg-surface p-4 text-left shadow-[var(--shadow-card)]";
+  return onOpen ? (
+    <button type="button" onClick={onOpen} className={cn(className, "transition-colors hover:border-accent")}>
+      {body}
+    </button>
+  ) : (
+    <div className={className}>{body}</div>
+  );
 }
 
 function AccountCard({ account, onOpen }: { account: AccountBalance; onOpen: () => void }) {
@@ -150,26 +272,53 @@ function AccountCard({ account, onOpen }: { account: AccountBalance; onOpen: () 
   const used = account.utilization_basis_points;
   const friend = account.account_type === "person";
   const overdrawn = account.balance_cents < 0;
-  const status = friend ? friendStatus(account.balance_cents).toLowerCase() : credit ? "owed" : overdrawn ? "overdrawn" : "balance";
-  const balance = <p className={cn("tabular text-lg font-semibold tracking-tight sm:text-xl", (credit && account.balance_cents > 0) || overdrawn ? "text-danger" : "text-ink")}>{credit && account.balance_cents > 0 ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)}</p>;
+  const status = friend
+    ? friendStatus(account.balance_cents).toLowerCase()
+    : credit
+      ? "owed"
+      : overdrawn
+        ? "overdrawn"
+        : "balance";
+  const balance = (
+    <p
+      className={cn(
+        "tabular text-lg font-semibold tracking-tight sm:text-xl",
+        (credit && account.balance_cents > 0) || overdrawn ? "text-danger" : "text-ink",
+      )}
+    >
+      {credit && account.balance_cents > 0 ? `−${cad(account.balance_cents)}` : cad(account.balance_cents)}
+    </p>
+  );
   return (
-    <li id={`account-${account.account_type === "credit" ? "credit" : account.id}`} className="scroll-mt-28 rounded-[var(--radius-card)]">
+    <li
+      id={`account-${account.account_type === "credit" ? "credit" : account.id}`}
+      className="scroll-mt-28 rounded-[var(--radius-card)]"
+    >
       <Card className="flex h-full flex-col p-4 sm:p-5">
         {/* Phone: name and balance only; tap to open the account's page. */}
         <button type="button" onClick={onOpen} className="flex min-h-11 items-center gap-3 text-left sm:hidden">
-          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-xl" aria-hidden="true">{emoji}</span>
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-xl" aria-hidden="true">
+            {emoji}
+          </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-semibold text-ink">{account.name}</span>
-            <span className="block text-xs text-ink-subtle">{ACCOUNT_TYPE_LABELS[account.account_type]}{status === "balance" ? "" : ` · ${status}`}</span>
+            <span className="block text-xs text-ink-subtle">
+              {ACCOUNT_TYPE_LABELS[account.account_type]}
+              {status === "balance" ? "" : ` · ${status}`}
+            </span>
           </span>
           {balance}
           <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
         </button>
         <div className="hidden items-start gap-3 sm:flex">
-          <span className="grid size-11 shrink-0 place-items-center rounded-full bg-sage text-xl" aria-hidden="true">{emoji}</span>
+          <span className="grid size-11 shrink-0 place-items-center rounded-full bg-sage text-xl" aria-hidden="true">
+            {emoji}
+          </span>
           <div className="min-w-0 flex-1">
             <h3 className="truncate font-semibold text-ink">{account.name}</h3>
-            <Badge tone="neutral" className="mt-0.5">{ACCOUNT_TYPE_LABELS[account.account_type]}</Badge>
+            <Badge tone="neutral" className="mt-0.5">
+              {ACCOUNT_TYPE_LABELS[account.account_type]}
+            </Badge>
           </div>
           <div className="shrink-0 text-right">
             {balance}
@@ -179,27 +328,58 @@ function AccountCard({ account, onOpen }: { account: AccountBalance; onOpen: () 
 
         <div className="hidden flex-1 flex-col sm:flex">
           {credit ? (
-            account.credit_limit_cents !== null && used !== null && (
+            account.credit_limit_cents !== null &&
+            used !== null && (
               <div className="mt-4">
-                <Progress className="h-2.5" value={Math.min(100, used / 100)} indicatorClassName={used > 3000 ? "bg-danger" : "bg-accent"} aria-label={`${(used / 100).toFixed(0)}% of the limit used`} />
+                <Progress
+                  className="h-2.5"
+                  value={Math.min(100, used / 100)}
+                  indicatorClassName={used > 3000 ? "bg-danger" : "bg-accent"}
+                  aria-label={`${(used / 100).toFixed(0)}% of the limit used`}
+                />
                 <p className="mt-1.5 flex justify-between gap-2 text-xs text-ink-subtle">
-                  <span>{(used / 100).toFixed(1)}% of {cad(account.credit_limit_cents)} used</span>
+                  <span>
+                    {(used / 100).toFixed(1)}% of {cad(account.credit_limit_cents)} used
+                  </span>
                   <span className="tabular">{cad(account.available_credit_cents ?? 0)} available</span>
                 </p>
               </div>
             )
           ) : account.goals.length > 0 ? (
             <div className="mt-4 rounded-xl bg-sage-soft/70 p-3 text-sm">
-              <p className="flex justify-between gap-2"><span className="text-ink-muted">Kept here for goals</span><span className="tabular font-semibold text-ink">{cad(account.goal_cents)}</span></p>
-              <ul className="mt-1 space-y-0.5 text-xs text-ink-subtle">{account.goals.map((goal) => <li key={goal.id} className="flex justify-between gap-2"><span className="truncate">· {goal.name}</span><span className="tabular">{cad(goal.current_cents)}</span></li>)}</ul>
-              <p className="mt-2 flex justify-between gap-2 border-t border-line pt-2"><span className="text-ink-muted">Free to use</span><span className="tabular font-semibold text-ink">{cad(account.free_cents ?? 0)}</span></p>
+              <p className="flex justify-between gap-2">
+                <span className="text-ink-muted">Kept here for goals</span>
+                <span className="tabular font-semibold text-ink">{cad(account.goal_cents)}</span>
+              </p>
+              <ul className="mt-1 space-y-0.5 text-xs text-ink-subtle">
+                {account.goals.map((goal) => (
+                  <li key={goal.id} className="flex justify-between gap-2">
+                    <span className="truncate">· {goal.name}</span>
+                    <span className="tabular">{cad(goal.current_cents)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 flex justify-between gap-2 border-t border-line pt-2">
+                <span className="text-ink-muted">Free to use</span>
+                <span className="tabular font-semibold text-ink">{cad(account.free_cents ?? 0)}</span>
+              </p>
             </div>
           ) : null}
 
           <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 pt-4 text-xs text-ink-subtle">
-            <span className="inline-flex items-center gap-1"><ArrowDownLeft className="size-3.5 text-money-in" aria-hidden="true" />In this month <span className="tabular font-semibold text-ink">{cad(account.money_in_cents)}</span></span>
-            <span className="inline-flex items-center gap-1"><ArrowUpRight className="size-3.5 text-money-out" aria-hidden="true" />Out <span className="tabular font-semibold text-ink">{cad(account.money_out_cents)}</span></span>
-            <span className="ml-auto">{account.last_activity_on ? `Last activity ${formatShortDate(account.last_activity_on)}` : "No transactions yet"}</span>
+            <span className="inline-flex items-center gap-1">
+              <ArrowDownLeft className="size-3.5 text-money-in" aria-hidden="true" />
+              In this month <span className="tabular font-semibold text-ink">{cad(account.money_in_cents)}</span>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <ArrowUpRight className="size-3.5 text-money-out" aria-hidden="true" />
+              Out <span className="tabular font-semibold text-ink">{cad(account.money_out_cents)}</span>
+            </span>
+            <span className="ml-auto">
+              {account.last_activity_on
+                ? `Last activity ${formatShortDate(account.last_activity_on)}`
+                : "No transactions yet"}
+            </span>
           </div>
         </div>
       </Card>

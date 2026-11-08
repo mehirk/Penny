@@ -10,18 +10,25 @@ type Haptic = "selection" | "light" | "success" | "error";
 /** A short vibration in the iOS app; nothing in a browser. Never throws. */
 export function haptic(kind: Haptic): void {
   if (!isNativeApp()) return;
-  const done = kind === "selection" ? Haptics.selectionStart().then(() => Haptics.selectionChanged()).then(() => Haptics.selectionEnd())
-    : kind === "light" ? Haptics.impact({ style: ImpactStyle.Light })
-    : Haptics.notification({ type: kind === "success" ? NotificationType.Success : NotificationType.Error });
+  const done =
+    kind === "selection"
+      ? Haptics.selectionStart()
+          .then(() => Haptics.selectionChanged())
+          .then(() => Haptics.selectionEnd())
+      : kind === "light"
+        ? Haptics.impact({ style: ImpactStyle.Light })
+        : Haptics.notification({ type: kind === "success" ? NotificationType.Success : NotificationType.Error });
   done.catch(() => undefined);
 }
 
 /** Matches the keyboard to Penny's light or dark theme. */
 export function setKeyboardTheme(theme: "light" | "dark"): void {
-  if (isNativeApp()) Keyboard.setStyle({ style: theme === "dark" ? KeyboardStyle.Dark : KeyboardStyle.Light }).catch(() => undefined);
+  if (isNativeApp())
+    Keyboard.setStyle({ style: theme === "dark" ? KeyboardStyle.Dark : KeyboardStyle.Light }).catch(() => undefined);
 }
 
-const TEXT_ENTRY = "input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]), textarea, select, [contenteditable=true]";
+const TEXT_ENTRY =
+  "input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]), textarea, select, [contenteditable=true]";
 
 /**
  * Native-app behaviour that a browser already has or doesn't need: no form accessory bar
@@ -44,8 +51,12 @@ export function setUpNativeApp(): () => void {
   };
   document.addEventListener("touchstart", dismiss, { passive: true });
 
-  const shown = Keyboard.addListener("keyboardWillShow", () => { root.dataset.keyboard = "open"; });
-  const hidden = Keyboard.addListener("keyboardWillHide", () => { delete root.dataset.keyboard; });
+  const shown = Keyboard.addListener("keyboardWillShow", () => {
+    root.dataset.keyboard = "open";
+  });
+  const hidden = Keyboard.addListener("keyboardWillHide", () => {
+    delete root.dataset.keyboard;
+  });
   return () => {
     document.removeEventListener("touchstart", dismiss);
     void shown.then((handle) => handle.remove());

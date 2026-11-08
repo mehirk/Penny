@@ -29,6 +29,7 @@ const BY_TYPE: Record<AccountType, string> = {
 
 const fromName = (name: string) => BY_NAME.find(([pattern]) => pattern.test(name))?.[1];
 
-export const accountEmoji = (name: string, type: AccountType) => (type === "credit" ? BY_TYPE.credit : fromName(name) ?? BY_TYPE[type]);
+export const accountEmoji = (name: string, type: AccountType) =>
+  type === "credit" ? BY_TYPE.credit : (fromName(name) ?? BY_TYPE[type]);
 
 export const goalEmoji = (name: string) => fromName(name) ?? "🎯";

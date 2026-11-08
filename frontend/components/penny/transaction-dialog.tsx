@@ -17,7 +17,15 @@ import { type TransactionBody, TransactionForm, type TransactionPrefill } from "
 /** What the transaction dialog opens on: a new entry, one shared with friends, or an edit. */
 export type TransactionTarget = Transaction | "new" | { share: SharedDraft };
 
-export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubmitMany, onRequestDelete, onCreate }: {
+export function TransactionDialog({
+  target,
+  dashboard,
+  onClose,
+  onSubmit,
+  onSubmitMany,
+  onRequestDelete,
+  onCreate,
+}: {
   target: TransactionTarget | null;
   dashboard: Dashboard;
   onClose: () => void;
@@ -33,11 +41,32 @@ export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubm
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{item ? "Edit transaction" : "Add transactions"}</DialogTitle>
-          <DialogDescription>{item ? "Totals recalculate as soon as you save." : "Type it like a note and Penny fills it in, or add it by hand."}</DialogDescription>
+          <DialogDescription>
+            {item
+              ? "Totals recalculate as soon as you save."
+              : "Type it like a note and Penny fills it in, or add it by hand."}
+          </DialogDescription>
         </DialogHeader>
-        {item
-          ? <TransactionForm key={item.id} item={item} dashboard={dashboard} onCreate={onCreate} onSubmit={(body) => onSubmit(item.id, body)} onRequestDelete={() => onRequestDelete(item)} />
-          : target && <NewTransactions dashboard={dashboard} share={share} onCreate={onCreate} onSubmit={(body) => onSubmit(null, body)} onSubmitMany={onSubmitMany} />}
+        {item ? (
+          <TransactionForm
+            key={item.id}
+            item={item}
+            dashboard={dashboard}
+            onCreate={onCreate}
+            onSubmit={(body) => onSubmit(item.id, body)}
+            onRequestDelete={() => onRequestDelete(item)}
+          />
+        ) : (
+          target && (
+            <NewTransactions
+              dashboard={dashboard}
+              share={share}
+              onCreate={onCreate}
+              onSubmit={(body) => onSubmit(null, body)}
+              onSubmitMany={onSubmitMany}
+            />
+          )
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -48,7 +77,19 @@ export function TransactionDialog({ target, dashboard, onClose, onSubmit, onSubm
  * in again. "Quick AI add" expands above the form: one entry shows as a card to add in one tap (or
  * open in the form), several open a review list. The form can also switch to adding several by hand.
  */
-function NewTransactions({ dashboard, share, onSubmit, onSubmitMany, onCreate }: { dashboard: Dashboard; share?: SharedDraft; onSubmit: Submit<TransactionBody>; onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>; onCreate: InlineCreate }) {
+function NewTransactions({
+  dashboard,
+  share,
+  onSubmit,
+  onSubmitMany,
+  onCreate,
+}: {
+  dashboard: Dashboard;
+  share?: SharedDraft;
+  onSubmit: Submit<TransactionBody>;
+  onSubmitMany: (bodies: TransactionWrite[]) => Promise<{ error: string | null; saved: number }>;
+  onCreate: InlineCreate;
+}) {
   const [mode, setMode] = useState<"form" | "batch">("form");
   const [quickOpen, setQuickOpen] = useState(false);
   const [prefill, setPrefill] = useState<TransactionPrefill | null>(null);
@@ -88,24 +129,66 @@ function NewTransactions({ dashboard, share, onSubmit, onSubmitMany, onCreate }:
   }
 
   if (mode === "batch") {
-    return <BatchReview dashboard={dashboard} drafts={drafts} onChange={setDrafts} onSubmitMany={onSubmitMany} onBack={() => { setDrafts([]); setMode("form"); }} fallbackDate={today} />;
+    return (
+      <BatchReview
+        dashboard={dashboard}
+        drafts={drafts}
+        onChange={setDrafts}
+        onSubmitMany={onSubmitMany}
+        onBack={() => {
+          setDrafts([]);
+          setMode("form");
+        }}
+        fallbackDate={today}
+      />
+    );
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button type="button" aria-expanded={quickOpen} aria-controls="quick-add-panel" onClick={() => setQuickOpen(!quickOpen)} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-accent-strong hover:bg-accent-soft">
-          <Wand2 className="size-4" aria-hidden="true" />Quick AI add<ChevronDown className={cn("size-4 transition-transform", quickOpen && "rotate-180")} aria-hidden="true" />
+        <button
+          type="button"
+          aria-expanded={quickOpen}
+          aria-controls="quick-add-panel"
+          onClick={() => setQuickOpen(!quickOpen)}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-accent-strong hover:bg-accent-soft"
+        >
+          <Wand2 className="size-4" aria-hidden="true" />
+          Quick AI add
+          <ChevronDown className={cn("size-4 transition-transform", quickOpen && "rotate-180")} aria-hidden="true" />
         </button>
-        <button type="button" onClick={() => { setDrafts([draftFrom(null, dashboard, today), draftFrom(null, dashboard, today)]); setMode("batch"); }} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-ink-muted hover:bg-sage-soft hover:text-ink">
-          <ListPlus className="size-4" aria-hidden="true" />Add several by hand
+        <button
+          type="button"
+          onClick={() => {
+            setDrafts([draftFrom(null, dashboard, today), draftFrom(null, dashboard, today)]);
+            setMode("batch");
+          }}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-sm font-semibold text-ink-muted hover:bg-sage-soft hover:text-ink"
+        >
+          <ListPlus className="size-4" aria-hidden="true" />
+          Add several by hand
         </button>
       </div>
       <QuickPicks picks={picks} selected={picked} onPick={onPick} />
-      {quickOpen && <div id="quick-add-panel"><QuickAdd onParsed={onParsed} filled={fromNote} /></div>}
-      {confirm
-        ? <QuickConfirm parsed={confirm} dashboard={dashboard} onSubmit={onSubmit} onEdit={() => fill(confirm)} />
-        : <TransactionForm key={formKey} item={null} prefill={prefill} share={share} dashboard={dashboard} onCreate={onCreate} onSubmit={onSubmit} />}
+      {quickOpen && (
+        <div id="quick-add-panel">
+          <QuickAdd onParsed={onParsed} filled={fromNote} />
+        </div>
+      )}
+      {confirm ? (
+        <QuickConfirm parsed={confirm} dashboard={dashboard} onSubmit={onSubmit} onEdit={() => fill(confirm)} />
+      ) : (
+        <TransactionForm
+          key={formKey}
+          item={null}
+          prefill={prefill}
+          share={share}
+          dashboard={dashboard}
+          onCreate={onCreate}
+          onSubmit={onSubmit}
+        />
+      )}
     </div>
   );
 }

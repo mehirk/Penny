@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str | None = None
     # Fictional demo bearer token; accepted only when environment is "development".
     demo_auth_token: str | None = None
-    # Supabase user id allowed to use the fictional Maya data set until PEN-002 persistence.
+    # Supabase user id that gets the fictional Maya data set.
     demo_owner_user_id: str | None = None
     openai_api_key: str | None = None
     openai_model: str = "gpt-6.1-sol"

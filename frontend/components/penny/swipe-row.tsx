@@ -12,12 +12,25 @@ const OPEN = 88;
  * Delete calls `onDelete`, which asks for confirmation first. A tap while open just closes it.
  * Keyboard and screen-reader users keep the row's own Delete action, so nothing depends on swiping.
  */
-export function SwipeRow({ label, onDelete, children, className }: { label: string; onDelete: () => void; children: React.ReactNode; className?: string }) {
+export function SwipeRow({
+  label,
+  onDelete,
+  children,
+  className,
+}: {
+  label: string;
+  onDelete: () => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
   const [offset, setOffsetState] = useState(0);
   const [dragging, setDragging] = useState(false);
   // The latest position, for handlers that run before React re-renders (fast swipes).
   const current = useRef(0);
-  const setOffset = (value: number) => { current.current = value; setOffsetState(value); };
+  const setOffset = (value: number) => {
+    current.current = value;
+    setOffsetState(value);
+  };
   const start = useRef<{ x: number; y: number; base: number; horizontal: boolean | null } | null>(null);
 
   const onTouchStart = (event: React.TouchEvent) => {
@@ -49,10 +62,23 @@ export function SwipeRow({ label, onDelete, children, className }: { label: stri
     setOffset(next);
   };
 
-  const remove = () => { setOffset(0); onDelete(); };
+  const remove = () => {
+    setOffset(0);
+    onDelete();
+  };
   const action = (side: "left" | "right") => (
-    <button type="button" tabIndex={-1} aria-hidden="true" onClick={remove} className={cn("absolute inset-y-0 flex w-[88px] flex-col items-center justify-center gap-1 bg-danger text-xs font-semibold text-white", side === "left" ? "left-0" : "right-0")}>
-      <Trash2 className="size-5" />Delete
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-hidden="true"
+      onClick={remove}
+      className={cn(
+        "absolute inset-y-0 flex w-[88px] flex-col items-center justify-center gap-1 bg-danger text-xs font-semibold text-white",
+        side === "left" ? "left-0" : "right-0",
+      )}
+    >
+      <Trash2 className="size-5" />
+      Delete
     </button>
   );
 
@@ -65,8 +91,18 @@ export function SwipeRow({ label, onDelete, children, className }: { label: stri
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
-        onClickCapture={(event) => { if (offset !== 0) { event.preventDefault(); event.stopPropagation(); setOffset(0); } }}
-        style={{ transform: offset ? `translateX(${offset}px)` : undefined, transition: dragging ? "none" : "transform 240ms cubic-bezier(0.32, 0.72, 0, 1)", touchAction: "pan-y" }}
+        onClickCapture={(event) => {
+          if (offset !== 0) {
+            event.preventDefault();
+            event.stopPropagation();
+            setOffset(0);
+          }
+        }}
+        style={{
+          transform: offset ? `translateX(${offset}px)` : undefined,
+          transition: dragging ? "none" : "transform 240ms cubic-bezier(0.32, 0.72, 0, 1)",
+          touchAction: "pan-y",
+        }}
         className="relative bg-surface"
       >
         {children}

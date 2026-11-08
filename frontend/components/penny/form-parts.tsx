@@ -17,13 +17,27 @@ export function parseAmount(value: FormDataEntryValue | null): { cents: number }
 }
 
 export function FormError({ message }: { message: string }) {
-  return message ? <p role="alert" className="rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">{message}</p> : null;
+  return message ? (
+    <p
+      role="alert"
+      className="rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger"
+    >
+      {message}
+    </p>
+  ) : null;
 }
 
 export function SubmitButton({ busy, label, className }: { busy: boolean; label: string; className?: string }) {
   return (
     <Button type="submit" disabled={busy} className={cn("flex-1", className)}>
-      {busy ? <><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Saving…</> : label}
+      {busy ? (
+        <>
+          <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+          Saving…
+        </>
+      ) : (
+        label
+      )}
     </Button>
   );
 }

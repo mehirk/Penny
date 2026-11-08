@@ -18,7 +18,7 @@ from fastapi import HTTPException, status
 from pydantic import Field
 
 from app.assist.common import AssistModel, Source
-from app.coach.llm import ModelUnavailable, ask_json
+from app.coach.llm import AiLimitReached, ModelUnavailable, ask_json
 from app.config import Settings
 from app.dashboard_models import Category
 from app.domain.categorize import categorize
@@ -320,6 +320,11 @@ async def read_statement(
             max_output_tokens=READ_MAX_OUTPUT_TOKENS,
             timeout_seconds=READ_TIMEOUT_SECONDS,
         )
+    except AiLimitReached as error:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "You've used Penny AI a lot today. Try again later, or import a CSV file.",
+        ) from error
     except ModelUnavailable as error:
         detail = (
             "Penny AI isn't set up, so only CSV files in the usual format can be read"

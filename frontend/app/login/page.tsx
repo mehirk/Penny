@@ -8,12 +8,25 @@ import { BrandMark } from "@/components/penny/app-shell";
 import { Field } from "@/components/penny/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { biometryName, clearSignIn, FACE_ID_TRIES, faceIdDeclined, faceIdStatus, type FaceIdStatus, isCancelled, loadSignIn, saveSignIn, setAppSignedIn, setFaceIdDeclined } from "@/lib/face-id";
+import {
+  biometryName,
+  clearSignIn,
+  FACE_ID_TRIES,
+  faceIdDeclined,
+  faceIdStatus,
+  type FaceIdStatus,
+  isCancelled,
+  loadSignIn,
+  saveSignIn,
+  setAppSignedIn,
+  setFaceIdDeclined,
+} from "@/lib/face-id";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 
 function friendlyAuthError(message: string): string {
-  if (/invalid login credentials/i.test(message)) return "That email and password don’t match. Check them and try again.";
-  if (/email not confirmed/i.test(message)) return "This account hasn’t been confirmed yet. Ask the team to confirm it in Supabase.";
+  if (/invalid login credentials/i.test(message))
+    return "That email and password don’t match. Check them and try again.";
+  if (/email not confirmed/i.test(message)) return "Confirm your email first: open the link we sent you, then sign in.";
   if (/fetch|network/i.test(message)) return "Couldn’t reach the sign-in service. Check your connection and try again.";
   return message;
 }
@@ -35,10 +48,19 @@ export default function LoginPage() {
     // Signed out: no app lock on top of this page (it asks for Face ID itself).
     setAppSignedIn(false);
     // Sent here by the app lock after Face ID failed twice: go straight to the password.
-    const lockGaveUp = new URLSearchParams(window.location.search).get("faceid") === "failed";
+    const params = new URLSearchParams(window.location.search);
+    const lockGaveUp = params.get("faceid") === "failed";
+    // Sent here after Settings › Delete account.
+    const deleted = params.get("deleted");
     void faceIdStatus().then((status) => {
+      if (deleted === "all") setNotice("Your account and all its data were deleted.");
+      if (deleted === "data")
+        setNotice("All your data was deleted. Your email can still sign in, to a new, empty account.");
       setFaceId(status);
-      if (lockGaveUp && status.saved) { setError(`${biometryName(status)} didn’t work. Sign in with your password.`); return; }
+      if (lockGaveUp && status.saved) {
+        setError(`${biometryName(status)} didn’t work. Sign in with your password.`);
+        return;
+      }
       // Opening the app with Face ID on goes straight to the Face ID prompt.
       if (configured && status.available && status.saved && !prompted.current) {
         prompted.current = true;
@@ -67,8 +89,16 @@ export default function LoginPage() {
     const email = String(form.get("email"));
     const password = String(form.get("password"));
     const failed = await passwordSignIn(email, password);
-    if (failed) { setError(friendlyAuthError(failed)); setBusy(false); return; }
-    if (faceId?.available && !faceId.saved && !faceIdDeclined()) { setOffer({ email, password }); setBusy(false); return; }
+    if (failed) {
+      setError(friendlyAuthError(failed));
+      setBusy(false);
+      return;
+    }
+    if (faceId?.available && !faceId.saved && !faceIdDeclined()) {
+      setOffer({ email, password });
+      setBusy(false);
+      return;
+    }
     router.replace("/");
   }
 
@@ -97,10 +127,20 @@ export default function LoginPage() {
       window.setTimeout(() => passwordInput.current?.focus(), 0);
       return;
     }
-    if (saved === "password") { setBusy(false); window.setTimeout(() => passwordInput.current?.focus(), 0); return; }
-    if (typeof saved === "string") { setBusy(false); return; }
+    if (saved === "password") {
+      setBusy(false);
+      window.setTimeout(() => passwordInput.current?.focus(), 0);
+      return;
+    }
+    if (typeof saved === "string") {
+      setBusy(false);
+      return;
+    }
     const failed = await passwordSignIn(saved.email, saved.password);
-    if (!failed) { router.replace("/"); return; }
+    if (!failed) {
+      router.replace("/");
+      return;
+    }
     if (/invalid login credentials/i.test(failed)) {
       // The password changed since Face ID was turned on: forget it and ask for the new one.
       await clearSignIn();
@@ -121,7 +161,10 @@ export default function LoginPage() {
       setFaceIdDeclined(false);
       router.replace("/");
     } catch (reason) {
-      if (!isCancelled(reason)) setError(`${faceId ? biometryName(faceId) : "Face ID"} couldn’t be turned on. You can try again from Settings.`);
+      if (!isCancelled(reason))
+        setError(
+          `${faceId ? biometryName(faceId) : "Face ID"} couldn’t be turned on. You can try again from Settings.`,
+        );
       setBusy(false);
     }
   }
@@ -131,45 +174,138 @@ export default function LoginPage() {
       <div className="w-full max-w-sm animate-enter">
         <div className="flex items-center gap-3">
           <BrandMark />
-          <div><p className="text-lg font-semibold tracking-tight text-ink">Penny</p><p className="text-xs text-ink-subtle">Make money make sense</p></div>
+          <div>
+            <p className="text-lg font-semibold tracking-tight text-ink">Penny</p>
+            <p className="text-xs text-ink-subtle">Make money make sense</p>
+          </div>
         </div>
         <div className="mt-8 rounded-[1.5rem] border border-line bg-surface p-6 shadow-[var(--shadow-raised)] sm:p-7">
           {offer && faceId ? (
             <>
-              <span className="grid size-12 place-items-center rounded-2xl bg-primary-soft text-ink" aria-hidden="true"><ScanFace className="size-6" /></span>
-              <h1 className="mt-4 text-2xl font-semibold tracking-tight text-ink">Use {biometryName(faceId)} next time?</h1>
-              <p className="mt-1.5 text-sm text-ink-subtle">Sign in with a glance instead of your password. Your sign-in stays on this iPhone, locked by {biometryName(faceId)}. You can turn it off in Settings.</p>
-              {error && <p role="alert" className="mt-4 rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">{error}</p>}
+              <span className="grid size-12 place-items-center rounded-2xl bg-primary-soft text-ink" aria-hidden="true">
+                <ScanFace className="size-6" />
+              </span>
+              <h1 className="mt-4 text-2xl font-semibold tracking-tight text-ink">
+                Use {biometryName(faceId)} next time?
+              </h1>
+              <p className="mt-1.5 text-sm text-ink-subtle">
+                Sign in with a glance instead of your password. Your sign-in stays on this iPhone, locked by{" "}
+                {biometryName(faceId)}. You can turn it off in Settings.
+              </p>
+              {error && (
+                <p
+                  role="alert"
+                  className="mt-4 rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger"
+                >
+                  {error}
+                </p>
+              )}
               <div className="mt-6 space-y-2">
-                <Button className="w-full" disabled={busy} onClick={() => void turnOnFaceId()}><ScanFace className="size-4" aria-hidden="true" />Turn on {biometryName(faceId)}</Button>
-                <Button variant="ghost" className="w-full" disabled={busy} onClick={() => { setFaceIdDeclined(true); router.replace("/"); }}>Not now</Button>
+                <Button className="w-full" disabled={busy} onClick={() => void turnOnFaceId()}>
+                  <ScanFace className="size-4" aria-hidden="true" />
+                  Turn on {biometryName(faceId)}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={() => {
+                    setFaceIdDeclined(true);
+                    router.replace("/");
+                  }}
+                >
+                  Not now
+                </Button>
               </div>
             </>
           ) : (
             <>
               <h1 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h1>
-              <p className="mt-1.5 text-sm text-ink-subtle">Use the demo account your team set up. Never use real banking passwords.</p>
+              <p className="mt-1.5 text-sm text-ink-subtle">Welcome back. Never use your bank’s password here.</p>
               {faceId?.available && faceId.saved && (
                 <>
-                  <Button variant="outline" className="mt-6 w-full" disabled={!configured || busy} onClick={() => void signInWithFaceId()}><ScanFace className="size-4" aria-hidden="true" />Sign in with {biometryName(faceId)}</Button>
+                  <Button
+                    variant="outline"
+                    className="mt-6 w-full"
+                    disabled={!configured || busy}
+                    onClick={() => void signInWithFaceId()}
+                  >
+                    <ScanFace className="size-4" aria-hidden="true" />
+                    Sign in with {biometryName(faceId)}
+                  </Button>
                   <p className="mt-5 text-center text-xs text-ink-subtle">or use your password</p>
                 </>
               )}
               <form onSubmit={signIn} className={faceId?.saved ? "mt-3 space-y-4" : "mt-6 space-y-4"}>
-                <Field label="Email">{(props) => <Input {...props} name="email" type="email" autoComplete="email" required disabled={!configured || busy} />}</Field>
-                {notice && <p role="status" className="rounded-xl bg-sage-soft px-3 py-2.5 text-sm text-ink-muted">{notice}</p>}
-                <Field label="Password">{(props) => <Input {...props} ref={passwordInput} name="password" type="password" autoComplete="current-password" required disabled={!configured || busy} />}</Field>
-                {error && <p role="alert" className="rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger">{error}</p>}
+                <Field label="Email">
+                  {(props) => (
+                    <Input
+                      {...props}
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      disabled={!configured || busy}
+                    />
+                  )}
+                </Field>
+                {notice && (
+                  <p role="status" className="rounded-xl bg-sage-soft px-3 py-2.5 text-sm text-ink-muted">
+                    {notice}
+                  </p>
+                )}
+                <Field label="Password">
+                  {(props) => (
+                    <Input
+                      {...props}
+                      ref={passwordInput}
+                      name="password"
+                      type="password"
+                      autoComplete="current-password"
+                      required
+                      disabled={!configured || busy}
+                    />
+                  )}
+                </Field>
+                {error && (
+                  <p
+                    role="alert"
+                    className="rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm font-medium text-danger"
+                  >
+                    {error}
+                  </p>
+                )}
                 <Button type="submit" disabled={!configured || busy} className="w-full">
-                  {busy ? <><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Signing in…</> : "Sign in"}
+                  {busy ? (
+                    <>
+                      <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                      Signing in…
+                    </>
+                  ) : (
+                    "Sign in"
+                  )}
                 </Button>
               </form>
             </>
           )}
-          {!configured && <p className="mt-4 rounded-xl bg-gold-soft p-3 text-sm text-gold-strong">Sign-in isn’t set up yet. Add the Supabase URL and publishable key to <code>frontend/.env.local</code>, then restart the dev server.</p>}
+          {!configured && (
+            <p className="mt-4 rounded-xl bg-gold-soft p-3 text-sm text-gold-strong">
+              Sign-in isn’t set up yet. Add the Supabase URL and publishable key to <code>frontend/.env.local</code>,
+              then restart the dev server.
+            </p>
+          )}
         </div>
-        <p className="mt-5 flex items-start gap-2 text-xs text-ink-subtle"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />Penny uses only fictional accounts and amounts. No bank is ever connected.</p>
-        <Link href="/" className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-accent-strong hover:underline"><ArrowLeft className="size-4" aria-hidden="true" />Back to Penny</Link>
+        <p className="mt-5 flex items-start gap-2 text-xs text-ink-subtle">
+          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />
+          No bank is ever connected. You type in what you want Penny to know, and you can delete it any time.
+        </p>
+        <Link
+          href="/"
+          className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-accent-strong hover:underline"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Back to Penny
+        </Link>
       </div>
     </main>
   );
