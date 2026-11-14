@@ -4,6 +4,7 @@ database they stay in memory.
 """
 
 import asyncio
+import logging
 from collections import OrderedDict
 from collections.abc import Coroutine
 from threading import Lock
@@ -15,6 +16,19 @@ from app.agents.models import MissionRun
 from app.db.pool import connection, database_enabled
 
 MAX_RUNS = 30
+INTERRUPTED = (
+    "This mission stopped when Penny's server restarted. Ask again and the agents will redo it."
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _settled(run: MissionRun) -> MissionRun:
+    """A saved run still marked running that this server isn't running was cut off by a
+    restart: it reports that, instead of waiting forever."""
+    if run.status == "running":
+        run.status, run.error = "failed", INTERRUPTED
+    return run
 
 
 class RunStore:
@@ -25,8 +39,9 @@ class RunStore:
         self._tasks: set[asyncio.Task[None]] = set()
 
     def start(self, owner: str, run: MissionRun, work: Coroutine[Any, Any, None]) -> None:
-        """Keeps `run` and runs `work` in the background, saving the run when it ends."""
-        self._remember(owner, run)
+        """Keeps `run` and runs `work` in the background, saving the run as it starts (so it
+        survives a restart) and when it ends."""
+        self.save(owner, run)
 
         async def go() -> None:
             await work
@@ -45,9 +60,17 @@ class RunStore:
                 mine.popitem(last=False)
 
     def save(self, owner: str, run: MissionRun) -> None:
+        """Keeps the run in memory and in Postgres. A database failure is logged, not raised:
+        the mission carries on from memory."""
         self._remember(owner, run)
         if not database_enabled():
             return
+        try:
+            self._write(owner, run)
+        except Exception:
+            logger.exception("Couldn't save mission %s", run.id)
+
+    def _write(self, owner: str, run: MissionRun) -> None:
         with connection() as conn:
             conn.execute(
                 "insert into public.agent_runs (user_id, id, kind, status, run, created_at,"
@@ -78,7 +101,7 @@ class RunStore:
                 "select run from public.agent_runs where user_id = %s and id = %s",
                 (owner, run_id),
             ).fetchone()
-        return MissionRun.model_validate(row["run"]) if row else None
+        return _settled(MissionRun.model_validate(row["run"])) if row else None
 
     def list(self, owner: str) -> list[MissionRun]:
         """Most recent first: saved missions, with any still running in this server."""
@@ -94,7 +117,8 @@ class RunStore:
                 ).fetchall()
             for row in rows:
                 saved = MissionRun.model_validate(row["run"])
-                runs.setdefault(saved.id, saved)
+                if saved.id not in runs:
+                    runs[saved.id] = _settled(saved)
         return sorted(runs.values(), key=lambda run: run.started_at, reverse=True)[:MAX_RUNS]
 
     def delete_all(self, owner: str) -> None:

@@ -717,3 +717,23 @@ def test_api_follow_up_keeps_the_question_and_acts_on_the_choice(client: TestCli
     assert picked["title"] == "Save for it over 6 months" and picked["after"] == first["id"]
     run = _wait(client, picked["id"])
     assert run["summary"].startswith("Here's your 6-month plan for the Laptop")
+
+
+def test_saved_missions_survive_a_failing_database_and_a_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agents import runs
+
+    store = runs.RunStore()
+    monkeypatch.setattr(runs, "database_enabled", lambda: True)
+
+    def broken(owner: str, run: MissionRun) -> None:
+        raise RuntimeError("check constraint")
+
+    monkeypatch.setattr(store, "_write", broken)
+    run = MissionRun(id="run-x", kind="purchase", goal="g", title="t", started_at=datetime.now(UTC))
+    store.save("owner", run)  # logged, not raised: the mission carries on from memory
+    assert store.get("owner", "run-x") is run
+    # Saved as running by a server that has since restarted: reported, not left hanging.
+    cut_off = runs._settled(run.model_copy())
+    assert cut_off.status == "failed" and cut_off.error == runs.INTERRUPTED
