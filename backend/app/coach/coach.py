@@ -12,7 +12,7 @@ import time
 from datetime import date
 
 from app.coach.context import CoachContext, build_signals, build_snapshot, load_context
-from app.coach.guard import validate_user_question
+from app.coach.guard import picks_investments, validate_user_question
 from app.coach.llm import AiLimitReached, CoachModelSession, ModelUnavailable, history_items
 from app.coach.models import (
     ApprovalResponse,
@@ -202,6 +202,9 @@ class Coach:
             draft = await session.respond()
             if ctx.facts.unverified_figures(draft.reply):
                 return None
+        if picks_investments(draft.reply):
+            logger.info("Coach reply picked investments; using the built-in reply")
+            return None
         follow_ups = [
             item.strip()
             for item in draft.follow_ups

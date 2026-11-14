@@ -91,6 +91,11 @@ class RunStore:
                 (owner, owner, MAX_RUNS),
             )
 
+    def running(self, owner: str) -> int:
+        """How many of this person's missions this server is running now."""
+        with self._lock:
+            return sum(run.status == "running" for run in self._memory.get(owner, {}).values())
+
     def get(self, owner: str, run_id: str) -> MissionRun | None:
         with self._lock:
             found = self._memory.get(owner, {}).get(run_id)

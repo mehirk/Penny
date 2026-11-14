@@ -11,6 +11,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
+from app.coach.guard import Redacted
 from app.dashboard_models import BillFrequency, DashboardModel, DashboardResponse
 
 
@@ -281,11 +282,11 @@ class AgentUpload(DashboardModel):
 
 
 class AgentRequest(DashboardModel):
-    text: str = Field(default="", max_length=1000)
+    text: Annotated[str, Redacted] = Field(default="", max_length=1000)
     image: AgentUpload | None = None
     receipt: list[ReceiptItem] = Field(default_factory=list, max_length=30)
     # The last few chat turns, so "it was $45" or "split it with Sam too" make sense.
-    context: str = Field(default="", max_length=3000)
+    context: Annotated[str, Redacted] = Field(default="", max_length=3000)
 
     @model_validator(mode="after")
     def _something(self) -> "AgentRequest":

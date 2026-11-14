@@ -45,6 +45,7 @@ from app.agents.workspace import Outbox, Workspace
 from app.assist import agent as planner
 from app.assist.common import logger
 from app.coach.facts import parse_cad
+from app.coach.guard import picks_investments
 from app.coach.llm import ModelUnavailable, ask_json
 from app.config import Settings
 from app.domain.finance import format_cad
@@ -608,7 +609,7 @@ async def _brief(settings: Settings, budget: Budget, ws: Workspace, run: Mission
             **_metered(budget, "brief"),
         )
         answer = _whole_sentences(str(value.get("answer", "")), ANSWER_CHARS)
-        if not answer or ws.facts.unverified_figures(answer):
+        if not answer or ws.facts.unverified_figures(answer) or picks_investments(answer):
             return fallback
         numbers = [
             BriefNumber(label=str(n["label"])[:60], value=str(n["value"])[:40])
@@ -623,6 +624,7 @@ async def _brief(settings: Settings, budget: Budget, ws: Workspace, run: Mission
             )
             for o in value.get("options", [])
             if not ws.facts.unverified_figures(f"{o.get('title', '')} {o.get('detail', '')}")
+            and not picks_investments(f"{o.get('title', '')} {o.get('detail', '')}")
         ][:3]
         return Brief(answer=answer, numbers=numbers, options=options)
     except ModelUnavailable:

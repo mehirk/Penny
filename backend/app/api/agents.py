@@ -26,6 +26,7 @@ from app.agents.team import TEAM
 from app.agents.workspace import load_workspace
 from app.api.deps import AuthenticatedUser, user_store
 from app.auth import CurrentUser
+from app.coach.guard import validate_user_question
 from app.config import get_settings
 from app.store import stores
 
@@ -35,6 +36,8 @@ router = APIRouter(prefix="/api/v1", tags=["agents"])
 # The same mission asked again on the same numbers within this window is answered from the
 # earlier run: no tokens spent twice.
 REUSE_WINDOW = timedelta(minutes=30)
+# Missions one person can have running at once: each makes a dozen or so model calls.
+MAX_RUNNING = 3
 # Watch missions: at most one this often, so a burst of purchases doesn't start a crowd.
 WATCH_COOLDOWN = timedelta(minutes=10)
 
@@ -84,6 +87,12 @@ def _start(user: CurrentUser, kind: MissionKind, goal: str, after: str | None = 
             and now - older.started_at < REUSE_WINDOW
         ):
             return older
+    if run_store.running(owner) >= MAX_RUNNING:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Penny's agents are still on your last missions. Give them a moment.",
+            headers={"Retry-After": "15"},
+        )
     run = MissionRun(
         id=f"run-{secrets.token_urlsafe(9)}",
         kind=kind,
@@ -111,7 +120,7 @@ async def watch(user: CurrentUser, trigger: str) -> None:
     """Starts a Watch mission for something Penny noticed, unless one ran just now."""
     owner = stores.data_owner(user.id)
     now = datetime.now(UTC)
-    if any(
+    if run_store.running(owner) >= MAX_RUNNING or any(
         run.kind == "watch" and now - run.started_at < WATCH_COOLDOWN
         for run in run_store.list(owner)
     ):
@@ -122,7 +131,7 @@ async def watch(user: CurrentUser, trigger: str) -> None:
 @router.post("/agents/runs", response_model=MissionRun, status_code=status.HTTP_201_CREATED)
 async def start_mission(request: MissionStart, current_user: AuthenticatedUser) -> MissionRun:
     """Starts a mission in the background; poll GET /agents/runs/{id} to watch it."""
-    return _start(current_user, request.kind, request.goal, request.after)
+    return _start(current_user, request.kind, validate_user_question(request.goal), request.after)
 
 
 @router.post("/agents/autopilot", response_model=MissionRun | None)
@@ -215,7 +224,8 @@ def answer_question(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Mission not found")
     if run.question is None or run.question.id != request.question_id:
         raise HTTPException(status.HTTP_409_CONFLICT, "That question isn't waiting any more")
-    if not asking.answer(request.question_id, request.answer.strip()):
+    answer = validate_user_question(request.answer)
+    if not asking.answer(request.question_id, answer):
         raise HTTPException(status.HTTP_409_CONFLICT, "That question isn't waiting any more")
     return run
 
