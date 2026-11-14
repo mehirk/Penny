@@ -8,7 +8,6 @@ import {
   ChevronDown,
   CircleCheck,
   Landmark,
-  MessageCircle,
   Pencil,
   PiggyBank,
   Plus,
@@ -26,6 +25,8 @@ import { cad, EmptyState } from "./shared";
 import { goalEmoji } from "./emoji";
 import { GoalPlan } from "./smart-cards";
 import { FinancialHealthRow } from "./today-view";
+import { Mascot } from "./mascot";
+import { goalsCheer, PennyBanner } from "./penny-banner";
 
 type Props = {
   dashboard: Dashboard;
@@ -33,12 +34,11 @@ type Props = {
   onEdit: (goal: SavingsGoal) => void;
   onAddMoney: (goal: SavingsGoal) => void;
   onComplete: (goal: SavingsGoal) => void;
-  onAsk: (question: string) => void;
 };
 
 const MILESTONES = [25, 50, 75];
 
-export function GoalsView({ dashboard, onAdd, onEdit, onAddMoney, onComplete, onAsk }: Props) {
+export function GoalsView({ dashboard, onAdd, onEdit, onAddMoney, onComplete }: Props) {
   const goals = dashboard.savings_goals;
   const active = goals.filter((goal) => goal.status === "active");
   const saved = goals.reduce((total, goal) => total + goal.current_cents, 0);
@@ -49,6 +49,7 @@ export function GoalsView({ dashboard, onAdd, onEdit, onAddMoney, onComplete, on
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
+      <PennyBanner tone="candy" {...goalsCheer(dashboard)} />
       <FinancialHealthRow dashboard={dashboard} />
       <section className="grid gap-4 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6 md:grid-cols-[1fr_1.4fr_auto] md:items-center">
         <div>
@@ -68,7 +69,7 @@ export function GoalsView({ dashboard, onAdd, onEdit, onAddMoney, onComplete, on
             <Progress
               className="mt-2 h-2.5"
               value={share}
-              indicatorClassName={share >= 100 ? "bg-zone-green" : "bg-accent"}
+              indicatorClassName={share >= 100 ? "bg-zone-green" : "bg-joy"}
               aria-label={`${Math.round(share)}% of this month’s goal saving done`}
             />
             <p className="mt-2 text-xs text-ink-muted">
@@ -114,7 +115,6 @@ export function GoalsView({ dashboard, onAdd, onEdit, onAddMoney, onComplete, on
               onEdit={onEdit}
               onAddMoney={onAddMoney}
               onComplete={onComplete}
-              onAsk={onAsk}
             />
           ))}
         </ul>
@@ -134,7 +134,6 @@ function GoalCard({
   onEdit,
   onAddMoney,
   onComplete,
-  onAsk,
 }: { goal: SavingsGoal; accounts: Map<string, string> } & Omit<Props, "dashboard" | "onAdd">) {
   const percent = Math.floor(goal.progress_basis_points / 100);
   const done = goal.status === "completed";
@@ -181,7 +180,7 @@ function GoalCard({
           <Progress
             className="h-3"
             value={percent}
-            indicatorClassName="bg-accent"
+            indicatorClassName="bg-joy"
             aria-label={`${goal.name}: ${percent}% saved`}
           />
           {MILESTONES.map((mark) => (
@@ -192,6 +191,14 @@ function GoalCard({
               aria-hidden="true"
             />
           ))}
+          {/* Penny rides the bar: she moves along as the goal fills, and cheers when it's done. */}
+          <span
+            className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-500"
+            style={{ left: `clamp(14px, ${Math.min(100, percent)}%, calc(100% - 14px))` }}
+            aria-hidden="true"
+          >
+            <Mascot face mood={done ? "wow" : "happy"} className="size-7 drop-shadow-md" />
+          </span>
         </div>
         <div className="mt-2 flex justify-between text-sm">
           <span className="tabular font-semibold text-ink">{cad(goal.current_cents)}</span>
@@ -223,17 +230,6 @@ function GoalCard({
         )}
 
         {planning && !done && <GoalPlan goalId={goal.id} version={goal.current_cents} />}
-        {planning && !done && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="mt-1 -ml-2 self-start"
-            onClick={() => onAsk(`How can I reach my ${goal.name} goal sooner?`)}
-          >
-            <MessageCircle className="size-4" aria-hidden="true" />
-            Talk it through with Penny AI
-          </Button>
-        )}
 
         {goal.recent_contributions.length > 0 && (
           <div className={cn("mt-4", extra)}>

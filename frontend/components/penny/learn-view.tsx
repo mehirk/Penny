@@ -137,7 +137,7 @@ export function LearnView({ dashboard, onCompleteMission, onProgress, onNavigate
         </Card>
         <div className="mt-6">
           <Arcade version={arcadeVersion} outfit={outfit} onProgress={reload} />
-          <MoneyGuide outfit={outfit} onAsk={onAsk} />
+          <MoneyGuide outfit={outfit} />
         </div>
       </div>
     );
@@ -172,7 +172,7 @@ export function LearnView({ dashboard, onCompleteMission, onProgress, onNavigate
         onGame={(game) => setGameRequest({ game, nonce: Date.now() })}
       />
       <Arcade version={arcadeVersion} outfit={outfit} launch={gameRequest} onProgress={reload} />
-      <MoneyGuide outfit={outfit} request={guideRequest} onAsk={onAsk} />
+      <MoneyGuide outfit={outfit} request={guideRequest} />
       <BadgeShelf badges={state.badges} />
 
       <section aria-labelledby="paths-title" className="space-y-4">

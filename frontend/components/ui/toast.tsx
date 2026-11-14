@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { CircleAlert, CircleCheck, X } from "lucide-react";
+import { X } from "lucide-react";
 import { haptic } from "@/lib/native";
+import { Mascot } from "@/components/penny/mascot";
 import { cn } from "@/lib/utils";
 
 type ToastTone = "success" | "error";
@@ -42,11 +43,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               toast.tone === "error" ? "border-danger/30" : "border-line",
             )}
           >
-            {toast.tone === "error" ? (
-              <CircleAlert className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden="true" />
-            ) : (
-              <CircleCheck className="mt-0.5 size-5 shrink-0 text-accent" aria-hidden="true" />
-            )}
+            {/* Penny reacts: happy when it worked, sad when it didn't. */}
+            <Mascot face mood={toast.tone === "error" ? "sad" : "happy"} className="mt-0.5 size-8 shrink-0" />
             <div className="min-w-0 flex-1 py-0.5">
               <p className="text-sm font-semibold text-ink">{toast.title}</p>
               {toast.description && <p className="mt-0.5 text-sm text-ink-muted">{toast.description}</p>}

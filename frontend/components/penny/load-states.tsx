@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { CloudOff, LogIn, RefreshCw } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Mascot } from "./mascot";
 import type { describeError } from "./shared";
 
 /** The standard loading state inside a page: shapes where the numbers and cards will be. */
@@ -23,11 +24,16 @@ export function PageSkeleton() {
 export function DashboardSkeleton() {
   const card = "h-[4.5rem] rounded-[var(--radius-card)] border border-line bg-surface";
   return (
-    <div className="min-h-dvh lg:pl-64" aria-busy="true">
+    <div className="relative min-h-dvh lg:pl-64" aria-busy="true">
       <div className="fixed inset-y-0 left-0 hidden w-64 border-r border-line lg:block" />
+      {/* Penny waits with you (outside the pulsing shapes, so she stays solid). */}
+      <div className="pointer-events-none absolute inset-x-0 top-[calc(env(safe-area-inset-top)+4.5rem)] flex flex-col items-center gap-2 lg:left-64 lg:top-20">
+        <Mascot className="size-20 animate-bob" />
+        <p className="text-sm font-medium text-ink-subtle">Counting your coins…</p>
+      </div>
       <div className="mx-auto max-w-6xl animate-pulse px-4 pb-10 pt-[calc(env(safe-area-inset-top)+1.5rem)] sm:px-6 lg:px-10 lg:pt-8">
         <div className="h-5 w-32 rounded-full bg-sage" />
-        <div className="mx-auto mt-12 h-16 w-60 rounded-2xl bg-sage" />
+        <div className="mx-auto mt-40 h-16 w-60 rounded-2xl bg-sage" />
         <div className="mx-auto mt-4 h-4 w-44 rounded-full bg-sage" />
         <div className="mx-auto mt-6 h-1.5 w-60 rounded-full bg-sage" />
         <div className="mt-12 grid gap-6 lg:grid-cols-2 lg:gap-8">
@@ -51,16 +57,19 @@ export function LoadError({ error, onRetry }: { error: ReturnType<typeof describ
   return (
     <main className="grid min-h-dvh place-items-center p-4">
       <div className="w-full max-w-md animate-enter rounded-[1.5rem] border border-line bg-surface p-6 text-center shadow-[var(--shadow-raised)] sm:p-8">
-        <span
-          className={
-            error.needsSignIn
-              ? "mx-auto grid size-12 place-items-center rounded-2xl bg-accent-soft text-accent-strong"
-              : "mx-auto grid size-12 place-items-center rounded-2xl bg-danger-soft text-danger"
-          }
-          aria-hidden="true"
-        >
-          <Icon className="size-6" />
-        </span>
+        <div className="relative mx-auto w-fit">
+          <Mascot className="size-24 animate-shake" mood={error.needsSignIn ? "wow" : "sad"} />
+          <span
+            className={
+              error.needsSignIn
+                ? "absolute -bottom-1 -right-2 grid size-9 place-items-center rounded-xl bg-accent-soft text-accent-strong"
+                : "absolute -bottom-1 -right-2 grid size-9 place-items-center rounded-xl bg-danger-soft text-danger"
+            }
+            aria-hidden="true"
+          >
+            <Icon className="size-4" />
+          </span>
+        </div>
         <h1 className="mt-5 text-xl font-semibold tracking-tight text-ink">{error.title}</h1>
         <p className="mt-2 text-sm text-ink-muted" role="alert">
           {error.detail}

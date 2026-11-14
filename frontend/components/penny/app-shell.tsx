@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Check, LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Sun } from "lucide-react";
@@ -21,6 +21,7 @@ import {
   type ThemeSetting,
   usePreferences,
 } from "./preferences";
+import { Mascot } from "./mascot";
 import { type PeriodRange, PeriodPicker } from "./period-picker";
 import { cad, MENU, NAVIGATION, type View } from "./shared";
 
@@ -183,7 +184,7 @@ export function Sidebar({
       )}
     >
       <div className={cn("flex items-center gap-3 px-2", collapsed && "justify-center px-0")}>
-        <BrandMark />
+        <Mascot face className="size-10 shrink-0 drop-shadow-sm" />
         {!collapsed && (
           <div>
             <p className="text-lg font-semibold tracking-tight text-ink">Penny</p>
@@ -256,11 +257,12 @@ export function Sidebar({
 export function MobileNavigation({
   active,
   onNavigate,
-  onAdd,
+  action,
 }: {
   active: View;
   onNavigate: (view: View) => void;
-  onAdd: () => void;
+  /** Beside the tabs: Penny's capture orb (snap or say it; adding by hand is inside it). */
+  action: ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const primary = MENU.filter((item) => item.primary);
@@ -314,15 +316,8 @@ export function MobileNavigation({
             </li>
           ))}
         </ul>
-        <button
-          type="button"
-          onClick={onAdd}
-          aria-label="Add transaction"
-          className="pointer-events-auto grid size-[44px] shrink-0 place-items-center rounded-full bg-primary text-on-primary shadow-[var(--shadow-raised)] transition-transform active:scale-95"
-        >
-          {/* Fixed at 44pt (the minimum tap size) so larger text never pushes the tab bar off screen. */}
-          <Plus className="size-5" aria-hidden="true" />
-        </button>
+        {/* Fixed size (above the 44pt minimum) so larger text never pushes the tab bar off screen. */}
+        <div className="pointer-events-auto">{action}</div>
       </div>
       <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
         <DialogContent>
@@ -706,7 +701,7 @@ export function PageHeader({
             description, and period picker) from the sm breakpoint. */}
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3">
             <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
-              <BrandMark className="size-9 lg:hidden" />
+              <Mascot face className="size-9 shrink-0 drop-shadow-sm lg:hidden" />
               <div className="min-w-0">
                 <h1
                   id="page-title"

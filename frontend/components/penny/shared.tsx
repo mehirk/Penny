@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import { Mascot } from "./mascot";
 import {
   Bot,
   ChartColumnBig,
@@ -214,8 +215,12 @@ export function EmptyState({
         className,
       )}
     >
-      <div className="grid size-11 place-items-center rounded-xl bg-surface text-accent-strong shadow-[var(--shadow-card)]">
-        <Icon className="size-5" aria-hidden="true" />
+      {/* Penny, holding up what's missing. */}
+      <div className="relative">
+        <Mascot className="size-20 animate-bob" />
+        <span className="absolute -bottom-1 -right-2 grid size-9 place-items-center rounded-xl bg-surface text-accent-strong shadow-[var(--shadow-card)]">
+          <Icon className="size-4" aria-hidden="true" />
+        </span>
       </div>
       <p className="mt-4 font-semibold text-ink">{title}</p>
       <p className="mt-1 max-w-sm text-sm text-ink-subtle">{description}</p>

@@ -1,30 +1,18 @@
 "use client";
 
 import { useId, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowLeftRight,
-  BarChart3,
-  X,
-  ChevronRight,
-  CreditCard,
-  Home,
-  PiggyBank,
-  ShoppingCart,
-  Sparkles,
-  TrendingUp,
-  type LucideIcon,
-} from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, X, ChevronRight, CreditCard } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import type { AccountType, Dashboard, SpendingRunway, Transaction } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { categoryIcon } from "./category-icons";
+import { categoryIcon, categoryTint, tintStyle } from "./category-icons";
 import { AccountDetail } from "./account-detail";
 import { SafeDetail } from "./safe-detail";
 import { SpentDetail } from "./spent-detail";
 import { ACCOUNT_TYPE_LABELS, isOwnAccount } from "./labels";
+import { Mascot, type Mood } from "./mascot";
 import { PaydayPrompt } from "./pay-section";
 import type { SaveChange } from "./settings-view";
 import type { SharedDraft } from "./split-with-friends";
@@ -43,43 +31,15 @@ type Props = {
   splits: { save: SaveChange; onAddExpense: (share: SharedDraft) => void };
   dashboard: Dashboard;
   onNavigate: (view: View, anchor?: string, motion?: "push" | "pop") => void;
-  onAsk: (question: string) => void;
   /** Phones: tapping a recent transaction opens it for editing. */
   onEditTransaction?: (item: Transaction) => void;
   /** Reopens first-run setup (shown while the account has no plan yet). */
   onSetUp?: () => void;
+  /** Opens Penny's agent (snap or say it). */
+  onCapture?: () => void;
 };
 
-/** Questions built from the user's own numbers, most pressing first; generic ones fill the rest. */
-function personalPrompts(dashboard: Dashboard): { icon: LucideIcon; text: string }[] {
-  const prompts: { icon: LucideIcon; text: string }[] = [];
-  const over = [...dashboard.budgets]
-    .filter((b) => !b.carried_over && b.remaining_cents < 0)
-    .sort((a, b) => a.remaining_cents - b.remaining_cents)[0];
-  if (over) prompts.push({ icon: BarChart3, text: `How do I get ${over.category_name} back under budget?` });
-  const due = dashboard.recurring.upcoming.find((item) => item.days_until_due <= 3);
-  if (due) prompts.push({ icon: Home, text: `Can I comfortably cover ${due.name} (${cad(due.amount_cents)})?` });
-  const behind = dashboard.savings_goals.find(
-    (g) => g.status === "active" && g.monthly_needed_cents && g.contributed_this_month_cents < g.monthly_needed_cents,
-  );
-  if (behind) prompts.push({ icon: PiggyBank, text: `How can I catch up on my ${behind.name}?` });
-  if (dashboard.credit && dashboard.credit.utilization_basis_points > 3000)
-    prompts.push({ icon: CreditCard, text: "How do I bring my card under 30%?" });
-  for (const fallback of AI_PROMPTS) {
-    if (prompts.length >= 4) break;
-    if (!prompts.some((item) => item.icon === fallback.icon)) prompts.push(fallback);
-  }
-  return prompts.slice(0, 4);
-}
-
-const AI_PROMPTS = [
-  { icon: ShoppingCart, text: "Can I afford this purchase?" },
-  { icon: BarChart3, text: "Where am I overspending?" },
-  { icon: CreditCard, text: "How can I improve my credit?" },
-  { icon: TrendingUp, text: "Should I invest or save?" },
-];
-
-export function TodayView({ dashboard, splits, onNavigate, onAsk, onEditTransaction, onSetUp }: Props) {
+export function TodayView({ dashboard, splits, onNavigate, onEditTransaction, onSetUp, onCapture }: Props) {
   // An account ("#today/<account id>") or the month's spending ("#today/spent") opens as its own page.
   const [pageId, openPage, back] = useSubpage("today");
   const account = dashboard.accounts_overview.accounts.find((item) => item.id === pageId);
@@ -87,16 +47,15 @@ export function TodayView({ dashboard, splits, onNavigate, onAsk, onEditTransact
   if (pageId === "splits")
     return <SplitsView dashboard={dashboard} save={splits.save} onAddExpense={splits.onAddExpense} onBack={back} />;
   if (pageId === "spent") return <SpentDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} />;
-  if (pageId === "safe")
-    return <SafeDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} onAsk={onAsk} />;
+  if (pageId === "safe") return <SafeDetail dashboard={dashboard} onBack={back} onNavigate={onNavigate} />;
   return (
     <HomeOverview
       dashboard={dashboard}
       save={splits.save}
       onNavigate={onNavigate}
-      onAsk={onAsk}
       onEditTransaction={onEditTransaction}
       onSetUp={onSetUp}
+      onCapture={onCapture}
       onOpenPage={openPage}
     />
   );
@@ -106,7 +65,7 @@ export function TodayView({ dashboard, splits, onNavigate, onAsk, onEditTransact
 
 // Colour only where it carries meaning: a small status dot, and the bar once money is tight.
 const RUNWAY_STYLE: Record<SpendingRunway["status"], { dot: string; bar: string }> = {
-  on_track: { dot: "bg-money-in", bar: "bg-ink-subtle" },
+  on_track: { dot: "bg-money-in", bar: "bg-joy" },
   tight: { dot: "bg-gold", bar: "bg-gold" },
   empty: { dot: "bg-danger", bar: "bg-danger" },
   over: { dot: "bg-danger", bar: "bg-danger" },
@@ -134,9 +93,9 @@ function HomeOverview({
   dashboard,
   save,
   onNavigate,
-  onAsk,
   onEditTransaction,
   onSetUp,
+  onCapture,
   onOpenPage,
 }: Omit<Props, "splits"> & { save: SaveChange; onOpenPage: (id: string) => void }) {
   const { home, totals, period, accounts_overview: overview, splits } = dashboard;
@@ -172,6 +131,7 @@ function HomeOverview({
         onOpen={() => onOpenPage("safe")}
         onSetBudgets={() => onNavigate("budgets")}
       />
+      {onCapture && <PennySays dashboard={dashboard} onCapture={onCapture} />}
       <PaydayPrompt dashboard={dashboard} save={save} />
       {dashboard.cash_warnings.length > 0 && <CashHeadsUp dashboard={dashboard} onOpenAccount={onOpenPage} />}
       <div className="grid gap-6 lg:grid-cols-2 lg:gap-8 [&>*]:min-w-0">
@@ -239,9 +199,6 @@ function HomeOverview({
               />
             </ul>
           </PhoneSection>
-          <div className="hidden lg:block">
-            <AskPenny dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} />
-          </div>
         </div>
 
         <div className="space-y-6">
@@ -251,9 +208,6 @@ function HomeOverview({
             onOpen={() => onNavigate("spending", "transactions")}
             onEdit={onEditTransaction}
           />
-          <div className="lg:hidden">
-            <AskPenny dashboard={dashboard} onNavigate={onNavigate} onAsk={onAsk} />
-          </div>
         </div>
       </div>
     </div>
@@ -472,37 +426,37 @@ function CashHeadsUp({ dashboard, onOpenAccount }: Pick<Props, "dashboard"> & { 
   );
 }
 
-function AskPenny({ dashboard, onNavigate, onAsk }: Pick<Props, "dashboard" | "onNavigate" | "onAsk">) {
+/**
+ * Penny on Home: her mood follows the month (happy on track, surprised when it's tight, sad when
+ * it's over), with one line from the dashboard's own figures. Tapping her opens snap or say it.
+ */
+function PennySays({ dashboard, onCapture }: { dashboard: Dashboard; onCapture: () => void }) {
+  const runway = dashboard.spending_runway;
+  const goal = dashboard.savings_goals.find((item) => item.status === "active");
+  const [mood, line]: [Mood, string] =
+    runway?.status === "over" || runway?.status === "empty"
+      ? ["sad", "This month’s budget is used up. Tell me what you buy and I’ll keep score with you."]
+      : runway?.status === "tight"
+        ? ["wow", `Money’s tight: about ${cad(runway.per_day_cents)} a day keeps you on track. I’ve got your back.`]
+        : goal
+          ? ["happy", `You’re on track! Snap a receipt or tell me what you did. ${goal.name} is waiting 🐷`]
+          : ["happy", "You’re on track! Snap a receipt or tell me what you did, and I’ll do the rest."];
   return (
-    <PhoneSection title="Ask Penny">
-      <button
-        type="button"
-        onClick={() => onNavigate("ai")}
-        className={cn(
-          GROUP,
-          "flex min-h-12 w-full items-center gap-3 px-4 text-left text-sm text-ink-subtle hover:border-accent",
-        )}
-      >
-        <Sparkles className="size-4 shrink-0 text-info" aria-hidden="true" />
-        Ask anything about your money
-      </button>
-      <ul className="mt-2 space-y-2" aria-label="Suggested questions">
-        {personalPrompts(dashboard)
-          .slice(0, 2)
-          .map(({ icon: Icon, text }) => (
-            <li key={text}>
-              <button
-                type="button"
-                onClick={() => onAsk(text)}
-                className="flex min-h-11 w-full items-center gap-2.5 rounded-xl bg-sage-soft px-3 py-2 text-left text-sm text-ink-muted hover:text-ink"
-              >
-                <Icon className="size-4 shrink-0" aria-hidden="true" />
-                {text}
-              </button>
-            </li>
-          ))}
-      </ul>
-    </PhoneSection>
+    <button
+      type="button"
+      onClick={onCapture}
+      className="group flex w-full items-center gap-3 rounded-[var(--radius-card)] border border-line bg-surface p-3 pr-4 text-left shadow-[var(--shadow-card)] transition-colors hover:border-accent"
+    >
+      <Mascot
+        mood={mood}
+        className="size-16 shrink-0 transition-transform group-hover:-rotate-6 group-active:scale-95"
+      />
+      <span className="relative min-w-0 flex-1 rounded-2xl rounded-tl-sm bg-sage-soft px-3.5 py-2.5">
+        <span className="block text-xs font-semibold uppercase tracking-wider text-accent-strong">Penny says</span>
+        <span className="block text-sm text-ink">{line}</span>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+    </button>
   );
 }
 
@@ -731,10 +685,8 @@ function PhoneRecent({
                         className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left hover:bg-sage-soft"
                       >
                         <span
-                          className={cn(
-                            "grid size-9 shrink-0 place-items-center rounded-full",
-                            income ? "bg-money-in-soft text-money-in" : "bg-sage text-ink-muted",
-                          )}
+                          style={tintStyle(categoryTint(category, item.kind))}
+                          className={cn("grid size-9 shrink-0 place-items-center rounded-full")}
                           aria-hidden="true"
                         >
                           <Icon className="size-4" />

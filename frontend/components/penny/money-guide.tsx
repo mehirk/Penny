@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BookOpenCheck, Check, ExternalLink, Search, Sparkles, TriangleAlert, Zap } from "lucide-react";
+import { BookOpenCheck, Check, ExternalLink, Search, TriangleAlert, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -58,12 +58,10 @@ function searchable(guide: Guide): string {
 export function MoneyGuide({
   outfit,
   request,
-  onAsk,
 }: {
   outfit: Outfit;
   /** From Penny's plan: open the first unread guide in this area (`nonce` changes per request). */
   request?: { area: string; nonce: number } | null;
-  onAsk: (question: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<GuideCategory | "all">("all");
@@ -290,10 +288,6 @@ export function MoneyGuide({
               outfit={outfit}
               read={read.includes(open.id)}
               onRead={() => markRead(open)}
-              onAsk={(question) => {
-                setOpen(null);
-                onAsk(question);
-              }}
               onOpen={(id) => {
                 const next = GUIDES.find((guide) => guide.id === id);
                 if (next) setOpen(next);
@@ -311,14 +305,12 @@ function Reader({
   outfit,
   read,
   onRead,
-  onAsk,
   onOpen,
 }: {
   guide: Guide;
   outfit: Outfit;
   read: boolean;
   onRead: () => void;
-  onAsk: (question: string) => void;
   onOpen: (id: string) => void;
 }) {
   const category = CATEGORIES.find((item) => item.id === guide.category);
@@ -437,14 +429,7 @@ function Reader({
           </div>
         )}
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {guide.ask && (
-            <Button variant="outline" className="min-h-12 flex-1 text-base font-bold" onClick={() => onAsk(guide.ask!)}>
-              <Sparkles className="size-4" aria-hidden="true" />
-              Ask Penny AI about this
-            </Button>
-          )}
-        </div>
+        <div className="flex flex-col gap-2 sm:flex-row"></div>
       </div>
     </article>
   );

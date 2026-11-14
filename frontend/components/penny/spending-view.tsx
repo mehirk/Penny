@@ -17,6 +17,7 @@ import type { SaveChange } from "./settings-view";
 import { TransactionDetail } from "./transaction-detail";
 import { RecentTransactions, TransactionsPanel } from "./transactions-panel";
 import { useHistory } from "./use-history";
+import { PennyBanner, spendingCheer } from "./penny-banner";
 
 export type SpendingTab = "transactions" | "recurring";
 
@@ -26,7 +27,6 @@ type Props = {
   tab: SpendingTab;
   onTabChange: (tab: SpendingTab) => void;
   recurring: RecurringActions;
-  onAsk: (question: string) => void;
   onSelectMonth: (month: string) => void;
   onChangePeriod?: (range: { start: string; end: string }) => void;
   onAddTransaction: () => void;
@@ -40,7 +40,7 @@ function budgetStatus(budget: Budget): { label: string; tone: "danger" | "gold" 
     return { label: `${cad(-budget.remaining_cents)} over`, tone: "danger", bar: "bg-danger" };
   if (budget.usage_basis_points >= 9_000)
     return { label: `${cad(budget.remaining_cents)} left`, tone: "gold", bar: "bg-gold" };
-  return { label: `${cad(budget.remaining_cents)} left`, tone: "accent", bar: "bg-accent" };
+  return { label: `${cad(budget.remaining_cents)} left`, tone: "accent", bar: "bg-joy" };
 }
 
 const TABS: { id: SpendingTab; label: string; icon: typeof ReceiptText }[] = [
@@ -79,6 +79,7 @@ export function SpendingView(props: Props) {
   }
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      <PennyBanner tone="sunset" {...spendingCheer(dashboard)} />
       <div role="tablist" aria-label="Spending sections" className="inline-flex rounded-xl bg-sage-soft p-1">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
@@ -119,7 +120,7 @@ export function SpendingView(props: Props) {
             onSeeAll={() => openPage("activity")}
           />
           <div className="max-sm:order-1">
-            <SpendingTake dashboard={dashboard} version={props.historyVersion} onAsk={props.onAsk} />
+            <SpendingTake dashboard={dashboard} version={props.historyVersion} />
           </div>
           <div className="max-sm:order-2">
             <Trends dashboard={dashboard} historyVersion={props.historyVersion} onSelectMonth={props.onSelectMonth} />
@@ -127,7 +128,7 @@ export function SpendingView(props: Props) {
         </div>
       ) : (
         <div id="spending-panel-recurring" role="tabpanel" aria-labelledby="spending-tab-recurring">
-          <RecurringView dashboard={dashboard} onAsk={props.onAsk} {...props.recurring} />
+          <RecurringView dashboard={dashboard} {...props.recurring} />
         </div>
       )}
     </div>

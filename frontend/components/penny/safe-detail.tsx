@@ -19,12 +19,10 @@ export function SafeDetail({
   dashboard,
   onBack,
   onNavigate,
-  onAsk,
 }: {
   dashboard: Dashboard;
   onBack: () => void;
   onNavigate: (view: View, anchor?: string) => void;
-  onAsk: (question: string) => void;
 }) {
   const safe = dashboard.safe_to_spend;
   const runway = dashboard.spending_runway;
@@ -181,7 +179,7 @@ export function SafeDetail({
       )}
 
       <div className="mt-6">
-        <SafeToSpendRead version={version} onAsk={onAsk} />
+        <SafeToSpendRead version={version} />
       </div>
 
       <ul className={cn(CARD, "mt-6 divide-y divide-line")}>

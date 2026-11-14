@@ -29,6 +29,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Snap a receipt and Penny adds it for you.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Say what you did and Penny adds it for you. Your voice note isn't kept.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pick a photo of a receipt for Penny to read.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Penny uses Face ID to sign you in without your password.</string>
 	<key>NSLocalNetworkUsageDescription</key>

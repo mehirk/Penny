@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { CategoryBars, categoryColours, type MonthSeries, MonthlyChart } from "./charts";
 import { MonthRangePanel } from "./period-picker";
 import { cad, describeError } from "./shared";
+import { chartsCheer, PennyBanner } from "./penny-banner";
 
 const MAX_MONTHS = 24;
 type Preset = "3m" | "6m" | "12m" | "ytd" | "24m" | "custom";
@@ -376,11 +377,12 @@ export function ChartsView({ dashboard }: { dashboard: Dashboard }) {
             {formatMonth(data.start)} to {formatMonth(data.end)}
             {filtering ? " · filtered" : ""}
           </p>
+          <PennyBanner tone="ocean" {...chartsCheer(data.net_cents, formatMonth(data.start), formatMonth(data.end))} />
           <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Money in" value={data.income_cents} />
-            <Stat label="Money out" value={data.spending_cents} />
-            <Stat label="Kept (in − out)" value={data.net_cents} signed />
-            <Stat label="Average spent a month" value={data.average_spending_cents} />
+            <Stat label="Money in" emoji="💰" tint="#19b394" value={data.income_cents} />
+            <Stat label="Money out" emoji="💸" tint="#f0645a" value={data.spending_cents} />
+            <Stat label="Kept (in − out)" emoji="🐷" tint="#b67df2" value={data.net_cents} signed />
+            <Stat label="Average spent a month" emoji="📅" tint="#4a8fe7" value={data.average_spending_cents} />
           </ul>
 
           {shown.size === 0 && (
@@ -499,10 +501,29 @@ export function ChartsView({ dashboard }: { dashboard: Dashboard }) {
 const SHORT_MONTH = new Intl.DateTimeFormat("en-CA", { month: "short", year: "numeric", timeZone: "UTC" });
 const shortMonth = (month: string) => SHORT_MONTH.format(new Date(`${month}T00:00:00Z`)).replace(".", "");
 
-function Stat({ label, value, signed = false }: { label: string; value: number; signed?: boolean }) {
+function Stat({
+  label,
+  value,
+  emoji,
+  tint,
+  signed = false,
+}: {
+  label: string;
+  value: number;
+  emoji: string;
+  tint: string;
+  signed?: boolean;
+}) {
   return (
-    <li className="rounded-[var(--radius-card)] border border-line bg-surface p-4 shadow-[var(--shadow-card)]">
-      <p className="text-xs font-semibold text-ink-subtle">{label}</p>
+    <li
+      className="relative overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface p-4 shadow-[var(--shadow-card)]"
+      style={{ backgroundImage: `linear-gradient(135deg, ${tint}22, transparent 60%)` }}
+    >
+      <span className="absolute inset-x-0 top-0 h-1" style={{ background: tint }} aria-hidden="true" />
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-subtle">
+        <span aria-hidden="true">{emoji}</span>
+        {label}
+      </p>
       <p
         className={cn(
           "tabular mt-1 text-xl font-semibold tracking-tight",

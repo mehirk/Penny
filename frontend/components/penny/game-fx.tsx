@@ -172,6 +172,15 @@ export function soundOn(): boolean {
   }
 }
 
+/** Turns game sounds on or off (Learn's switch, or asking Penny's agent). */
+export function setSoundOn(on: boolean): void {
+  try {
+    window.localStorage.setItem(SOUND_KEY, on ? "on" : "off");
+  } catch {
+    /* storage blocked: nothing to remember */
+  }
+}
+
 export function play(sound: Sound): void {
   if (typeof window === "undefined" || !soundOn()) return;
   try {

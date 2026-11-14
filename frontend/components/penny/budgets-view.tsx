@@ -7,6 +7,7 @@ import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { cad, type View } from "./shared";
 import { type BudgetActions, Budgets } from "./spending-view";
+import { budgetCheer, PennyBanner } from "./penny-banner";
 
 const CARD = "rounded-[var(--radius-card)] border border-line bg-surface shadow-[var(--shadow-card)]";
 
@@ -32,6 +33,7 @@ export function BudgetsView({
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      <PennyBanner tone="mint" {...budgetCheer(dashboard, budget)} />
       {budget > 0 && (
         <section aria-labelledby="budget-summary" className={cn(CARD, "p-5 sm:p-6")}>
           <h2 id="budget-summary" className="sr-only">
@@ -59,7 +61,7 @@ export function BudgetsView({
           <Progress
             className="mt-4 h-2"
             value={used}
-            indicatorClassName={over ? "bg-danger" : used >= 90 ? "bg-gold" : "bg-accent"}
+            indicatorClassName={over ? "bg-danger" : used >= 90 ? "bg-gold" : "bg-joy"}
             aria-label={`${Math.round(used)}% of the budget used ${period.phrase}`}
           />
           {plan && plan.fixed_cents > 0 && <BudgetMakeup plan={plan} />}

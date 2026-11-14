@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Bot } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AccountsView } from "@/components/penny/accounts-view";
+import { AgentCapture, type CaptureHandle, CaptureOrb } from "@/components/penny/agent-capture";
 import { DisplaySettingsDialog, MobileNavigation, PageHeader, Sidebar } from "@/components/penny/app-shell";
 import { BillShortDialog } from "@/components/penny/bill-short-dialog";
 import { BudgetsView } from "@/components/penny/budgets-view";
@@ -14,7 +14,13 @@ import { GoalsView } from "@/components/penny/goals-view";
 import { LearnView } from "@/components/penny/learn-view";
 import { DashboardSkeleton, LoadError, PageSkeleton } from "@/components/penny/load-states";
 import { Onboarding } from "@/components/penny/onboarding";
-import { usePreferences } from "@/components/penny/preferences";
+import { setSoundOn } from "@/components/penny/game-fx";
+import {
+  type PaletteSetting,
+  type SurfaceSetting,
+  type ThemeSetting,
+  usePreferences,
+} from "@/components/penny/preferences";
 import { PullToRefresh } from "@/components/penny/pull-to-refresh";
 import type { BillInput } from "@/components/penny/recurring-view";
 import { SettingsView } from "@/components/penny/settings-view";
@@ -28,6 +34,7 @@ import { useDashboard } from "@/components/penny/use-dashboard";
 import { useKeyboardShortcuts } from "@/components/penny/use-keyboard-shortcuts";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import {
+  type AppStep,
   type Bill,
   type Budget,
   type BudgetSuggestion,
@@ -55,8 +62,10 @@ const isView = (value: string): value is View => NAVIGATION.some((item) => item.
 
 function PennyApp() {
   const toast = useToast();
-  const coachChat = useCoachChat();
-  const { resolvedTheme, setTheme } = usePreferences();
+  // Steps Penny's agent runs on this device from the chat (set once runAppStep exists below).
+  const appRunner = useRef<((step: AppStep) => void) | null>(null);
+  const coachChat = useCoachChat(appRunner);
+  const { resolvedTheme, setTheme, setPalette, setSurface, setHideAmounts } = usePreferences();
   const {
     dashboard,
     loading,
@@ -93,6 +102,8 @@ function PennyApp() {
   const [addMoneyTarget, setAddMoneyTarget] = useState<SavingsGoal | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [displayOpen, setDisplayOpen] = useState(false);
+  // Snap or say it: Penny's agent, opened from the orb, the chat bar, or V / S on a keyboard.
+  const capture = useRef<CaptureHandle | null>(null);
 
   // Signed in and the dashboard is showing: with Face ID on, the iPhone app now locks when it leaves the screen.
   const loaded = dashboard !== null;
@@ -160,10 +171,29 @@ function PennyApp() {
     [goToMonth, navigate, view],
   );
 
+  const askPenny = (question: string) => {
+    navigate("ai");
+    void coachChat.send(question, { direct: true });
+  };
+  /** Something Penny's agent was asked to do on this device (nothing is saved on the server). */
+  const runAppStep = (step: AppStep) => {
+    if (step.kind === "navigate" && NAVIGATION.some((item) => item.id === step.value)) navigate(step.value as View);
+    else if (step.kind === "theme") setTheme(step.value as ThemeSetting);
+    else if (step.kind === "palette") setPalette(step.value as PaletteSetting);
+    else if (step.kind === "surface") setSurface(step.value as SurfaceSetting);
+    else if (step.kind === "hide_amounts") setHideAmounts(step.value === "on");
+    else if (step.kind === "sound") setSoundOn(step.value === "on");
+    else if (step.kind === "ask") askPenny(step.value);
+  };
+  useEffect(() => {
+    appRunner.current = runAppStep;
+  });
   useKeyboardShortcuts(
     dashboard
       ? {
           n: () => setTransactionTarget("new"),
+          v: () => capture.current?.start("voice"),
+          s: () => capture.current?.start("camera"),
           "[": () => goToMonth(addMonths(dashboard.active_month, -1)),
           "]": () => goToMonth(addMonths(dashboard.active_month, 1)),
           d: () => setTheme(resolvedTheme === "dark" ? "light" : "dark"),
@@ -361,10 +391,6 @@ function PennyApp() {
   };
 
   /** Opens Penny AI and asks a question on the user's behalf (from a button elsewhere). */
-  const askPenny = (question: string) => {
-    navigate("ai");
-    void coachChat.send(question);
-  };
   /** Leaves setup; Home keeps a Set up card while there's still no pay, bill, or budget. */
   const closeSetup = (data: Dashboard) => {
     try {
@@ -447,9 +473,9 @@ function PennyApp() {
                   dashboard={dashboard}
                   splits={{ save: mutate, onAddExpense: (share) => setTransactionTarget({ share }) }}
                   onNavigate={navigate}
-                  onAsk={askPenny}
                   onEditTransaction={setTransactionTarget}
                   onSetUp={() => setSetupOpen(true)}
+                  onCapture={() => capture.current?.start("menu")}
                 />
               )}
               {view === "spending" && (
@@ -471,7 +497,6 @@ function PennyApp() {
                         `${card.account_name} recorded as paid`,
                       ),
                   }}
-                  onAsk={askPenny}
                   onSelectMonth={goToMonth}
                   onChangePeriod={goToPeriod}
                   onAddTransaction={() => setTransactionTarget("new")}
@@ -480,11 +505,10 @@ function PennyApp() {
                   save={mutate}
                 />
               )}
-              {view === "accounts" && <AccountsView dashboard={dashboard} onNavigate={navigate} onAsk={askPenny} />}
+              {view === "accounts" && <AccountsView dashboard={dashboard} onNavigate={navigate} />}
               {view === "goals" && (
                 <GoalsView
                   dashboard={dashboard}
-                  onAsk={askPenny}
                   onAdd={() => setGoalTarget("new")}
                   onEdit={setGoalTarget}
                   onAddMoney={setAddMoneyTarget}
@@ -525,6 +549,8 @@ function PennyApp() {
                   onApproved={(message) => toast({ title: "Change applied", description: message })}
                   onApplyBudgets={applyBudgetSuggestions}
                   save={mutate}
+                  onCapture={(how, onText) => capture.current?.start(how, onText)}
+                  onApp={runAppStep}
                 />
               )}
               {view === "settings" && (
@@ -540,19 +566,21 @@ function PennyApp() {
             </div>
           </main>
         </div>
-        <MobileNavigation active={view} onNavigate={navigate} onAdd={() => setTransactionTarget("new")} />
+        <MobileNavigation active={view} onNavigate={navigate} action={<CaptureOrb handle={capture} />} />
         <PullToRefresh onRefresh={refresh} />
-        {/* Desktop only: on phones Penny AI is in the tab bar, and a floating button covered content. */}
+        {/* Desktop only: on phones the orb is in the tab bar, and a floating button covered content. */}
         {view !== "ai" && (
-          <button
-            type="button"
-            onClick={() => navigate("ai")}
-            className="fixed bottom-6 right-6 z-20 hidden min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-on-primary shadow-[var(--shadow-raised)] transition-transform hover:-translate-y-0.5 motion-reduce:transform-none lg:inline-flex"
-          >
-            <Bot className="size-4" />
-            Ask Penny
-          </button>
+          <div className="fixed bottom-6 right-6 z-20 hidden items-center gap-3 lg:flex">
+            <CaptureOrb handle={capture} size="lg" />
+          </div>
         )}
+        <AgentCapture
+          handle={capture}
+          dashboard={dashboard}
+          applyChange={applyChange}
+          onManual={() => setTransactionTarget("new")}
+          onApp={runAppStep}
+        />
 
         <EditDialogs
           dashboard={dashboard}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LoaderCircle, MessageCircle, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
+import { LoaderCircle, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -74,16 +74,8 @@ function useAssist<T>(key: string, fetcher: () => Promise<T>): Load<T> & { retry
 }
 
 /** Three short, grounded observations about the period on screen. */
-export function SpendingTake({
-  dashboard,
-  version,
-  onAsk,
-}: {
-  dashboard: Dashboard;
-  version: number;
-  onAsk: (question: string) => void;
-}) {
-  const { start, end, phrase } = dashboard.period;
+export function SpendingTake({ dashboard, version }: { dashboard: Dashboard; version: number }) {
+  const { start, end } = dashboard.period;
   const take = useAssist<AssistText>(`${start}:${end}:${version}`, () => assistApi.spendingTake(start, end));
   return (
     <Card className="p-5 sm:p-6" aria-labelledby="penny-take-title" aria-busy={take.loading}>
@@ -121,15 +113,6 @@ export function SpendingTake({
           ))}
         </ul>
       )}
-      <Button
-        size="sm"
-        variant="ghost"
-        className="mt-3 -ml-2"
-        onClick={() => onAsk(`How did my spending look ${phrase}, and what should I change?`)}
-      >
-        <MessageCircle className="size-4" aria-hidden="true" />
-        Talk it through with Penny AI
-      </Button>
     </Card>
   );
 }
@@ -369,7 +352,7 @@ export function LessonExample({ lessonId }: { lessonId: string }) {
 }
 
 /** "Penny's read" on balances, at the top of Accounts. */
-export function AccountsRead({ version, onAsk }: { version: number; onAsk: (question: string) => void }) {
+export function AccountsRead({ version }: { version: number }) {
   const read = useAssist<AssistText>(`accounts:${version}`, () => assistApi.accountsRead());
   return (
     <Card className="p-5 sm:p-6" aria-labelledby="accounts-read-title" aria-busy={read.loading}>
@@ -403,15 +386,6 @@ export function AccountsRead({ version, onAsk }: { version: number; onAsk: (ques
           ))}
         </ul>
       )}
-      <Button
-        size="sm"
-        variant="ghost"
-        className="mt-3 -ml-2"
-        onClick={() => onAsk("Looking at all my accounts, how am I doing overall?")}
-      >
-        <MessageCircle className="size-4" aria-hidden="true" />
-        Talk it through with Penny AI
-      </Button>
     </Card>
   );
 }
@@ -457,7 +431,7 @@ export function GoalPlan({ goalId, version }: { goalId: string; version: number 
 }
 
 /** "Penny's read" on Safe to spend: what it's made of, what's coming, one step. Figures come from the API's own sum. */
-export function SafeToSpendRead({ version, onAsk }: { version: string; onAsk: (question: string) => void }) {
+export function SafeToSpendRead({ version }: { version: string }) {
   const read = useAssist<AssistText>(`safe:${version}`, () => assistApi.safeToSpend());
   return (
     <Card className="p-5 sm:p-6" aria-labelledby="safe-read-title" aria-busy={read.loading}>
@@ -491,15 +465,6 @@ export function SafeToSpendRead({ version, onAsk }: { version: string; onAsk: (q
           ))}
         </ul>
       )}
-      <Button
-        size="sm"
-        variant="ghost"
-        className="mt-3 -ml-2"
-        onClick={() => onAsk("Can I afford something today without missing a bill?")}
-      >
-        <MessageCircle className="size-4" aria-hidden="true" />
-        Ask about a purchase
-      </Button>
     </Card>
   );
 }
