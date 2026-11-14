@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Award,
   Check,
   Flame,
-  Heart,
   Lock,
   LoaderCircle,
   RefreshCw,
@@ -18,7 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
 import {
   type Dashboard,
   type LearnBadge,
@@ -35,6 +33,12 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { CreditCalculator } from "./credit-tool";
+import { Arcade } from "./arcade";
+import { confetti, confettiFrom, CountUp, play, SoundToggle } from "./game-fx";
+import { Mascot, type Outfit, useOutfit, Wardrobe } from "./mascot";
+import { MoneyGuide } from "./money-guide";
+import { SkillMap } from "./skill-map";
+import { Building, TownScene } from "./money-town";
 import { LessonPlayer } from "./lesson-player";
 import { BadgeChip, Stars, TIER_STYLE } from "./learn-shared";
 import { describeError, SectionHeading } from "./shared";
@@ -91,6 +95,13 @@ export function LearnView({ dashboard, onCompleteMission, onProgress, onNavigate
   const { state, setState, error, reload } = useLearnState(dashboard.xp_total);
   const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState<LessonCard | null>(null);
+  // Bumped when a lesson ends, so the arcade re-checks today's quests.
+  const [arcadeVersion, setArcadeVersion] = useState(0);
+  const [outfit, setOutfit] = useOutfit(state?.level ?? 1);
+  const persona = dashboard.profile.persona;
+  // Penny's plan opens guides and games elsewhere on Learn.
+  const [guideRequest, setGuideRequest] = useState<{ area: string; nonce: number } | null>(null);
+  const [gameRequest, setGameRequest] = useState<{ game: string; nonce: number } | null>(null);
 
   if (error && !state) {
     return (
@@ -124,18 +135,44 @@ export function LearnView({ dashboard, onCompleteMission, onProgress, onNavigate
           <p className="mt-1 text-sm text-ink-muted">Three quick questions. You can change any of them later.</p>
           <ProfileForm initial={state.profile} submitLabel="Start learning" onSaved={setState} />
         </Card>
+        <div className="mt-6">
+          <Arcade version={arcadeVersion} outfit={outfit} onProgress={reload} />
+          <MoneyGuide outfit={outfit} onAsk={onAsk} />
+        </div>
       </div>
     );
   }
 
   const country = COUNTRIES.find((item) => item.id === state.profile.country) ?? COUNTRIES[0];
-  const selected = state.topics.filter((topic) => topic.selected);
+  // Paths in the order that fits who Penny is coaching.
+  const rank = (id: string) => (TOPIC_ORDER[persona ?? "student"] ?? []).indexOf(id);
+  const selected = state.topics.filter((topic) => topic.selected).sort((a, b) => rank(a.id) - rank(b.id));
   const others = state.topics.filter((topic) => !topic.selected);
   const credit = selected.some((topic) => topic.id === "credit");
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <ProgressHeader state={state} country={country} onEdit={() => setEditing(true)} />
+      <GameHud
+        state={state}
+        country={country}
+        persona={persona}
+        outfit={outfit}
+        onOutfit={setOutfit}
+        onEdit={() => setEditing(true)}
+      />
+      <SkillMap
+        version={arcadeVersion}
+        outfit={outfit}
+        onProgress={reload}
+        onLesson={(lessonId) => {
+          const lesson = state.topics.flatMap((topic) => topic.lessons).find((item) => item.id === lessonId);
+          if (lesson) setOpen(lesson);
+        }}
+        onGuide={(area) => setGuideRequest({ area, nonce: Date.now() })}
+        onGame={(game) => setGameRequest({ game, nonce: Date.now() })}
+      />
+      <Arcade version={arcadeVersion} outfit={outfit} launch={gameRequest} onProgress={reload} />
+      <MoneyGuide outfit={outfit} request={guideRequest} onAsk={onAsk} />
       <BadgeShelf badges={state.badges} />
 
       <section aria-labelledby="paths-title" className="space-y-4">
@@ -203,9 +240,11 @@ export function LearnView({ dashboard, onCompleteMission, onProgress, onNavigate
       </Dialog>
 
       <LessonPlayer
+        outfit={outfit}
         lesson={open}
         onClose={() => setOpen(null)}
         onFinished={(snapshot) => {
+          setArcadeVersion((version) => version + 1);
           if (snapshot) onProgress(snapshot);
           else reload();
         }}
@@ -408,34 +447,82 @@ function ProfileForm({
 // ---------------------------------------------------------------------------------------------
 // Progress, badges, paths
 
-function ProgressHeader({
+/** Who Penny coaches changes which paths come first. */
+const TOPIC_ORDER: Record<string, string[]> = {
+  student: ["budgeting", "saving", "credit", "tax", "rules", "investing"],
+  working: ["budgeting", "tax", "saving", "investing", "credit", "rules"],
+  learner: ["budgeting", "saving", "rules", "credit", "tax", "investing"],
+};
+
+/** What Penny says at the top of Learn, by persona. */
+const GREETING: Record<string, string> = {
+  student: "Let’s make your money last until exams are done!",
+  working: "Payday pro in training. Let’s make that paycheque work!",
+  learner: "Let’s learn money the fun way. No real money needed!",
+};
+
+/**
+ * The top of Learn, like a game's home screen: Money Town with Penny (tap to change outfits),
+ * and a bar with level, XP, and streak. A level-up while here gets a fanfare.
+ */
+function GameHud({
   state,
   country,
+  persona,
+  outfit,
+  onOutfit,
   onEdit,
 }: {
   state: LearnState;
   country: (typeof COUNTRIES)[number];
+  persona: string | null;
+  outfit: Outfit;
+  onOutfit: (outfit: Outfit) => void;
   onEdit: () => void;
 }) {
+  const [wardrobe, setWardrobe] = useState(false);
+  const lastLevel = useRef(state.level);
+  // A level reached since this screen opened (from a game or the chest): celebrate it once.
+  useEffect(() => {
+    if (state.level > lastLevel.current) {
+      play("levelUp");
+      confetti({ pieces: 180 });
+    }
+    lastLevel.current = state.level;
+  }, [state.level]);
   const lessons = state.topics.filter((topic) => topic.selected).flatMap((topic) => topic.lessons);
   const stars = lessons.reduce((total, lesson) => total + lesson.stars, 0);
+  const line = state.completed_today
+    ? "You learned something today. Keep the streak going tomorrow!"
+    : (GREETING[persona ?? ""] ?? "Hi! I’m Penny. Let’s level up your money skills.");
   return (
-    <section aria-label="Your progress" className="grid gap-3 sm:grid-cols-3">
-      <Card className="p-5 sm:col-span-2">
-        <div className="flex items-center gap-4">
-          <span
-            className="grid size-14 shrink-0 place-items-center rounded-2xl bg-[linear-gradient(135deg,var(--color-hero),var(--color-accent))] text-white"
-            aria-hidden="true"
+    <section aria-label="Your progress" className="space-y-3">
+      <TownScene className="min-h-48 sm:min-h-52">
+        <div className="flex items-start gap-3 p-4 pb-20 sm:p-5">
+          <button
+            type="button"
+            onClick={() => setWardrobe(true)}
+            className="group shrink-0 rounded-3xl focus-visible:outline-white"
+            aria-label="Change Penny’s outfit"
           >
-            <Star className="size-7" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-ink-subtle">Level {state.level}</p>
+            <Mascot
+              outfit={outfit}
+              className="size-24 animate-bob drop-shadow-[0_6px_8px_rgb(0_0_0/0.25)] sm:size-28"
+            />
+            <span className="mt-0.5 block rounded-full bg-white/85 px-2 py-0.5 text-center text-[0.65rem] font-bold text-[#1d3b57] group-hover:bg-white">
+              Outfits
+            </span>
+          </button>
+          <div className="min-w-0 flex-1 pt-1">
+            <p className="relative inline-block max-w-sm rounded-2xl rounded-tl-sm bg-white px-3.5 py-2.5 text-sm font-semibold text-[#1d3b57] shadow-[0_4px_12px_rgb(0_0_0/0.12)]">
+              {line}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <SoundToggle className="border-white/70 bg-white/85 text-[#1d3b57] hover:bg-white" />
               <button
                 type="button"
                 onClick={onEdit}
-                className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line px-3 text-xs font-semibold text-ink hover:bg-sage-soft"
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-white/70 bg-white/85 px-3 text-xs font-semibold text-[#1d3b57] hover:bg-white"
               >
                 <span aria-hidden="true">{country.flag}</span>
                 {country.name}
@@ -443,35 +530,85 @@ function ProgressHeader({
                 <SlidersHorizontal className="size-3.5" aria-hidden="true" />
               </button>
             </div>
-            <p className="tabular text-2xl font-semibold tracking-tight text-ink">{state.xp_total} XP</p>
-            <Progress
-              className="mt-2"
-              value={(state.level_xp * 100) / state.level_size_xp}
-              indicatorClassName="bg-accent"
-              aria-label={`${state.level_xp} of ${state.level_size_xp} XP to level ${state.level + 1}`}
-            />
-            <p className="mt-1 text-xs text-ink-subtle">
-              {state.level_size_xp - state.level_xp} XP to level {state.level + 1} ·{" "}
-              <Star className="inline size-3 fill-gold text-gold" aria-hidden="true" /> {stars} of {lessons.length * 3}{" "}
-              stars in your paths
-            </p>
           </div>
         </div>
-      </Card>
-      <Card className={cn("p-5", state.completed_today && "border-[#e4572e]/30")}>
-        <p className="flex items-center gap-2 text-sm text-ink-subtle">
-          <Flame className="size-4 text-[#e4572e]" aria-hidden="true" />
-          Learning streak
-        </p>
-        <p className="tabular mt-1 text-2xl font-semibold tracking-tight text-ink">
-          {state.streak_days} day{state.streak_days === 1 ? "" : "s"}
-        </p>
-        <p className="mt-1 text-xs text-ink-subtle">
-          {state.completed_today
-            ? "Today’s lesson is done. See you tomorrow!"
-            : "Pass one lesson today to keep it going."}
-        </p>
-      </Card>
+      </TownScene>
+
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--radius-card)] border border-line bg-surface p-3 sm:gap-4 sm:p-4">
+        <span
+          className="relative grid size-14 place-items-center rounded-2xl bg-[linear-gradient(135deg,#6b7cff,#19b394)] text-white shadow-[0_4px_0_#0e7d67]"
+          role="img"
+          aria-label={`Level ${state.level}`}
+        >
+          <Star className="absolute size-11 fill-white/20 text-white/30" aria-hidden="true" />
+          <span className="relative text-xl font-black" aria-hidden="true">
+            {state.level}
+          </span>
+        </span>
+        <div className="min-w-0">
+          <p className="flex items-baseline justify-between gap-2">
+            <span className="tabular text-lg font-bold tracking-tight text-ink">
+              <CountUp to={state.xp_total} from={Math.max(0, state.xp_total - 60)} /> XP
+            </span>
+            <span className="truncate text-xs text-ink-subtle">
+              {state.level_size_xp - state.level_xp} to level {state.level + 1}
+            </span>
+          </p>
+          <div
+            className="mt-1.5 h-3 overflow-hidden rounded-full bg-sage"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={state.level_size_xp}
+            aria-valuenow={state.level_xp}
+            aria-label={`${state.level_xp} of ${state.level_size_xp} XP to level ${state.level + 1}`}
+          >
+            <div
+              className="h-full rounded-full bg-[linear-gradient(90deg,#f5b82e,#19b394)] shadow-[inset_0_-3px_0_rgb(0_0_0/0.12)] transition-[width] duration-700"
+              style={{ width: `${(state.level_xp * 100) / state.level_size_xp}%` }}
+            />
+          </div>
+          <p className="mt-1 text-xs text-ink-subtle">
+            <Star className="inline size-3 fill-gold text-gold" aria-hidden="true" /> {stars} of {lessons.length * 3}{" "}
+            stars in your paths
+          </p>
+        </div>
+        <span
+          className={cn(
+            "flex flex-col items-center rounded-2xl px-3 py-1.5",
+            state.completed_today ? "bg-[#ffe7d6]" : "bg-sage-soft",
+          )}
+          role="img"
+          aria-label={`${state.streak_days}-day learning streak${state.completed_today ? ", today done" : ""}`}
+        >
+          <Flame
+            className={cn("size-6 text-[#e4572e]", state.completed_today && "animate-flicker fill-[#f6a04d]")}
+            aria-hidden="true"
+          />
+          <span
+            className={cn("tabular text-sm font-black", state.completed_today ? "text-[#b4441f]" : "text-ink")}
+            aria-hidden="true"
+          >
+            {state.streak_days}
+          </span>
+        </span>
+      </div>
+
+      <Dialog open={wardrobe} onOpenChange={setWardrobe}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Penny’s outfits</DialogTitle>
+            <DialogDescription>Level up to unlock more. You’re level {state.level}.</DialogDescription>
+          </DialogHeader>
+          <Wardrobe
+            level={state.level}
+            outfit={outfit}
+            onPick={(next) => {
+              play("coin");
+              onOutfit(next);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -496,83 +633,137 @@ function BadgeShelf({ badges }: { badges: LearnBadge[] }) {
   );
 }
 
+/** Each topic is a "world" on the map, with its own emblem. */
+const WORLD: Record<string, { tint: string }> = {
+  budgeting: { tint: "from-[#f0645a]/20" },
+  saving: { tint: "from-[#ff9fb6]/25" },
+  tax: { tint: "from-[#8fb3ff]/25" },
+  credit: { tint: "from-[#5b8def]/20" },
+  rules: { tint: "from-[#19b394]/20" },
+  investing: { tint: "from-[#22c38d]/20" },
+};
+
+/**
+ * A topic as a level map: round level buttons on a track that fills as levels are passed. The
+ * next level to play glows and bobs; locked ones show a padlock.
+ */
 function TopicRow({ topic, onOpen }: { topic: TopicPath; onOpen: (lesson: LessonCard) => void }) {
   const passed = topic.lessons.filter((lesson) => lesson.passed).length;
+  const stars = topic.lessons.reduce((total, lesson) => total + lesson.stars, 0);
+  const next = topic.lessons.find((lesson) => !lesson.locked && !lesson.passed);
+  const world = WORLD[topic.id] ?? { tint: "from-accent/25" };
+  const count = topic.lessons.length;
+  // The track runs between the first and last level's centres and fills up to the next level.
+  const filled = count > 1 ? (Math.min(passed, count - 1) * 100) / (count - 1) : 0;
   return (
-    <Card className="p-4 sm:p-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-lg font-semibold tracking-tight text-ink">
-          {topic.label} <span className="text-sm font-normal text-ink-subtle">· {topic.blurb}</span>
-        </h3>
-        <span className="text-xs font-semibold text-ink-subtle">
-          {passed === topic.lessons.length ? (
-            <span className="inline-flex items-center gap-1 text-accent-strong">
+    <Card className={cn("overflow-hidden bg-gradient-to-br to-transparent to-60% p-4 sm:p-5", world.tint)}>
+      <div className="flex items-center gap-3">
+        <Building topic={topic.id} className="size-16 shrink-0 drop-shadow-[0_3px_4px_rgb(0_0_0/0.15)]" />
+        <div className="min-w-0 flex-1">
+          <h3 className="text-lg font-semibold tracking-tight text-ink">{topic.label}</h3>
+          <p className="truncate text-sm text-ink-subtle">{topic.blurb}</p>
+        </div>
+        <span className="shrink-0 text-right text-xs font-semibold text-ink-subtle">
+          {passed === count ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-gold-soft px-2.5 py-1 text-gold-strong">
               <Trophy className="size-3.5" aria-hidden="true" />
               Mastered
             </span>
           ) : (
-            `${passed} of ${topic.lessons.length} levels`
+            <>
+              <span className="block">
+                {passed} of {count} levels
+              </span>
+              <span className="tabular inline-flex items-center gap-0.5">
+                <Star className="size-3 fill-gold text-gold" aria-hidden="true" />
+                {stars}/{count * 3}
+              </span>
+            </>
           )}
         </span>
       </div>
-      <ol
-        className={cn("mt-4 grid gap-3", topic.lessons.length > 3 ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3")}
-      >
+
+      <ol className="relative mt-6 grid" style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}>
+        <span
+          aria-hidden="true"
+          className="absolute top-8 h-2 -translate-y-1/2 rounded-full bg-sage"
+          style={{ left: `${50 / count}%`, right: `${50 / count}%` }}
+        >
+          <span
+            className="block h-full rounded-full bg-[linear-gradient(90deg,var(--color-gold),var(--color-accent))] transition-[width] duration-700"
+            style={{ width: `${filled}%` }}
+          />
+        </span>
         {topic.lessons.map((lesson, index) => {
-          const style = TIER_STYLE[lesson.tier];
+          const current = lesson === next;
           const previous = topic.lessons[index - 1];
           return (
-            <li key={lesson.id}>
+            <li key={lesson.id} className="relative flex flex-col items-center px-1 text-center">
+              {current && (
+                <span
+                  className="absolute -top-5 z-10 animate-bob rounded-full bg-primary px-2.5 py-0.5 text-[0.7rem] font-bold uppercase tracking-wide text-on-primary shadow-[var(--shadow-card)]"
+                  aria-hidden="true"
+                >
+                  Start
+                </span>
+              )}
               <button
                 type="button"
                 disabled={lesson.locked}
                 onClick={() => onOpen(lesson)}
                 className={cn(
-                  "group flex h-full w-full flex-col rounded-2xl border p-4 text-left transition-[transform,border-color,box-shadow] disabled:cursor-not-allowed",
+                  "relative grid size-16 place-items-center rounded-full border-4 text-xl font-bold transition-transform disabled:cursor-not-allowed",
+                  "hover:scale-105 active:scale-95 disabled:hover:scale-100 motion-reduce:transform-none",
                   lesson.locked
-                    ? "border-dashed border-line-strong bg-sage-soft/50"
+                    ? "border-line-strong bg-sage text-ink-subtle"
                     : lesson.passed
-                      ? "border-accent/40 bg-surface hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] motion-reduce:transform-none"
-                      : "border-line bg-surface ring-2 ring-accent/30 hover:-translate-y-0.5 hover:border-accent hover:shadow-[var(--shadow-card)] motion-reduce:transform-none",
+                      ? "border-gold bg-[radial-gradient(circle_at_30%_30%,#ffe6a8,var(--color-gold))] text-white shadow-[0_4px_0_var(--color-gold-strong)]"
+                      : "animate-glow border-accent bg-accent text-white shadow-[0_4px_0_var(--color-accent-strong)]",
                 )}
               >
-                <span className="flex items-center justify-between gap-2">
-                  <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", style.chip)}>
-                    {style.label}
-                  </span>
-                  {lesson.locked ? (
-                    <Lock className="size-4 text-ink-subtle" aria-hidden="true" />
-                  ) : lesson.passed ? (
-                    <Stars count={lesson.stars} />
-                  ) : (
-                    <Badge tone="gold">+{lesson.xp_max} XP</Badge>
-                  )}
-                </span>
-                <span className={cn("mt-3 font-semibold", lesson.locked ? "text-ink-muted" : "text-ink")}>
-                  {lesson.title}
-                </span>
-                <span className="mt-1 flex-1 text-sm text-ink-subtle">
-                  {lesson.locked
-                    ? `Pass ${previous ? TIER_STYLE[previous.tier].label : "the level before"} to unlock.`
-                    : lesson.summary}
-                </span>
-                <span className="mt-3 flex items-center gap-3 text-xs text-ink-subtle">
-                  <span className="inline-flex items-center gap-1">
-                    <Heart className="size-3.5 fill-danger text-danger" aria-hidden="true" />
-                    {lesson.hearts}
-                    <span className="sr-only"> hearts</span>
-                  </span>
-                  <span>{lesson.question_count} questions</span>
-                  {lesson.passed && (
-                    <span className="tabular ml-auto">
-                      {lesson.xp_earned}/{lesson.xp_max} XP
-                    </span>
-                  )}
-                </span>
+                {lesson.locked ? (
+                  <Lock className="size-5" aria-hidden="true" />
+                ) : lesson.passed ? (
+                  <Check className="size-7" strokeWidth={3} aria-hidden="true" />
+                ) : (
+                  <span aria-hidden="true">{index + 1}</span>
+                )}
                 <span className="sr-only">
-                  {lesson.locked ? "Locked" : lesson.passed ? `Passed with ${lesson.stars} stars` : "Not started"}
+                  {lesson.title}, {TIER_STYLE[lesson.tier].label}.{" "}
+                  {lesson.locked
+                    ? `Locked: pass ${previous ? TIER_STYLE[previous.tier].label : "the level before"} to unlock.`
+                    : lesson.passed
+                      ? `Passed with ${lesson.stars} of 3 stars.`
+                      : `${lesson.question_count} questions, ${lesson.hearts} hearts, up to ${lesson.xp_max} XP.`}
                 </span>
               </button>
+              <span className="mt-1.5 h-4" aria-hidden="true">
+                {lesson.passed ? (
+                  <Stars count={lesson.stars} className="size-3.5" />
+                ) : !lesson.locked ? (
+                  <span className="rounded-full bg-gold-soft px-1.5 py-0.5 text-[0.65rem] font-bold text-gold-strong">
+                    +{lesson.xp_max} XP
+                  </span>
+                ) : null}
+              </span>
+              <span
+                className={cn(
+                  "mt-1.5 line-clamp-2 text-xs font-semibold leading-snug",
+                  lesson.locked ? "text-ink-subtle" : "text-ink",
+                )}
+                aria-hidden="true"
+              >
+                {lesson.title}
+              </span>
+              <span
+                className={cn(
+                  "mt-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold",
+                  TIER_STYLE[lesson.tier].chip,
+                )}
+                aria-hidden="true"
+              >
+                {TIER_STYLE[lesson.tier].label}
+              </span>
             </li>
           );
         })}
@@ -607,9 +798,17 @@ function Challenges({ missions, onComplete }: { missions: Mission[]; onComplete:
                 <p className="mt-0.5 text-sm text-ink-muted">{mission.description}</p>
               </div>
               {mission.completed ? (
-                <Badge>+{mission.xp_reward} XP</Badge>
+                <Badge className="animate-pop">+{mission.xp_reward} XP</Badge>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => onComplete(mission)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(event) => {
+                    play("coin");
+                    confettiFrom(event.currentTarget, { pieces: 50, spread: 100 });
+                    onComplete(mission);
+                  }}
+                >
                   Done
                 </Button>
               )}

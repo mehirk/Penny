@@ -50,11 +50,17 @@ async def phrase(
     fallback: list[str],
     limit: int,
     max_chars: int = 280,
+    timeout_seconds: float | None = None,
 ) -> AssistText:
     """Model-written bullets when every figure checks out, otherwise the built-in ones."""
     try:
         result = await ask_json(
-            settings, f"{_STYLE} {task}", payload, "penny_bullets", _BULLETS_SCHEMA
+            settings,
+            f"{_STYLE} {task}",
+            payload,
+            "penny_bullets",
+            _BULLETS_SCHEMA,
+            timeout_seconds=timeout_seconds,
         )
         bullets = [str(item).strip() for item in result.get("bullets", []) if str(item).strip()]
         bullets = bullets[:limit]

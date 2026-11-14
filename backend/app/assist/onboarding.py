@@ -6,7 +6,11 @@ from app.assist.common import AssistModel, AssistText, phrase
 from app.coach.facts import FactBook
 from app.config import Settings
 from app.dashboard_models import OnboardingAnswers
+from app.domain.starter_budget import StarterPlan
 from app.store import DashboardStore
+
+# Per try (the client retries once), so the plan shows in under 20 seconds at worst.
+PLAN_SUMMARY_TIMEOUT_SECONDS = 8.0
 
 
 class StarterPlanLine(AssistModel):
@@ -83,6 +87,17 @@ async def onboarding_plan(
     needs = f.money("50/30/20 needs", plan.guide_needs_cents, "onboarding")
     wants = f.money("50/30/20 wants", plan.guide_wants_cents, "onboarding")
     saved = f.money("50/30/20 savings", plan.guide_savings_cents, "onboarding")
+    if not (plan.income_cents or plan.fixed_cents or plan.flexible_cents):
+        # Every step was skipped: there's nothing to explain, so don't wait on the model.
+        empty = AssistText(
+            items=[
+                "You skipped the setup questions, so this plan starts empty. Add your pay, bills, "
+                "and budgets any time and Penny will fill it in."
+            ],
+            source="built_in",
+            model=None,
+        )
+        return _plan_out(plan, names, empty)
     if plan.status == "short":
         fallback = [
             f"Your fixed costs ({fixed}) are more than the {income} coming in each month. You "
@@ -111,7 +126,13 @@ async def onboarding_plan(
         fallback,
         1,
         max_chars=320,
+        # Setup waits on this; a slow model shouldn't hold up the plan.
+        timeout_seconds=PLAN_SUMMARY_TIMEOUT_SECONDS,
     )
+    return _plan_out(plan, names, summary)
+
+
+def _plan_out(plan: StarterPlan, names: dict[str, str], summary: AssistText) -> StarterPlanOut:
     return StarterPlanOut(
         income_cents=plan.income_cents,
         fixed_cents=plan.fixed_cents,

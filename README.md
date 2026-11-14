@@ -1,6 +1,6 @@
 # Penny
 
-**Make money make sense.** Penny is a mobile-first money coach for Canadian students and young adults. It answers the question a bank balance can't: *how much can I actually spend before my next payday?*
+**Your wallet. Your coach.** Penny teaches Canadian students and young adults how money works, using their own numbers. It's personal coaching, not just a tracker: it answers the question a bank balance can't, *how much can I actually spend before my next payday, and why?*
 
 Built for the Cognizant BrAInstorm AI Innovation Challenge 2026. It runs on the web and as an iPhone app. All demo people, accounts, and amounts in this repository are fictional, and Penny never connects to a bank.
 
@@ -8,14 +8,16 @@ Built for the Cognizant BrAInstorm AI Innovation Challenge 2026. It runs on the 
 
 | Area | What the user gets |
 | --- | --- |
+| **Learn** | Short lessons and quizzes on budgeting, saving, tax, credit, and investing readiness, plus a **pocket-money practice game** with pretend money. XP, streaks, and badges. |
+| **Personas** | Student, Working, or Just learning, picked before setup. Penny AI and Home fit the coaching to it; Just learning can start with lessons and practice before entering any money. |
 | **Home** | **Safe to spend**: chequing and cash after every unpaid bill and budget, with a per-day amount until payday. Accounts, upcoming bills, recent activity, and a payday prompt. |
 | **Payday** | **I got paid** records a paycheque; a check-in then shows what's due before the next payday and suggests a saving. A bonus or gift gets a windfall plan: card balance first, then savings, the rest is yours. |
 | **Spending and budgets** | Transactions with search and filters, recurring bills with history, monthly budgets with suggested limits and a rebalance when one goes over, and charts over time. |
 | **Cards and bills** | Credit card due dates that roll forward when paid, "have you paid it?" for bills, and **Add to calendar** for bills, card payments, and paydays. |
 | **Splits** | Shared costs with friends and groups, without counting money owed to you as cash. |
 | **Goals** | Savings goals with the monthly amount needed to hit each date. |
+| **Receipts** | Snap a receipt or bill: Penny AI reads each line and the app groups them into one purchase per category (groceries, fuel), checked against the printed total. A pre-read sample receipt shows it without an AI call. |
 | **Penny AI** | A coach that knows the user's numbers: "Can I afford a $300 concert trip?" It suggests budget or goal changes that apply only after the user approves. |
-| **Learn** | Short lessons and quizzes on budgeting, saving, tax, credit, and investing readiness, with XP and streaks. |
 
 ## How AI is kept honest
 

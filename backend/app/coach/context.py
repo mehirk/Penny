@@ -22,6 +22,13 @@ BUDGET_WATCH_BASIS_POINTS = 8_500
 
 Tone = Literal["positive", "watch", "alert"]
 
+# What Penny AI is told about who it's coaching (DemoUser.persona), so advice fits their life.
+PERSONA_NOTES = {
+    "student": "a student: irregular or part-time income, tuition and rent, building first habits",
+    "working": "working with a regular salary: steady paydays, saving and debt matter most",
+    "learner": "learning first: new to money, explain simply and favour lessons and practice",
+}
+
 
 @dataclass
 class CoachContext:
@@ -229,6 +236,7 @@ def build_snapshot(ctx: CoachContext) -> dict[str, object]:
             "school": d.profile.school,
             "city": d.profile.city,
             "province": d.profile.province,
+            "situation": PERSONA_NOTES.get(d.profile.persona or "", "not said"),
         },
         "this_month": {
             "income": f.money("Income this month", totals.income_cents, "transactions"),

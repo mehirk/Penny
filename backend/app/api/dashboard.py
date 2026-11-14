@@ -20,6 +20,7 @@ from app.dashboard_models import (
     DashboardResponse,
     DeleteAccountRequest,
     HistoryResponse,
+    PersonaWrite,
     ResetRequest,
 )
 from app.models import CurrentUserResponse
@@ -74,6 +75,12 @@ def history(
 ) -> HistoryResponse:
     """Monthly totals and category spending for a range of up to 24 months."""
     return user_store(current_user).history_for_user(current_user.id, start, end)
+
+
+@router.put("/profile/persona", response_model=DashboardResponse, tags=["profile"])
+def set_persona(request: PersonaWrite, current_user: AuthenticatedUser) -> DashboardResponse:
+    """Who Penny is coaching: a student, someone working, or someone learning first."""
+    return user_store(current_user).set_persona(current_user.id, request.persona)
 
 
 @router.post("/account/reset", response_model=DashboardResponse, tags=["account"])

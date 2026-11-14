@@ -1,7 +1,7 @@
 "use client";
 
 import { type ChangeEvent, useState } from "react";
-import { CircleAlert, CircleCheck, FileUp, LoaderCircle, ShieldAlert } from "lucide-react";
+import { CircleAlert, CircleCheck, FileUp, History, LoaderCircle, ReceiptText, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import {
@@ -22,7 +22,7 @@ import { SourceBadge } from "./smart-cards";
 const MAX_BYTES = 8 * 1024 * 1024;
 const NEW_ACCOUNT = "__new__";
 const ACCEPT =
-  ".pdf,.xlsx,.xlsm,.csv,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  ".pdf,.xlsx,.xlsm,.csv,.jpg,.jpeg,.png,.webp,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,image/webp";
 
 type Row = StatementRow & { key: number; include: boolean };
 type Phase =
@@ -39,16 +39,20 @@ function toBase64(file: File): Promise<string> {
 }
 
 /**
- * Upload a bank or card statement (PDF, Excel, or CSV). Penny AI reads it into rows; the API
- * checks them against the statement's own opening and closing balances. Nothing is saved until
- * the user reviews the rows and presses Add. Like CSV import, adding history doesn't change
- * balances; updating the account's balance to the statement's closing balance is a separate tick.
+ * Upload a bank or card statement (PDF, Excel, or CSV), or a photo of a receipt or bill. Penny AI
+ * reads it into rows; the API checks them against the statement's balances or the receipt's
+ * total, and groups a receipt into one purchase per category. Nothing is saved until the user
+ * reviews the rows and presses Add. A statement is history (balances don't change; updating the
+ * balance to the closing balance is a separate tick); a receipt is new purchases, which come off
+ * the account unless they're already in its balance.
  */
 export function StatementImport({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
   const [phase, setPhase] = useState<Phase>({ step: "idle" });
   const [rows, setRows] = useState<Row[]>([]);
   const [account, setAccount] = useState("");
   const [updateBalance, setUpdateBalance] = useState(true);
+  // Receipts only: the purchases are already in the account's balance, so record them as history.
+  const [inBalance, setInBalance] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,15 +61,19 @@ export function StatementImport({ dashboard, save }: { dashboard: Dashboard; sav
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    setError("");
-    setDone(null);
     if (file.size > MAX_BYTES) {
       setError("That file is over 8 MB. Try one statement period at a time.");
       return;
     }
-    setPhase({ step: "reading", name: file.name });
+    await read(file.name, async () => assistApi.readStatement(file.name, await toBase64(file)));
+  }
+
+  async function read(name: string, load: () => Promise<StatementDraft>) {
+    setError("");
+    setDone(null);
+    setPhase({ step: "reading", name });
     try {
-      const draft = await assistApi.readStatement(file.name, await toBase64(file));
+      const draft = await load();
       setRows(draft.rows.map((row, key) => ({ ...row, key, include: !row.transfer })));
       setAccount(
         draft.account_id ??
@@ -75,8 +83,12 @@ export function StatementImport({ dashboard, save }: { dashboard: Dashboard; sav
               dashboard.accounts[0]?.id ??
               NEW_ACCOUNT)),
       );
-      setUpdateBalance(draft.closing_balance_cents !== null && draft.closing_balance_cents >= 0);
-      setPhase({ step: "review", name: file.name, draft });
+      // A receipt's total isn't a balance; its purchases come off the account instead.
+      setUpdateBalance(
+        draft.document === "statement" && draft.closing_balance_cents !== null && draft.closing_balance_cents >= 0,
+      );
+      setInBalance(false);
+      setPhase({ step: "review", name, draft });
     } catch (reason) {
       setPhase({ step: "idle" });
       setError(describeError(reason, "Penny couldn’t read that statement").detail);
@@ -97,35 +109,54 @@ export function StatementImport({ dashboard, save }: { dashboard: Dashboard; sav
     setBusy(true);
     setError("");
     let summary: { imported: number; skipped: number; errors: string[] } | null = null;
-    const failure = await save(async () => {
-      let accountId = account;
-      if (account === NEW_ACCOUNT) {
-        const created = await dashboardApi.createAccount({
-          name: (draft.account_name ?? draft.institution ?? "Imported account").slice(0, 60),
-          account_type: type,
-          balance_cents: closing !== null && closing >= 0 ? closing : 0,
-          credit_limit_cents: null,
-        });
-        const known = new Set(dashboard.accounts.map((item) => item.id));
-        accountId = created.accounts.find((item) => !known.has(item.id))?.id ?? "";
-        if (!accountId) throw new Error("Couldn’t create the account");
-      }
-      const result = await dashboardApi.importRows(
-        accountId,
-        picked.map(({ occurred_on, description, amount_cents, kind, category_id }) => ({
-          occurred_on,
-          description: description.trim(),
-          amount_cents,
-          kind,
-          category_id,
-        })),
-      );
-      summary = result;
-      if (account !== NEW_ACCOUNT && updateBalance && closing !== null && closing >= 0) {
-        return dashboardApi.updateAccount(accountId, { balance_cents: closing });
-      }
-      return result.dashboard;
-    }, "Statement added");
+    const failure = await save(
+      async () => {
+        let accountId = account;
+        if (account === NEW_ACCOUNT) {
+          const created = await dashboardApi.createAccount({
+            name: (draft.account_name ?? draft.institution ?? "Imported account").slice(0, 60),
+            account_type: type,
+            balance_cents: closing !== null && closing >= 0 ? closing : 0,
+            credit_limit_cents: null,
+          });
+          const known = new Set(dashboard.accounts.map((item) => item.id));
+          accountId = created.accounts.find((item) => !known.has(item.id))?.id ?? "";
+          if (!accountId) throw new Error("Couldn’t create the account");
+        }
+        if (draft.document === "receipt") {
+          let latest: Dashboard | null = null;
+          for (const { occurred_on, description, amount_cents, kind, category_id } of picked) {
+            latest = await dashboardApi.createTransaction({
+              description: description.trim(),
+              account_id: accountId,
+              category_id,
+              amount_cents,
+              kind,
+              occurred_on,
+              history_only: inBalance,
+            });
+          }
+          summary = { imported: picked.length, skipped: 0, errors: [] };
+          return latest as Dashboard;
+        }
+        const result = await dashboardApi.importRows(
+          accountId,
+          picked.map(({ occurred_on, description, amount_cents, kind, category_id }) => ({
+            occurred_on,
+            description: description.trim(),
+            amount_cents,
+            kind,
+            category_id,
+          })),
+        );
+        summary = result;
+        if (account !== NEW_ACCOUNT && updateBalance && closing !== null && closing >= 0) {
+          return dashboardApi.updateAccount(accountId, { balance_cents: closing });
+        }
+        return result.dashboard;
+      },
+      draft.document === "receipt" ? "Receipt added" : "Statement added",
+    );
     setBusy(false);
     if (failure) {
       setError(failure);
@@ -137,36 +168,42 @@ export function StatementImport({ dashboard, save }: { dashboard: Dashboard; sav
   }
 
   return (
-    <section aria-labelledby="import-title" aria-busy={phase.step === "reading"}>
-      <p className="mt-1 text-sm text-ink-subtle">
-        Upload a statement from your bank or card: PDF, Excel, or CSV. Penny AI reads the transactions, checks them
-        against the statement’s balances, and fills everything in for you to review. Duplicates are skipped.
-      </p>
-      <p className="mt-3 flex gap-2 rounded-xl bg-gold-soft/60 p-3 text-xs text-ink-muted">
+    <section aria-label="Scan a receipt or statement" aria-busy={phase.step === "reading"}>
+      <p className="flex gap-2 rounded-xl bg-gold-soft/60 p-3 text-xs text-ink-muted">
         <ShieldAlert className="size-4 shrink-0 text-gold-strong" aria-hidden="true" />
         <span>
-          Penny is a demo that uses fictional data. Please upload a sample or made-up statement, not a real one: the
-          file is sent to OpenAI to be read. Penny doesn’t keep the file.
+          The file is sent to OpenAI to be read, and Penny doesn’t keep it. Cover account numbers before you upload, and
+          use a sample if you’re just trying it out.
         </span>
       </p>
 
       {phase.step !== "review" && (
-        <label
-          className={cn(
-            "mt-4 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-on-primary hover:bg-primary-hover has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent",
-            phase.step === "reading" && "pointer-events-none opacity-60",
-          )}
-        >
-          <FileUp className="size-4" aria-hidden="true" />
-          Choose a statement
-          <input
-            type="file"
-            accept={ACCEPT}
-            onChange={(event) => void onFile(event)}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <label
+            className={cn(
+              "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-on-primary hover:bg-primary-hover has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent",
+              phase.step === "reading" && "pointer-events-none opacity-60",
+            )}
+          >
+            <FileUp className="size-4" aria-hidden="true" />
+            Choose a photo or file
+            <input
+              type="file"
+              accept={ACCEPT}
+              onChange={(event) => void onFile(event)}
+              disabled={phase.step === "reading"}
+              className="sr-only"
+            />
+          </label>
+          <Button
+            variant="outline"
             disabled={phase.step === "reading"}
-            className="sr-only"
-          />
-        </label>
+            onClick={() => void read("Sample receipt", () => assistApi.sampleReceipt())}
+          >
+            <ReceiptText className="size-4" aria-hidden="true" />
+            Try a sample receipt
+          </Button>
+        </div>
       )}
 
       {phase.step === "reading" && (
@@ -216,6 +253,8 @@ export function StatementImport({ dashboard, save }: { dashboard: Dashboard; sav
           onAccount={setAccount}
           updateBalance={updateBalance}
           onUpdateBalance={setUpdateBalance}
+          inBalance={inBalance}
+          onInBalance={setInBalance}
           onEdit={edit}
           busy={busy}
           onAdd={() => void add(phase.draft)}
@@ -232,6 +271,7 @@ export function StatementImport({ dashboard, save }: { dashboard: Dashboard; sav
 
 function BalanceCheck({ draft }: { draft: StatementDraft }) {
   const difference = draft.balance_difference_cents;
+  if (draft.document === "receipt") return <ReceiptCheck draft={draft} />;
   if (difference === null) {
     return (
       <p className="flex gap-2 rounded-xl bg-sage-soft p-3 text-sm text-ink-muted">
@@ -269,6 +309,8 @@ function Review({
   onAccount,
   updateBalance,
   onUpdateBalance,
+  inBalance,
+  onInBalance,
   onEdit,
   busy,
   onAdd,
@@ -282,18 +324,26 @@ function Review({
   onAccount: (id: string) => void;
   updateBalance: boolean;
   onUpdateBalance: (on: boolean) => void;
+  inBalance: boolean;
+  onInBalance: (on: boolean) => void;
   onEdit: (key: number, change: Partial<Row>) => void;
   busy: boolean;
   onAdd: () => void;
   onCancel: () => void;
 }) {
   const picked = rows.filter((row) => row.include);
-  const closing = draft.closing_balance_cents;
+  const receipt = draft.document === "receipt";
+  const closing = receipt ? null : draft.closing_balance_cents;
   const accountName = dashboard.accounts.find((item) => item.id === account)?.name;
   const period =
     draft.period_start && draft.period_end
-      ? `${formatShortDate(draft.period_start)} – ${formatShortDate(draft.period_end)}`
+      ? draft.period_start === draft.period_end
+        ? formatShortDate(draft.period_start)
+        : `${formatShortDate(draft.period_start)} – ${formatShortDate(draft.period_end)}`
       : null;
+  const found = receipt
+    ? `${rows.length} purchase${rows.length === 1 ? "" : "s"}`
+    : `${rows.length} transaction${rows.length === 1 ? "" : "s"} found`;
   const newLabel = `New account: ${draft.account_name ?? draft.institution ?? "Imported account"}${draft.account_type ? ` (${draft.account_type})` : ""}`;
   return (
     <div className="mt-4 space-y-4">
@@ -302,25 +352,29 @@ function Review({
           <p className="truncate font-semibold text-ink">
             {[draft.institution, draft.account_name].filter(Boolean).join(" · ") || name}
           </p>
-          <p className="text-xs text-ink-subtle">
-            {[period, `${rows.length} transaction${rows.length === 1 ? "" : "s"} found`].filter(Boolean).join(" · ")}
-          </p>
+          <p className="text-xs text-ink-subtle">{[period, found].filter(Boolean).join(" · ")}</p>
         </div>
-        <SourceBadge source={draft.source} />
+        {draft.source === "sample" ? (
+          <span className="rounded-full bg-sage-soft px-2 py-0.5 text-[11px] font-semibold text-ink-subtle">
+            Sample: read in advance
+          </span>
+        ) : (
+          <SourceBadge source={draft.source} />
+        )}
       </div>
 
       <BalanceCheck draft={draft} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-sm font-semibold text-ink">
-          Add to account
+          {receipt ? "Paid from" : "Add to account"}
           <Select className="mt-1" value={account} onChange={(event) => onAccount(event.target.value)}>
             {dashboard.accounts.filter(isOwnAccount).map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
               </option>
             ))}
-            <option value={NEW_ACCOUNT}>{newLabel}</option>
+            {!receipt && <option value={NEW_ACCOUNT}>{newLabel}</option>}
           </Select>
         </label>
         {closing !== null &&
@@ -344,6 +398,20 @@ function Review({
               </span>
             </label>
           ))}
+        {receipt && (
+          <label className="flex min-h-11 cursor-pointer items-center gap-3 self-end text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={inBalance}
+              onChange={(event) => onInBalance(event.target.checked)}
+              className="size-5 shrink-0 accent-[var(--color-accent)]"
+            />
+            <span className="flex items-center gap-1.5">
+              <History className="size-4 text-info" aria-hidden="true" />
+              Already in {accountName ?? "the account"}’s balance
+            </span>
+          </label>
+        )}
       </div>
 
       <ul className="divide-y divide-line rounded-xl border border-line" aria-label="Transactions found">
@@ -421,9 +489,15 @@ function Review({
       )}
 
       <p className="text-xs text-ink-subtle">
-        Adding history doesn’t change your balances
-        {closing !== null && closing >= 0 && account !== NEW_ACCOUNT ? " unless you tick the box above" : ""}. Transfers
-        between your own accounts are left out unless you tick them.
+        {receipt ? (
+          <>These purchases come off {accountName ?? "the account"} unless you tick “Already in its balance”.</>
+        ) : (
+          <>
+            Adding history doesn’t change your balances
+            {closing !== null && closing >= 0 && account !== NEW_ACCOUNT ? " unless you tick the box above" : ""}.
+            Transfers between your own accounts are left out unless you tick them.
+          </>
+        )}
       </p>
       <div className="flex flex-wrap gap-2">
         <Button disabled={busy || picked.length === 0} onClick={onAdd}>
@@ -437,5 +511,38 @@ function Review({
         </Button>
       </div>
     </div>
+  );
+}
+
+function ReceiptCheck({ draft }: { draft: StatementDraft }) {
+  const difference = draft.balance_difference_cents;
+  const groups = `${draft.rows.length} purchase${draft.rows.length === 1 ? "" : "s"}, one per category`;
+  if (difference === 0) {
+    return (
+      <p className="flex gap-2 rounded-xl bg-money-in/10 p-3 text-sm text-ink">
+        <CircleCheck className="mt-0.5 size-4 shrink-0 text-money-in" aria-hidden="true" />
+        <span>
+          {groups}. They add up exactly to the receipt’s total,{" "}
+          <span className="tabular font-semibold">{cad(draft.closing_balance_cents ?? 0)}</span>. Tax is included in the
+          biggest one.
+        </span>
+      </p>
+    );
+  }
+  return (
+    <p role="status" className="flex gap-2 rounded-xl bg-gold-soft p-3 text-sm text-ink">
+      <CircleAlert className="mt-0.5 size-4 shrink-0 text-gold-strong" aria-hidden="true" />
+      <span>
+        {groups}.{" "}
+        {difference === null ? (
+          "The receipt’s total wasn’t readable, so give the amounts a quick look."
+        ) : (
+          <>
+            They add up to <span className="tabular font-semibold">{cad(Math.abs(difference))}</span>{" "}
+            {difference > 0 ? "more" : "less"} than the printed total. A line may be misread; check before adding.
+          </>
+        )}
+      </span>
+    </p>
   );
 }

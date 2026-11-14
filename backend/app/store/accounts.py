@@ -128,6 +128,13 @@ class AccountOps(DashboardViews):
                         del self._split_groups[group.id]
             return self._snapshot()
 
+    def set_persona(self, user_id: str, persona: str) -> DashboardResponse:
+        """Student, working, or learning first: tailors Home, Learn, and Penny AI's coaching."""
+        with self._lock:
+            self.require_owner(user_id)
+            self._profile = self._profile.model_copy(update={"persona": persona})
+            return self._snapshot()
+
     # ------------------------------------------------------------------ categories
 
     def create_category(self, user_id: str, request: CategoryWrite) -> DashboardResponse:

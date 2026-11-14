@@ -1,8 +1,11 @@
+import asyncio
 from datetime import date
 
 import pytest
 from fastapi import HTTPException
 
+from app.assist import common, onboarding
+from app.config import Settings
 from app.dashboard_models import BudgetPatch, OnboardingAnswers, OnboardingApply
 from app.store import fresh_store
 
@@ -384,3 +387,21 @@ def test_heads_up_when_chequing_cannot_cover_rent() -> None:
     assert warning.cover_account_id == ids["savings"]
     # Safe to spend is about the budget, so it doesn't change.
     assert d.spending_power_cents == 50_000
+
+
+def test_skipping_every_step_builds_an_empty_plan_without_the_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def no_model(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("the model shouldn't be asked about an empty plan")
+
+    monkeypatch.setattr(common, "ask_json", no_model)
+    store = fresh_store(USER, None)
+    empty = OnboardingAnswers.model_validate(
+        {"monthly_money_cents": 0, "bills": [], "everyday": {}, "savings_basis_points": 0}
+    )
+    settings = Settings(openai_api_key="sk-test-not-real", database_url=None)
+    plan = asyncio.run(onboarding.onboarding_plan(settings, store, USER, empty))
+    assert plan.income_cents == 0 and plan.lines == []
+    assert plan.summary.source == "built_in"
+    assert "skipped" in plan.summary.items[0]

@@ -1007,3 +1007,7 @@ class OnboardingApply(DashboardModel):
         if any(value < 0 for value in self.everyday_limits.values()):
             raise ValueError("Amounts can't be negative")
         return self
+
+
+class PersonaWrite(DashboardModel):
+    persona: Literal["student", "working", "learner"]

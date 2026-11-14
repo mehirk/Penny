@@ -61,7 +61,10 @@ def save(
     """Writes the changes in one transaction and returns the new version. Raises
     StaleDataError if the saved version is no longer `version` (None: not saved yet)."""
     upserts, deletes = diff(before, after)
-    values = [profile[column] for column in PROFILE_COLUMNS]
+    # profile_row leaves out columns that are still unset, so a database without a newer
+    # migration (such as persona) keeps working.
+    saved_columns = [column for column in PROFILE_COLUMNS if column in profile]
+    values = [profile[column] for column in saved_columns]
     with conn.transaction():
         if version is None:
             cursor = conn.execute(
@@ -69,8 +72,8 @@ def save(
                     "insert into public.profiles (user_id, {columns}) values (%s, {params})"
                     " on conflict (user_id) do nothing"
                 ).format(
-                    columns=sql.SQL(", ").join(map(sql.Identifier, PROFILE_COLUMNS)),
-                    params=sql.SQL(", ").join(sql.Placeholder() * len(PROFILE_COLUMNS)),
+                    columns=sql.SQL(", ").join(map(sql.Identifier, saved_columns)),
+                    params=sql.SQL(", ").join(sql.Placeholder() * len(saved_columns)),
                 ),
                 (user_id, *values),
             )
@@ -82,7 +85,7 @@ def save(
                     " updated_at = now(), {assignments} where user_id = %s and state_version = %s"
                 ).format(
                     assignments=sql.SQL(", ").join(
-                        sql.SQL("{} = %s").format(sql.Identifier(c)) for c in PROFILE_COLUMNS
+                        sql.SQL("{} = %s").format(sql.Identifier(c)) for c in saved_columns
                     )
                 ),
                 (*values, user_id, version),
