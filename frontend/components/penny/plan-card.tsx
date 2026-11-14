@@ -213,16 +213,20 @@ export function PlanCard({
   onDone,
   onAppOnly,
   compact = false,
+  allowChange = true,
 }: {
   /** Inside Penny AI's chat: no header (the chat already shows who said what). */
   compact?: boolean;
+  /** Offer "Change" to rephrase the request (not for a mission's steps). */
+  allowChange?: boolean;
   plan: AgentPlan;
   photo: string | null;
   dashboard: Dashboard;
   applyChange: (dashboard: Dashboard) => void;
   onRefine: (text: string) => void;
   onVoice: () => void;
-  onDone: (applied: AgentApplied) => void;
+  /** `kept` is the ids of the steps the user left ticked. */
+  onDone: (applied: AgentApplied, kept: string[]) => void;
   onAppOnly: () => void;
 }) {
   const [kept, setKept] = useState<Record<string, boolean>>(() =>
@@ -253,7 +257,10 @@ export function PlanCard({
     try {
       const applied = await agentApi.apply(actions);
       applyChange(applied.dashboard);
-      onDone(applied);
+      onDone(
+        applied,
+        chosen.map((step) => step.id),
+      );
     } catch (reason) {
       haptic("error");
       setError(describeError(reason, "That couldn’t be saved").detail);
@@ -383,7 +390,7 @@ export function PlanCard({
       {/* While Penny is waiting on an answer, only the answer moves things on. */}
       {(plan.steps.length > 0 || (plan.app.length > 0 && !plan.question)) && (
         <div className="flex gap-2">
-          {!refining && (
+          {!refining && allowChange && (
             <Button variant="outline" className="gap-2" onClick={() => setRefining(true)}>
               <PencilLine className="size-4" aria-hidden="true" />
               Change

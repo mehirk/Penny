@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { Keyboard, KeyboardStyle } from "@capacitor/keyboard";
+import { LocalNotifications } from "@capacitor/local-notifications";
 
 /** True inside the iOS app (Capacitor), false in any browser. */
 export const isNativeApp = () => Capacitor.isNativePlatform();
@@ -19,6 +20,46 @@ export function haptic(kind: Haptic): void {
         ? Haptics.impact({ style: ImpactStyle.Light })
         : Haptics.notification({ type: kind === "success" ? NotificationType.Success : NotificationType.Error });
   done.catch(() => undefined);
+}
+
+/** Notification ids must be 32-bit integers: the same mission and reminder always get the same
+ * one, so scheduling a mission's reminders twice replaces them instead of doubling up. */
+function notificationId(key: string): number {
+  let hash = 0;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+  return Math.abs(hash) || 1;
+}
+
+/**
+ * Puts an agent's reminders on the iPhone, at 9 a.m. on each due day (days already past are
+ * skipped). Asks for permission the first time. Returns how many were scheduled; always 0 in a
+ * browser, where reminders stay in the app. Never throws.
+ */
+export async function scheduleReminders(
+  key: string,
+  reminders: { title: string; detail: string; due_on: string | null }[],
+): Promise<number> {
+  if (!isNativeApp() || !reminders.length) return 0;
+  try {
+    let { display } = await LocalNotifications.checkPermissions();
+    if (display === "prompt" || display === "prompt-with-rationale")
+      ({ display } = await LocalNotifications.requestPermissions());
+    if (display !== "granted") return 0;
+    const now = Date.now();
+    const notifications = reminders.flatMap((reminder, index) => {
+      if (!reminder.due_on) return [];
+      const [year, month, day] = reminder.due_on.split("-").map(Number);
+      const at = new Date(year, month - 1, day, 9);
+      if (at.getTime() <= now) return [];
+      return [
+        { id: notificationId(`${key}:${index}`), title: reminder.title, body: reminder.detail, schedule: { at } },
+      ];
+    });
+    if (notifications.length) await LocalNotifications.schedule({ notifications });
+    return notifications.length;
+  } catch {
+    return 0;
+  }
 }
 
 /** Matches the keyboard to Penny's light or dark theme. */

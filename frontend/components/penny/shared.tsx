@@ -23,7 +23,17 @@ import { cn } from "@/lib/utils";
 import { usePreferences } from "./preferences";
 
 export type View =
-  "today" | "spending" | "charts" | "accounts" | "recurring" | "goals" | "budgets" | "learn" | "ai" | "settings";
+  | "today"
+  | "spending"
+  | "charts"
+  | "accounts"
+  | "recurring"
+  | "goals"
+  | "budgets"
+  | "learn"
+  | "ai"
+  | "agents"
+  | "settings";
 
 /**
  * Every view. `primary` items sit in the phone tab bar; the rest live under "More".
@@ -59,7 +69,7 @@ export const NAVIGATION: {
     id: "ai",
     label: "Penny AI",
     title: "Penny AI",
-    description: "Your wallet, your coach: personal coaching from your own numbers.",
+    description: "Ask anything or give Penny a job: her agents research it, check it, and do the work.",
     icon: Bot,
     primary: true,
   },

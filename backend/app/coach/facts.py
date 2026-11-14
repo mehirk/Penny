@@ -70,11 +70,26 @@ class FactBook:
         """Amounts the user typed may be repeated back to them."""
         self._user_cents.update(_quoted_cents(match)[0] for match in _MONEY.finditer(text))
 
+    def web_amounts(self, text: str) -> None:
+        """Amounts quoted from cited web pages: usable, and labelled as from the web."""
+        for match in _MONEY.finditer(text):
+            cents, _ = _quoted_cents(match)
+            if cents > 0:
+                self.money("From the web (check the source)", cents, "web")
+
     def _add(self, fact: Fact) -> None:
         if not any(
             item.label == fact.label and item.display == fact.display for item in self.facts
         ):
             self.facts.append(fact)
+
+    def knows_cents(self, cents: int, *, web: bool = False) -> bool:
+        """True when `cents` is a verified figure or an amount the user typed. Figures from the
+        web count only with `web` (an input to a calculation, never an amount to move)."""
+        return cents in self._user_cents or any(
+            item.cents is not None and abs(item.cents) == cents and (web or item.source != "web")
+            for item in self.facts
+        )
 
     def unverified_figures(self, text: str) -> list[str]:
         """Dollar amounts and percentages in `text` that no verified figure supports."""

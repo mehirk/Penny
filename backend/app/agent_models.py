@@ -236,7 +236,9 @@ AgentAction = Annotated[
     Field(discriminator="kind"),
 ]
 
-AppKind = Literal["navigate", "theme", "palette", "surface", "hide_amounts", "sound", "ask"]
+AppKind = Literal[
+    "navigate", "theme", "palette", "surface", "hide_amounts", "sound", "ask", "mission"
+]
 
 
 class AppStep(DashboardModel):

@@ -33,6 +33,7 @@ from app.assist.agent_more import (
     build_app,
     build_data,
     is_question,
+    rule_mission,
     rule_more,
 )
 from app.assist.common import logger
@@ -226,7 +227,7 @@ def _step(index: int, kind: ActionKind, title: str, lines: list[str | None], act
 
 def build_steps(
     ctx: Context, intents: list[Intent]
-) -> tuple[list[AgentStep], list[AppStep], str | None]:
+) -> tuple[list[AgentStep], list[AppStep], str | None, list[str]]:
     """Checked, typed steps for what the user said, steps the app runs on the device, and a
     question for anything that can't be done without asking (a missing amount, an unknown goal)."""
     steps: list[AgentStep] = []
@@ -738,6 +739,9 @@ def _answers(clause: str, last: Intent, ctx: Context) -> bool:
 
 def rule_intents(text: str, ctx: Context, receipt: list[ReceiptItem]) -> list[Intent]:
     """What the built-in rules read from what the user said (and a receipt already read)."""
+    mission = None if receipt else rule_mission(text, Intent)
+    if mission:
+        return [mission]
     if not receipt and is_question(text):
         return [Intent(kind="ask", text=text.strip())]
     clauses = [c.strip(" ,") for c in _CLAUSES.split(text.strip()) if c and c.strip(" ,")]
@@ -833,10 +837,16 @@ _INSTRUCTIONS = (
     "- delete: option = transaction/bill/goal/budget/account/category/transfer/pay/group, "
     "target_id = its id ('my last transaction' is the first one listed).\n"
     "- App (nothing saved): navigate (option = today, spending, charts, accounts, recurring, "
-    "goals, budgets, learn, ai, settings), theme (light/dark/system), palette (original, "
+    "goals, budgets, learn, ai, agents, settings), theme (light/dark/system), palette (original, "
     "graphite, noir, emerald, sapphire, bordeaux, pearl), surface (classic, glass, soft, clay, "
     "flat, halo), hide_amounts (on/off), sound (on/off), ask (text = a question or request for "
-    "advice to pass to Penny AI, the coach: affordability, 'how am I doing', explanations).\n"
+    "advice to pass to Penny AI, the coach: affordability, 'how am I doing', explanations), "
+    "mission (option = checkup, free_money, payoff, purchase, or life_event; text = the user's "
+    "words): work for Penny's team of agents to research and plan, like getting ready for a "
+    "move, a co-op term, a first job, or a trip, a full money check-up, finding benefits or "
+    "free money, a plan to pay off a card, or whether they can afford to buy something "
+    "(purchase: 'can I buy an iPhone 18 Pro?', 'price of X, can I afford it'). Use one "
+    "mission instead of many separate actions.\n"
     "Never drop part of a request: list every action, plus an ask for any question in it. "
     "If something wasn't said (an amount, which category or goal), still list the action with "
     "that field empty: Penny asks the user herself, so leave question null. For a budget in a "

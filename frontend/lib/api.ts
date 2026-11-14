@@ -1277,7 +1277,7 @@ export type AgentAction =
     };
 /** Something the app does on this device: open a page, change the look, or ask Penny AI. */
 export type AppStep = {
-  kind: "navigate" | "theme" | "palette" | "surface" | "hide_amounts" | "sound" | "ask";
+  kind: "navigate" | "theme" | "palette" | "surface" | "hide_amounts" | "sound" | "ask" | "mission";
   value: string;
   title: string;
   emoji: string;
@@ -1329,4 +1329,148 @@ export const agentApi = {
     authorizedRequest<AgentApplied>("/api/v1/agent/apply", { method: "POST", body: JSON.stringify({ actions }) }),
   usuals: () => authorizedRequest<UsualItem[]>("/api/v1/agent/usuals"),
   undo: (undo_id: string) => request("/api/v1/agent/undo", { method: "POST", body: JSON.stringify({ undo_id }) }),
+};
+
+// ------------------------------------------------------------------ Mission Control (app/agents)
+
+export type AgentId = "analyst" | "planner" | "cashflow" | "benefits" | "people" | "tutor";
+/** The answer the way an adviser gives it; picking an option is sent to Penny as the next message. */
+export type Brief = {
+  answer: string;
+  numbers: { label: string; value: string }[];
+  options: { title: string; detail: string; recommended: boolean }[];
+};
+export type MissionKind =
+  "checkup" | "free_money" | "life_event" | "payoff" | "purchase" | "custom" | "autopilot" | "watch";
+export type TraceStep = {
+  at_ms: number;
+  kind: "plan" | "think" | "tool" | "draft" | "auto" | "check" | "error" | "ask" | "web";
+  title: string;
+  detail: string | null;
+  data: { input?: Record<string, unknown>; output?: string } | null;
+};
+export type Finding = { tone: "good" | "watch" | "alert" | "info"; title: string; detail: string };
+/** Done by an agent on its own because no money moves: a reminder, a lesson, a guide. */
+export type AutoTask = {
+  kind: "reminder" | "lesson" | "guide" | "link";
+  title: string;
+  detail: string;
+  due_on: string | null;
+  ref: string | null;
+};
+export type AgentLane = {
+  agent: AgentId;
+  name: string;
+  emoji: string;
+  role: string;
+  task: string;
+  status: "queued" | "running" | "waiting" | "done" | "failed";
+  current: string | null;
+  steps: TraceStep[];
+  summary: string | null;
+  findings: Finding[];
+  auto: AutoTask[];
+  drafted: string[];
+  tool_calls: number;
+  ai_calls: number;
+  elapsed_ms: number | null;
+  source: "ai" | "built_in";
+  /** The model that wrote its report (null for a built-in playbook). */
+  model: string | null;
+  /** 1 for the first round; 2 for follow-ups Penny sent after reading the reports. */
+  wave: number;
+  because: string | null;
+  sources: WebSource[];
+};
+export type WebSource = { title: string; url: string };
+/** An agent stopped to ask; without an answer in time it goes with `assumption`. */
+export type AgentQuestion = {
+  id: string;
+  agent: AgentId;
+  question: string;
+  why: string;
+  choices: string[];
+  assumption: string;
+  answer: string | null;
+  assumed: boolean;
+};
+/** Something Penny remembered from an earlier mission, checked against today's numbers. */
+export type MemoryNote = { tone: Finding["tone"]; title: string; detail: string; from_on: string };
+export type Verification = {
+  status: "running" | "passed" | "fixed";
+  figures_checked: number;
+  actions_checked: number;
+  notes: string[];
+  steps: TraceStep[];
+};
+export type MissionRun = {
+  id: string;
+  kind: MissionKind;
+  goal: string;
+  title: string;
+  status: "running" | "done" | "failed";
+  started_at: string;
+  finished_at: string | null;
+  elapsed_ms: number | null;
+  plan: string | null;
+  plan_steps: TraceStep[];
+  /** What set off a Watch mission. */
+  trigger: string | null;
+  memory: MemoryNote[];
+  lanes: AgentLane[];
+  /** Penny's read of the first round's reports. */
+  review: string | null;
+  question: AgentQuestion | null;
+  asked: AgentQuestion[];
+  verification: Verification | null;
+  summary: string | null;
+  brief: Brief | null;
+  steps: AgentStep[];
+  auto: AutoTask[];
+  approved: string[];
+  declined: string[];
+  undo_id: string | null;
+  /** A newer mission started, so steps not approved here are out of date. */
+  superseded: boolean;
+  ai_calls: number;
+  /** Model tokens the mission used; `cached` input tokens are billed at a discount. */
+  tokens: { input: number; cached: number; output: number; reused: number };
+  source: "ai" | "built_in";
+  error: string | null;
+};
+export type MissionSummary = {
+  id: string;
+  kind: MissionKind;
+  title: string;
+  status: MissionRun["status"];
+  started_at: string;
+  elapsed_ms: number | null;
+  agents: AgentId[];
+  drafted: number;
+  approved: number;
+  auto: number;
+  superseded: boolean;
+};
+/** Missions run in the background: start one, then poll `get` until it's no longer running. */
+export const agentsApi = {
+  start: (kind: MissionKind, goal = "") =>
+    authorizedRequest<MissionRun>("/api/v1/agents/runs", { method: "POST", body: JSON.stringify({ kind, goal }) }),
+  autopilot: () => authorizedRequest<MissionRun | null>("/api/v1/agents/autopilot", { method: "POST" }),
+  list: () => authorizedRequest<MissionSummary[]>("/api/v1/agents/runs"),
+  get: (id: string) => authorizedRequest<MissionRun>(`/api/v1/agents/runs/${encodeURIComponent(id)}`),
+  approved: (id: string, step_ids: string[], undo_id: string | null, declined: string[] = []) =>
+    authorizedRequest<MissionRun>(`/api/v1/agents/runs/${encodeURIComponent(id)}/approved`, {
+      method: "POST",
+      body: JSON.stringify({ step_ids, undo_id, declined }),
+    }),
+  declined: (id: string, step_ids: string[]) =>
+    authorizedRequest<MissionRun>(`/api/v1/agents/runs/${encodeURIComponent(id)}/declined`, {
+      method: "POST",
+      body: JSON.stringify({ step_ids }),
+    }),
+  answer: (id: string, question_id: string, answer: string) =>
+    authorizedRequest<MissionRun>(`/api/v1/agents/runs/${encodeURIComponent(id)}/answer`, {
+      method: "POST",
+      body: JSON.stringify({ question_id, answer }),
+    }),
 };

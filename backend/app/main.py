@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.api import (
     accounts,
     agent,
+    agents,
     assist,
     bills,
     budgets,
@@ -146,5 +147,7 @@ for module in (
     learning,
     coach,
     agent,
+    agents,
+    agents,
 ):
     app.include_router(module.router)

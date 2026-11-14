@@ -34,6 +34,18 @@ class Settings(BaseSettings):
     openai_transcribe_model: str = "gpt-4o-mini-transcribe"
     # Upper bound for one coach reply, including every tool round and any revision.
     coach_timeout_seconds: float = 45.0
+    # Lets the Planner and Benefits finder search the web (a few searches per mission, each
+    # billed by OpenAI on top of the model call). Needs the API key.
+    web_research: bool = True
+    # Starts Penny's agents by themselves when a new transaction breaks a budget.
+    agent_watch: bool = True
+    # How long OpenAI keeps the agents' prompt prefixes cached ("in_memory" or "24h"); cached
+    # input tokens are billed at a fraction of the price. Empty leaves OpenAI's default.
+    openai_cache_retention: str | None = "24h"
+    # A cheaper model for the agents whose work is checking numbers (Analyst, Cash-flow guard,
+    # Benefits finder). Penny's planning, review, and final answer, the Planner, and web
+    # research stay on `openai_model`. Empty uses `openai_model` for every agent.
+    openai_agent_model: str | None = "gpt-6.1-terra"
 
     @field_validator("database_url", mode="before")
     @classmethod

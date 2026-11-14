@@ -107,4 +107,36 @@ POST /agent/undo (within 15 minutes, only if nothing changed since)
   -> restores the pre-apply state
 ```
 
-App steps (open a page, switch theme, hide amounts) run on the device. Chat messages in Penny AI go through the same planner first, so a question reaches the coach and a request comes back as a plan card.
+App steps (open a page, switch theme, hide amounts) run on the device. Chat messages in Penny AI go through the same planner first, so a question reaches the coach and a request comes back as a plan card. A big goal ("I'm moving to Toronto, get me ready") becomes a `mission` step, which starts a mission for the agents below.
+
+## Agents (inside Penny AI)
+
+Missions run inside the Penny AI chat: the planner turns a request that needs the agents into a `mission` step, the chat starts it and shows it live, and the mission ends with a `brief` (the direct answer, the numbers behind it, and options the user can pick as their next message).
+
+`backend/app/agents/` runs missions with an orchestrator, six subagents, and a verifier.
+
+```text
+POST /agents/runs {kind, goal}            (or /agents/autopilot once a day when the app opens)
+  -> load a read-only workspace now, while the request holds the user's data; run in the background
+  -> memory: earlier missions' approved steps checked against today; turned-down ones noted
+  -> orchestrator: the model (or rules) picks agents and writes one task each
+  -> subagents in parallel (asyncio), each with only its own tools:
+       Analyst, Cash-flow guard, Planner, Benefits finder, People, Tutor
+       model loop: call tools -> read results -> repeat (≤5 rounds) -> report
+       without a model: the agent's built-in playbook calls the same tools
+       an agent may ask the user one question (the mission waits up to 90 s, then assumes)
+       the Planner and Benefits finder may search the web (≤3 a mission, sources kept)
+  -> review: Penny reads the reports and sends follow-ups (a second wave) built on findings
+  -> verifier: every $ and % in every report must be a FactBook figure (sent back once, then
+     replaced with built-in findings); drafts are rebuilt by the same step builder as the app's
+     plans, duplicates merged, and held back if together they'd leave chequing under a $500
+     cushion after bills
+  -> summary; the run is saved to agent_runs (30 per person) as the audit trail
+GET /agents/runs/{id}                     (polled by the app while it runs)
+POST /agents/runs/{id}/answer              (the user's answer to a waiting question)
+POST /agent/apply, then /agents/runs/{id}/approved   (the user's one tap, then the audit note)
+POST /agents/runs/{id}/declined            ("Not now": remembered for 30 days)
+POST /transactions -> a purchase that tips a budget over starts a Watch mission (app/agents/watch.py)
+```
+
+Read tools run deterministic code and register every figure; draft tools refuse any amount a tool didn't produce or the user didn't say; auto tools (reminders, lessons, guides) move no money and run without approval. Only the Cash-flow guard and the Planner can draft. Starting a new mission marks older unapproved drafts as superseded, since they were worked out from old numbers. A mission makes at most 30 model calls.

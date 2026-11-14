@@ -220,7 +220,23 @@ def test_answering_how_much_fills_in_the_amount(store: DashboardStore) -> None:
         ("mute the sounds", "sound", "off"),
         ("open my goals", "navigate", "goals"),
         ("take me to settings", "navigate", "settings"),
-        ("Can I afford a $300 concert trip?", "ask", "Can I afford a $300 concert trip?"),
+        ("How am I doing this month?", "ask", "How am I doing this month?"),
+        # Whether a purchase fits is work for the agents: price, what's left, the options.
+        (
+            "Can I afford a $300 concert trip?",
+            "mission",
+            "purchase|Can I afford a $300 concert trip?",
+        ),
+        ("open agents", "navigate", "agents"),
+        # Big goals go to Penny's team of agents (app.agents) as a mission.
+        ("do a check-up on my money", "mission", "checkup|do a check-up on my money"),
+        ("find me free money", "mission", "free_money|find me free money"),
+        ("help me pay off my card", "mission", "payoff|help me pay off my card"),
+        (
+            "I'm moving to Toronto, get me ready",
+            "mission",
+            "life_event|I'm moving to Toronto, get me ready",
+        ),
     ],
 )
 def test_app_commands_run_on_the_device(store: DashboardStore, said: str, kind: str, value: str):

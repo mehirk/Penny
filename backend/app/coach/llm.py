@@ -31,6 +31,17 @@ class AiLimitReached(ModelUnavailable):
     """This person used their Penny AI calls for now (app.limits)."""
 
 
+def cache_options(settings: Settings, cache_key: str | None) -> dict[str, Any]:
+    """Prompt caching: calls that start with the same instructions and tools share a cached
+    prefix, billed at a fraction of the input price. The key keeps them on the same cache."""
+    if not cache_key:
+        return {}
+    options: dict[str, Any] = {"prompt_cache_key": cache_key}
+    if settings.openai_cache_retention:
+        options["prompt_cache_retention"] = settings.openai_cache_retention
+    return options
+
+
 def _charge() -> None:
     if not limits.spend_ai_call():
         raise AiLimitReached("ai_limit")
@@ -146,8 +157,16 @@ async def ask_json(
     attachment: dict[str, Any] | None = None,
     max_output_tokens: int = MAX_OUTPUT_TOKENS,
     timeout_seconds: float | None = None,
+    *,
+    cache_key: str | None = None,
+    on_usage: Callable[[Any], None] | None = None,
+    counted: bool = False,
 ) -> dict[str, Any]:
     """One tool-free model call that must return JSON matching `schema`.
+
+    `cache_key` routes calls with the same fixed instructions to the same prompt cache;
+    `on_usage` receives the response's token usage; `counted` means the caller already
+    counted this call against the person's AI limit (Penny's agents do, per mission).
 
     `attachment` is an extra input part sent before the prompt, such as a PDF
     (`{"type": "input_file", "filename": ..., "file_data": "data:application/pdf;base64,..."}`).
@@ -156,7 +175,8 @@ async def ask_json(
     """
     if not settings.openai_api_key:
         raise ModelUnavailable("no_api_key")
-    _charge()
+    if not counted:
+        _charge()
     client = AsyncOpenAI(
         api_key=settings.openai_api_key,
         timeout=timeout_seconds or settings.coach_timeout_seconds,
@@ -171,7 +191,10 @@ async def ask_json(
         reasoning={"effort": "low"},
         store=False,
         text={"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
+        **cache_options(settings, cache_key),
     )
+    if on_usage and response.usage:
+        on_usage(response.usage)
     if response.status != "completed" or not response.output_text:
         raise ModelUnavailable("incomplete response")
     try:

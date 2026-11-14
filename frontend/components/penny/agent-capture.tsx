@@ -164,8 +164,8 @@ export function AgentCapture({
   function runApp(items: AppStep[]) {
     items.forEach(onApp);
     play("coin");
-    // Opening a page or asking Penny AI: get out of the way so the user sees it.
-    if (items.some((item) => item.kind === "navigate" || item.kind === "ask")) {
+    // Opening a page, asking Penny AI, or sending the agents: get out of the way so the user sees it.
+    if (items.some((item) => item.kind === "navigate" || item.kind === "ask" || item.kind === "mission")) {
       close(false);
       return;
     }

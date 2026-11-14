@@ -135,7 +135,7 @@ Each request loads the user's data in one query, runs the same integer-cent doma
 | `PENNY_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `PENNY_FRONTEND_ORIGIN` | the hosted website's URL; more in `PENNY_EXTRA_ORIGINS`, comma-separated |
 | `PENNY_DEMO_OWNER_USER_ID` | optional: the user who gets the Maya data |
-| `PENNY_OPENAI_API_KEY` | optional: model answers and voice |
+| `PENNY_OPENAI_API_KEY` | optional: model answers, voice, and agents |
 
 Never set `PENNY_DEMO_AUTH_TOKEN` in production (the API refuses to start). Choose a region near the Supabase project: each request makes one or two database round trips.
 

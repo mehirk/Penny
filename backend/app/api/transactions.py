@@ -2,8 +2,10 @@
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, BackgroundTasks, Query
 
+from app.agents.watch import noticed
+from app.api.agents import watch
 from app.api.deps import AuthenticatedUser, ViewMonth, in_view, user_store
 from app.assist.quick_add import pick_category
 from app.config import get_settings
@@ -24,11 +26,17 @@ router = APIRouter(prefix="/api/v1", tags=["transactions"])
 
 @router.post("/transactions", response_model=DashboardResponse)
 def create_transaction(
-    request: TransactionWrite, current_user: AuthenticatedUser, month: ViewMonth = None
+    request: TransactionWrite,
+    current_user: AuthenticatedUser,
+    background: BackgroundTasks,
+    month: ViewMonth = None,
 ) -> DashboardResponse:
-    return in_view(
-        user_store(current_user).create_transaction(current_user.id, request), current_user, month
-    )
+    after = user_store(current_user).create_transaction(current_user.id, request)
+    # A purchase that tips a budget over starts Penny's agents by themselves (after replying).
+    trigger = noticed(request, after) if get_settings().agent_watch else None
+    if trigger:
+        background.add_task(watch, current_user, trigger)
+    return in_view(after, current_user, month)
 
 
 @router.post("/transactions/split", response_model=DashboardResponse)
