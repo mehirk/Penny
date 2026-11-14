@@ -220,7 +220,23 @@ def test_answering_how_much_fills_in_the_amount(store: DashboardStore) -> None:
         ("mute the sounds", "sound", "off"),
         ("open my goals", "navigate", "goals"),
         ("take me to settings", "navigate", "settings"),
-        ("Can I afford a $300 concert trip?", "ask", "Can I afford a $300 concert trip?"),
+        ("How am I doing this month?", "ask", "How am I doing this month?"),
+        # Whether a purchase fits is work for the agents: price, what's left, the options.
+        (
+            "Can I afford a $300 concert trip?",
+            "mission",
+            "purchase|Can I afford a $300 concert trip?",
+        ),
+        ("open agents", "navigate", "agents"),
+        # Big goals go to Penny's team of agents (app.agents) as a mission.
+        ("do a check-up on my money", "mission", "checkup|do a check-up on my money"),
+        ("find me free money", "mission", "free_money|find me free money"),
+        ("help me pay off my card", "mission", "payoff|help me pay off my card"),
+        (
+            "I'm moving to Toronto, get me ready",
+            "mission",
+            "life_event|I'm moving to Toronto, get me ready",
+        ),
     ],
 )
 def test_app_commands_run_on_the_device(store: DashboardStore, said: str, kind: str, value: str):
@@ -324,3 +340,18 @@ def test_a_new_category_budget_is_made_in_one_step(store: DashboardStore) -> Non
     assert done == ["Trips budget set to $200.00"]
     trips = next(c for c in dashboard.categories if c.name == "Trips")
     assert any(b.category_id == trips.id and b.limit_cents == 20_000 for b in dashboard.budgets)
+
+
+def test_usuals_are_the_most_frequent_everyday_purchases(store: DashboardStore) -> None:
+    usuals = store.usual_transactions(_user(store))
+    assert usuals[0].text == "Atlantic Market $189.42" and usuals[0].count == 4
+    names = [item.description for item in usuals]
+    # Bills record themselves, so they aren't offered.
+    assert "Mobile plan" not in names and "Halifax Transit pass" not in names
+
+
+def test_a_repeat_purchase_is_filed_the_way_the_user_filed_it(store: DashboardStore) -> None:
+    [step] = _plan(store, "Movie night $18").steps
+    assert isinstance(step.action, ExpenseAction) and step.action.category_id == "cat-fun"
+    [usual] = _plan(store, "Atlantic Market $40").steps
+    assert isinstance(usual.action, ExpenseAction) and usual.action.category_id == "cat-groceries"

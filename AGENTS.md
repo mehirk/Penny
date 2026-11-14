@@ -4,7 +4,7 @@ These rules apply to all work in this repository.
 
 ## Product boundary
 
-- Build a hackathon MVP for Canadian students and young adults; optimize for a clear, reliable demo by November 15, 2026.
+- Build a hackathon MVP for Canadian students and young adults; optimize for a clear, reliable demo by November 18, 2026.
 - Use only fictional people, accounts, transactions, balances, and financial scenarios.
 - Do not add bank connections, payment processing, brokerage features, investment recommendations, or production financial infrastructure.
 - Prefer the smallest implementation that supports the agreed demo. Record scope or architecture changes in `DECISIONS.md`.

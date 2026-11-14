@@ -37,7 +37,3 @@ def marker_id(day: date, quest: QuestKind) -> str:
 
 def chest_id(day: date) -> str:
     return f"chest:{day.isoformat()}"
-
-
-def is_marker(result_id: str) -> bool:
-    return result_id.startswith(("quest:", "chest:"))

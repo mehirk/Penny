@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AccountsView } from "@/components/penny/accounts-view";
 import { AgentCapture, type CaptureHandle, CaptureOrb } from "@/components/penny/agent-capture";
 import { DisplaySettingsDialog, MobileNavigation, PageHeader, Sidebar } from "@/components/penny/app-shell";
 import { BillShortDialog } from "@/components/penny/bill-short-dialog";
 import { BudgetsView } from "@/components/penny/budgets-view";
 import { ChartsView } from "@/components/penny/charts-view";
+import { AutopilotBanner, useAutopilot } from "@/components/penny/agents-view";
 import { CoachView, useCoachChat } from "@/components/penny/coach-view";
 import { ConfirmDialog, type ConfirmRequest, deleteConfirmation } from "@/components/penny/confirm-dialog";
 import { EditDialogs } from "@/components/penny/edit-dialogs";
@@ -31,6 +33,7 @@ import { TodayView } from "@/components/penny/today-view";
 import type { TransactionTarget } from "@/components/penny/transaction-dialog";
 import { TransferContext, TransferDialog, type TransferPrefill } from "@/components/penny/transfer-dialog";
 import { useDashboard } from "@/components/penny/use-dashboard";
+import { toneFor } from "@/components/penny/tone";
 import { useKeyboardShortcuts } from "@/components/penny/use-keyboard-shortcuts";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import {
@@ -41,11 +44,13 @@ import {
   type Dashboard,
   dashboardApi,
   type Mission,
+  type MissionKind,
   type SavingsGoal,
   type Transaction,
   type Transfer,
 } from "@/lib/api";
 import { onPasswordRequired, setAppSignedIn } from "@/lib/face-id";
+import { isNativeApp } from "@/lib/native";
 import { addMonths, formatMonth } from "@/lib/format";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -62,6 +67,7 @@ const isView = (value: string): value is View => NAVIGATION.some((item) => item.
 
 function PennyApp() {
   const toast = useToast();
+  const router = useRouter();
   // Steps Penny's agent runs on this device from the chat (set once runAppStep exists below).
   const appRunner = useRef<((step: AppStep) => void) | null>(null);
   const coachChat = useCoachChat(appRunner);
@@ -110,6 +116,8 @@ function PennyApp() {
   useEffect(() => {
     if (loaded) setAppSignedIn(true);
   }, [loaded]);
+  // Penny's daily Autopilot check, once the dashboard is in (Agents › Mission control).
+  const autopilot = useAutopilot(loaded, dashboard);
   // The app lock gave up on Face ID (two failures): sign out and ask for the password. The lock
   // stays over the app until the sign-in page shows, so no balances flash in between.
   useEffect(
@@ -133,7 +141,8 @@ function PennyApp() {
       if (hash === "recurring") {
         setSpendingTab("recurring");
         setView("spending");
-      } else if (isView(hash)) setView(hash);
+      } else if (hash === "agents") setView("ai");
+      else if (isView(hash)) setView(hash);
     };
     fromHash();
     window.addEventListener("hashchange", fromHash);
@@ -145,7 +154,8 @@ function PennyApp() {
    * "push"/"pop" slides like an inner page (e.g. Home ⇄ Net worth) instead of cross-fading.
    */
   const navigate = useCallback((target: View, anchor?: string, motion?: "push" | "pop") => {
-    const next = target === "recurring" ? "spending" : target;
+    // Penny's agents work inside Penny AI now; old links to Agents open it.
+    const next = target === "recurring" ? "spending" : target === "agents" ? "ai" : target;
     if (target === "recurring") setSpendingTab("recurring");
     else if (target === "spending" && anchor) setSpendingTab("transactions");
     if (motion) slide(motion, () => setView(next));
@@ -177,17 +187,36 @@ function PennyApp() {
   };
   /** Something Penny's agent was asked to do on this device (nothing is saved on the server). */
   const runAppStep = (step: AppStep) => {
-    if (step.kind === "navigate" && NAVIGATION.some((item) => item.id === step.value)) navigate(step.value as View);
+    if (step.kind === "navigate" && step.value === "agents") navigate("ai");
+    else if (step.kind === "navigate" && NAVIGATION.some((item) => item.id === step.value))
+      navigate(step.value as View);
     else if (step.kind === "theme") setTheme(step.value as ThemeSetting);
     else if (step.kind === "palette") setPalette(step.value as PaletteSetting);
     else if (step.kind === "surface") setSurface(step.value as SurfaceSetting);
     else if (step.kind === "hide_amounts") setHideAmounts(step.value === "on");
     else if (step.kind === "sound") setSoundOn(step.value === "on");
     else if (step.kind === "ask") askPenny(step.value);
+    else if (step.kind === "mission") {
+      // "missionKind|the user's words": the agents work on it in a new Penny AI chat.
+      const [kind, ...rest] = step.value.split("|");
+      const words = rest.join("|");
+      navigate("ai");
+      void coachChat.startMission(kind as MissionKind, words, words || step.title);
+    }
   };
   useEffect(() => {
     appRunner.current = runAppStep;
   });
+  // Playful for "learning first", grown-up for everyone else (components/penny/tone.ts).
+  const persona = dashboard?.profile.persona;
+  useEffect(() => {
+    document.documentElement.dataset.tone = toneFor(persona);
+  }, [persona]);
+  // Not signed in: the website shows the landing page; the iPhone app goes straight to sign-in.
+  const signedOut = !dashboard && loadError?.signedOut === true;
+  useEffect(() => {
+    if (signedOut) router.replace(isNativeApp() ? "/login" : "/welcome");
+  }, [signedOut, router]);
   useKeyboardShortcuts(
     dashboard
       ? {
@@ -203,7 +232,7 @@ function PennyApp() {
       : {},
   );
 
-  if (loading && !dashboard) return <DashboardSkeleton />;
+  if ((loading && !dashboard) || signedOut) return <DashboardSkeleton />;
   if (!dashboard)
     return (
       <LoadError
@@ -469,6 +498,15 @@ function PennyApp() {
               aria-busy={monthLoading}
             >
               {view === "today" && (
+                <AutopilotBanner
+                  run={autopilot}
+                  onOpen={() => {
+                    if (autopilot) coachChat.addMission(autopilot);
+                    navigate("ai");
+                  }}
+                />
+              )}
+              {view === "today" && (
                 <TodayView
                   dashboard={dashboard}
                   splits={{ save: mutate, onAddExpense: (share) => setTransactionTarget({ share }) }}
@@ -551,6 +589,7 @@ function PennyApp() {
                   save={mutate}
                   onCapture={(how, onText) => capture.current?.start(how, onText)}
                   onApp={runAppStep}
+                  onNavigate={navigate}
                 />
               )}
               {view === "settings" && (

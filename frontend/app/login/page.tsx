@@ -21,6 +21,7 @@ import {
   setAppSignedIn,
   setFaceIdDeclined,
 } from "@/lib/face-id";
+import { isNativeApp } from "@/lib/native";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 
 function friendlyAuthError(message: string): string {
@@ -43,6 +44,8 @@ export default function LoginPage() {
   const prompted = useRef(false);
   const passwordInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState("");
+  // The website links back to the landing page; the iPhone app has no landing page.
+  const [web, setWeb] = useState(false);
 
   useEffect(() => {
     // Signed out: no app lock on top of this page (it asks for Face ID itself).
@@ -53,6 +56,7 @@ export default function LoginPage() {
     // Sent here after Settings › Delete account.
     const deleted = params.get("deleted");
     void faceIdStatus().then((status) => {
+      setWeb(!isNativeApp());
       if (deleted === "all") setNotice("Your account and all its data were deleted.");
       if (deleted === "data")
         setNotice("All your data was deleted. Your email can still sign in, to a new, empty account.");
@@ -170,8 +174,12 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-dvh place-items-center px-4 py-10">
-      <div className="w-full max-w-sm animate-enter">
+    <main className="relative grid min-h-dvh place-items-center overflow-x-clip px-4 py-10">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(40rem_24rem_at_15%_0%,rgb(25_179_148/0.16),transparent),radial-gradient(36rem_24rem_at_95%_10%,rgb(182_125_242/0.16),transparent)]"
+      />
+      <div className="relative w-full max-w-sm animate-enter">
         <div className="flex items-center gap-3">
           <Mascot className="size-16 shrink-0 animate-bob" />
           <div>
@@ -286,6 +294,9 @@ export default function LoginPage() {
                   )}
                 </Button>
               </form>
+              <p className="mt-5 text-center text-xs text-ink-subtle">
+                New to Penny? It’s invite-only during the beta.
+              </p>
             </>
           )}
           {!configured && (
@@ -299,13 +310,15 @@ export default function LoginPage() {
           <ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />
           No bank is ever connected. You type in what you want Penny to know, and you can delete it any time.
         </p>
-        <Link
-          href="/"
-          className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-accent-strong hover:underline"
-        >
-          <ArrowLeft className="size-4" aria-hidden="true" />
-          Back to Penny
-        </Link>
+        {web && (
+          <Link
+            href="/welcome"
+            className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-accent-strong hover:underline"
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Back to home
+          </Link>
+        )}
       </div>
     </main>
   );

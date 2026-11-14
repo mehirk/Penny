@@ -32,10 +32,10 @@ Penny AI chats (messages and the verified replies shown with them) and proposals
 
 - `frontend/` owns presentation, accessibility, Supabase sign-in, and mutation forms. It never calculates financial totals; editable CAD strings are converted to cents with `BigInt` before requests. `components/dashboard-app.tsx` orchestrates views and dialogs; `components/penny/use-dashboard.ts` owns loading, period caching, and applying each change's fresh snapshot.
 - `backend/app/domain/` is the authoritative calculation layer. Pure functions accept and return Python integers representing cents, and each has unit tests.
-- `backend/app/store/` owns each user's financial state and returns a complete authoritative snapshot after each create, update, or delete. `DashboardStore` is assembled from one module per area (`transactions`, `budgets`, `goals`, `bills`, `accounts`, `splits`, `pay`, `calendar`, `planning`, `learning`, `reports`) on top of `state` (data, lookups, validation) and `dashboard`/`insights` (the snapshot). `seed.py` holds the fictional demo and a fresh account's starting point; `registry.py` picks the store for a signed-in user. The store knows nothing about the database: `snapshot()` and the constructor hand its state to `backend/app/db/`, which loads it per request in one query and saves only changed rows, guarded by a version number (409 on a conflicting edit). Without `PENNY_DATABASE_URL` the state is in memory.
+- `backend/app/store/` owns each user's financial state and returns a complete authoritative snapshot after each create, update, or delete. `DashboardStore` is assembled from one module per area (`transactions`, `budgets`, `goals`, `bills`, `accounts`, `splits`, `pay`, `calendar`, `planning`, `learning`, `reports`, and `agent`, which applies an approved snap-or-say plan all or nothing) on top of `state` (data, lookups, validation) and `dashboard`/`insights` (the snapshot). `seed.py` holds the fictional demo and a fresh account's starting point; `registry.py` picks the store for a signed-in user. The store knows nothing about the database: `snapshot()` and the constructor hand its state to `backend/app/db/`, which loads it per request in one query and saves only changed rows, guarded by a version number (409 on a conflicting edit). Without `PENNY_DATABASE_URL` the state is in memory.
 - `backend/app/api/` exposes typed routes, one router per area; `backend/app/main.py` only wires the app (per-request save, security headers and request-size limit, CORS, routers). `backend/app/api/deps.py` resolves the signed-in person and applies their request limit; `backend/app/limits.py` also caps Penny AI calls per person. Every financial endpoint validates the bearer identity (Supabase JWT via JWKS, or the development-only demo token) and passes the user id to the store, which rejects non-owners with 403.
 - `backend/app/coach/` owns the financial snapshot, check-in signals, deterministic tools, prompt-injection filtering, number grounding, provider fallback, and single-use goal proposals. Provider output cannot mutate state.
-- `backend/app/assist/` holds the smaller AI helpers (quick add, search, statement reading, budget suggestions, setup, and short explanations). Each has a built-in fallback, quotes only verified figures, and saves nothing.
+- `backend/app/assist/` holds the smaller AI helpers (snap or say it, voice transcription, quick add, search, statement reading, budget suggestions, setup, and short explanations). Each has a built-in fallback, quotes only verified figures, and saves nothing.
 - `supabase/migrations/` owns schema evolution. The browser receives only the publishable key; service-role credentials must remain server-side.
 
 ## Database model and authorization
@@ -91,3 +91,52 @@ Explicit approval
 ```
 
 The model never calculates. It may quote figures that deterministic code produced, and it can only change data by preparing a proposal that the user must approve. A reply is bounded by `PENNY_COACH_TIMEOUT_SECONDS` (default 45) across all tool rounds.
+
+## Snap or say it flow
+
+```text
+POST /agent/plan (typed or transcribed text, optional photo, recent chat as context)
+  -> the model, or built-in rules without a key, reads intents only: kinds, names,
+     and amounts copied as text; it never totals or splits
+  -> deterministic code parses amounts to cents, matches accounts, categories, and goals,
+     builds typed actions, and asks a question for anything missing; nothing is saved
+POST /agent/apply (the user's tap on Do it, up to 20 actions)
+  -> every action runs through the same store operations as the manual forms;
+     any failure restores the pre-apply state, so a plan applies all or nothing
+POST /agent/undo (within 15 minutes, only if nothing changed since)
+  -> restores the pre-apply state
+```
+
+App steps (open a page, switch theme, hide amounts) run on the device. Chat messages in Penny AI go through the same planner first, so a question reaches the coach and a request comes back as a plan card. A big goal ("I'm moving to Toronto, get me ready") becomes a `mission` step, which starts a mission for the agents below.
+
+## Agents (inside Penny AI)
+
+Missions run inside the Penny AI chat: the planner turns a request that needs the agents into a `mission` step, the chat starts it and shows it live, and the mission ends with a `brief` (the direct answer, the numbers behind it, and options the user can pick as their next message).
+
+`backend/app/agents/` runs missions with an orchestrator, six subagents, and a verifier.
+
+```text
+POST /agents/runs {kind, goal}            (or /agents/autopilot once a day when the app opens)
+  -> load a read-only workspace now, while the request holds the user's data; run in the background
+  -> memory: earlier missions' approved steps checked against today; turned-down ones noted
+  -> orchestrator: the model (or rules) picks agents and writes one task each
+  -> subagents in parallel (asyncio), each with only its own tools:
+       Analyst, Cash-flow guard, Planner, Benefits finder, People, Tutor
+       model loop: call tools -> read results -> repeat (≤5 rounds) -> report
+       without a model: the agent's built-in playbook calls the same tools
+       an agent may ask the user one question (the mission waits up to 90 s, then assumes)
+       the Planner and Benefits finder may search the web (≤3 a mission, sources kept)
+  -> review: Penny reads the reports and sends follow-ups (a second wave) built on findings
+  -> verifier: every $ and % in every report must be a FactBook figure (sent back once, then
+     replaced with built-in findings); drafts are rebuilt by the same step builder as the app's
+     plans, duplicates merged, and held back if together they'd leave chequing under a $500
+     cushion after bills
+  -> summary; the run is saved to agent_runs (30 per person) as the audit trail
+GET /agents/runs/{id}                     (polled by the app while it runs)
+POST /agents/runs/{id}/answer              (the user's answer to a waiting question)
+POST /agent/apply, then /agents/runs/{id}/approved   (the user's one tap, then the audit note)
+POST /agents/runs/{id}/declined            ("Not now": remembered for 30 days)
+POST /transactions -> a purchase that tips a budget over starts a Watch mission (app/agents/watch.py)
+```
+
+Read tools run deterministic code and register every figure; draft tools refuse any amount a tool didn't produce or the user didn't say; auto tools (reminders, lessons, guides) move no money and run without approval. Only the Cash-flow guard and the Planner can draft. Starting a new mission marks older unapproved drafts as superseded, since they were worked out from old numbers. A mission makes at most 30 model calls.

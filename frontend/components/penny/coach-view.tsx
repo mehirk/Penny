@@ -38,14 +38,19 @@ import {
   type CoachReply,
   type CoachRole,
   type Dashboard,
+  type MissionKind,
+  type MissionRun,
+  agentsApi,
   type SavedConversation,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { type CaptureStart, PlanCard } from "./agent-capture";
+import { type CaptureStart } from "./agent-capture";
+import { AGENT_PRESETS, MissionMessage } from "./agents-view";
+import { PlanCard } from "./plan-card";
 import { confetti, play } from "./game-fx";
 import { Mascot } from "./mascot";
 import type { SaveChange } from "./settings-view";
-import { cad, describeError } from "./shared";
+import { cad, describeError, type View } from "./shared";
 import { PlanBreakdown } from "./smart-cards";
 import { StatementImport } from "./statement-import";
 
@@ -58,7 +63,16 @@ type ProposalState = "approving" | "approved" | "dismissed";
  * replaced by a newer plan after the user added something ("it was $45"). */
 type AgentState = "open" | "done" | "undone" | "replaced";
 type AgentMessage = { plan: AgentPlan; state: AgentState; done?: string[]; undoId?: string };
-type CoachMessage = { id: string; role: CoachRole; content: string; reply?: CoachReply; agent?: AgentMessage };
+/** A mission Penny's agents are working on (or finished), shown live in the chat. */
+type MissionRef = { id: string };
+type CoachMessage = {
+  id: string;
+  role: CoachRole;
+  content: string;
+  reply?: CoachReply;
+  agent?: AgentMessage;
+  mission?: MissionRef;
+};
 type AppRunner = { current: ((step: AppStep) => void) | null };
 type ChatError = { title: string; detail: string };
 type Conversation = {
@@ -141,9 +155,10 @@ function fromSaved(saved: SavedConversation): Conversation {
   return {
     ...saved,
     messages: saved.messages.map(({ reply, ...message }) => {
-      // Agent plans are saved in the reply slot as { agent }.
-      const agent = (reply as { agent?: AgentMessage } | null | undefined)?.agent;
-      if (agent) return { ...message, agent };
+      // Agent plans and missions are saved in the reply slot as { agent } or { mission }.
+      const slot = reply as { agent?: AgentMessage; mission?: MissionRef } | null | undefined;
+      if (slot?.agent) return { ...message, agent: slot.agent };
+      if (slot?.mission) return { ...message, mission: slot.mission };
       return reply ? { ...message, reply } : message;
     }),
   };
@@ -158,7 +173,9 @@ function upload(conversation: Conversation): Promise<unknown> {
     ...conversation,
     messages: conversation.messages
       .slice(-MAX_SAVED_MESSAGES)
-      .map(({ agent, ...message }) => (agent ? { ...message, reply: { agent } as unknown as CoachReply } : message)),
+      .map(({ agent, mission, ...message }) =>
+        agent || mission ? { ...message, reply: (agent ? { agent } : { mission }) as unknown as CoachReply } : message,
+      ),
     proposals,
   });
 }
@@ -241,8 +258,9 @@ export function useCoachChat(appRunner?: AppRunner) {
   }, []);
 
   const send = useCallback(
-    /** `direct` skips the agent: the question goes straight to the coach. */
-    async (text: string, options?: { direct?: boolean }) => {
+    /** `direct` skips the agent: the question goes straight to the coach. `after` sends it
+     * straight to Penny's agents as a follow-up to that mission (an option the user picked). */
+    async (text: string, options?: { direct?: boolean; after?: string }) => {
       const question = text.trim().slice(0, MAX_QUESTION_LENGTH);
       if (!question || pending) return;
       const userMessage: CoachMessage = { id: crypto.randomUUID(), role: "user", content: question };
@@ -268,7 +286,19 @@ export function useCoachChat(appRunner?: AppRunner) {
       const conversationId = id as string;
       setPending(true);
       setError(null);
+      const addMissionMessage = (run: MissionRun) =>
+        update(conversationId, (conversation) => ({
+          ...conversation,
+          messages: [
+            ...conversation.messages,
+            { id: crypto.randomUUID(), role: "assistant", content: run.title, mission: { id: run.id } },
+          ],
+        }));
       try {
+        if (options?.after) {
+          addMissionMessage(await agentsApi.start("custom", question, options.after));
+          return;
+        }
         // Penny's agent reads it first: things to do become a plan to approve right here;
         // questions and conversation go on to the coach.
         if (!options?.direct) {
@@ -290,6 +320,21 @@ export function useCoachChat(appRunner?: AppRunner) {
               context,
             })
             .catch(() => null);
+          // Work for Penny's agents runs right here in the chat.
+          const mission = plan && !plan.steps.length ? plan.app.find((step) => step.kind === "mission") : undefined;
+          if (mission) {
+            const [kind, ...words] = mission.value.split("|");
+            addMissionMessage(await agentsApi.start(kind as MissionKind, words.join("|") || question));
+            return;
+          }
+          // Right after the agents answered, anything that isn't a change to make is a follow-up
+          // for them too: one conversation, one set of numbers.
+          const previous = before.at(-1)?.mission;
+          const onDeviceOnly = plan?.app.filter((step) => step.kind !== "ask") ?? [];
+          if (previous && !plan?.steps.length && !onDeviceOnly.length) {
+            addMissionMessage(await agentsApi.start("custom", question, previous.id));
+            return;
+          }
           if (plan) {
             const asks = plan.app.filter((step) => step.kind === "ask");
             const onDevice = plan.app.filter((step) => step.kind !== "ask");
@@ -322,7 +367,7 @@ export function useCoachChat(appRunner?: AppRunner) {
           }
         }
         const history = thread
-          .filter((message) => !message.agent)
+          .filter((message) => !message.agent && !message.mission)
           .slice(-HISTORY_LIMIT - 1)
           .map(({ role, content }) => ({ role, content }));
         while (history[0]?.role === "assistant") history.shift();
@@ -341,6 +386,69 @@ export function useCoachChat(appRunner?: AppRunner) {
       }
     },
     [pending, update, appRunner],
+  );
+
+  /** Opens a new chat with a mission in it: one started elsewhere (a preset, the voice orb), or
+   * one Penny started herself (Autopilot, Watch). `said` is shown as the user's message. */
+  const addMission = useCallback((run: MissionRun, said?: string) => {
+    const existing = latest.current.conversations.find((item) =>
+      item.messages.some((message) => message.mission?.id === run.id),
+    );
+    if (existing) {
+      setActiveId(existing.id);
+      return;
+    }
+    const id = crypto.randomUUID();
+    const messages: CoachMessage[] = [
+      ...(said ? [{ id: crypto.randomUUID(), role: "user" as const, content: said }] : []),
+      { id: crypto.randomUUID(), role: "assistant", content: run.title, mission: { id: run.id } },
+    ];
+    const title = said ?? run.title;
+    unsaved.current.add(id);
+    touched.current.add(id);
+    setConversations((current) => [
+      {
+        id,
+        title: title.length > 60 ? `${title.slice(0, 57)}…` : title,
+        updated_at: new Date().toISOString(),
+        messages,
+        proposals: {},
+      },
+      ...current,
+    ]);
+    setActiveId(id);
+    setError(null);
+  }, []);
+
+  /** Starts a mission in a new chat. */
+  const startMission = useCallback(
+    async (kind: MissionKind, words: string, said: string) => {
+      setPending(true);
+      setError(null);
+      try {
+        addMission(await agentsApi.start(kind, words), said);
+      } catch (reason) {
+        setError(describeError(reason, "The agents couldn’t start"));
+      } finally {
+        setPending(false);
+      }
+    },
+    [addMission],
+  );
+
+  /** A finished mission's answer becomes the message's text, so follow-ups have the context. */
+  const finishMission = useCallback(
+    (messageId: string, run: MissionRun) => {
+      const id = latest.current.conversations.find((item) => item.messages.some((m) => m.id === messageId))?.id;
+      const answer = run.brief?.answer ?? run.summary ?? run.title;
+      const message = latest.current.conversations.flatMap((item) => item.messages).find((m) => m.id === messageId);
+      if (!id || !message || message.content === answer) return;
+      update(id, (conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((item) => (item.id === messageId ? { ...item, content: answer } : item)),
+      }));
+    },
+    [update],
   );
 
   /** Records what happened to a plan in the chat (done, undone). */
@@ -414,6 +522,9 @@ export function useCoachChat(appRunner?: AppRunner) {
     remove,
     setProposal,
     updateAgent,
+    addMission,
+    startMission,
+    finishMission,
   };
 }
 
@@ -428,6 +539,7 @@ export function CoachView({
   save,
   onCapture,
   onApp,
+  onNavigate,
 }: {
   chat: CoachChat;
   dashboard: Dashboard;
@@ -440,12 +552,13 @@ export function CoachView({
   onCapture: (how: CaptureStart, onText?: (text: string) => void) => void;
   /** Runs a plan step on this device (a page, the theme, sound). */
   onApp: (step: AppStep) => void;
+  onNavigate: (view: View) => void;
 }) {
   const [brief, setBrief] = useState<CoachBrief | null>(null);
   const [approvalError, setApprovalError] = useState<ChatError | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const { messages, pending, error } = chat;
 
   // The greeting and suggested questions follow the latest data (for example after an approval).
@@ -462,8 +575,32 @@ export function CoachView({
     };
   }, [dashboard]);
 
+  /** Brings a message's top into view, scrolling only the chat (or the page on phones). */
+  const showMessage = useCallback((id: string) => {
+    window.requestAnimationFrame(() => {
+      const element = document.querySelector(`[data-message="${id}"]`);
+      const scroller = scrollerRef.current;
+      if (!element) return;
+      const top = element.getBoundingClientRect().top;
+      if (scroller && scroller.scrollHeight > scroller.clientHeight + 1) {
+        const offset = top - scroller.getBoundingClientRect().top - 12;
+        scroller.scrollBy({ top: offset, behavior: "smooth" });
+      } else {
+        window.scrollBy({ top: top - 96, behavior: "smooth" });
+      }
+    });
+  }, []);
+
+  // Follow the conversation by scrolling only the chat itself (laptops), or the page (phones):
+  // scrolling an element into view would move every scrolling parent, the whole app included.
   useEffect(() => {
-    if (messages.length) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (!messages.length) return;
+    const scroller = scrollerRef.current;
+    if (scroller && scroller.scrollHeight > scroller.clientHeight + 1) {
+      scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+    } else {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+    }
   }, [messages.length, pending]);
 
   async function approve(proposal: CoachProposal) {
@@ -486,18 +623,15 @@ export function CoachView({
   return (
     // Phones scroll the whole page. Laptops get a full-height chat like ChatGPT: chats on the left,
     // the conversation scrolling on its own, and the composer pinned to the bottom.
-    <div className="grid gap-4 lg:h-full lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-0">
-      <aside aria-label="Chat history" className="hidden overflow-y-auto border-r border-line/70 p-4 lg:block">
-        {historyList}
-      </aside>
-
-      <div className="flex min-w-0 flex-col gap-4 lg:min-h-0 lg:gap-0">
+    // Past chats open from the Chats button, so the conversation gets the whole width.
+    <div className="lg:h-full">
+      <div className="flex min-w-0 flex-col gap-4 lg:h-full lg:min-h-0 lg:gap-0">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-2 lg:max-w-none lg:border-b lg:border-line/70 lg:px-8 lg:py-3">
           <h2 className="truncate text-sm font-semibold text-ink-muted">
             {chat.activeId ? chat.conversations.find((item) => item.id === chat.activeId)?.title : "New chat"}
           </h2>
           <div className="flex shrink-0 gap-2">
-            <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setHistoryOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>
               <History className="size-4" aria-hidden="true" />
               Chats
               {chat.conversations.length > 0 && (
@@ -513,7 +647,7 @@ export function CoachView({
           </div>
         </div>
 
-        <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+        <div ref={scrollerRef} className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl space-y-4 lg:px-8 lg:py-6">
             {messages.length === 0 && (
               <Welcome
@@ -521,6 +655,7 @@ export function CoachView({
                 questions={brief?.suggested_questions}
                 disabled={pending}
                 onAsk={(text) => void chat.send(text)}
+                onMission={(kind, title) => void chat.startMission(kind, "", title)}
                 onScan={() => setScanOpen(true)}
                 onCapture={() => onCapture("menu")}
               />
@@ -536,6 +671,20 @@ export function CoachView({
               {messages.map((message) =>
                 message.role === "user" ? (
                   <UserBubble key={message.id} text={message.content} />
+                ) : message.mission ? (
+                  <div key={message.id} data-message={message.id}>
+                    <MissionMessage
+                      runId={message.mission.id}
+                      dashboard={dashboard}
+                      applyChange={onDashboardChange}
+                      onNavigate={onNavigate}
+                      onSend={(text, after) => void chat.send(text, { after })}
+                      onFinished={(run, live) => {
+                        chat.finishMission(message.id, run);
+                        if (live) showMessage(message.id);
+                      }}
+                    />
+                  </div>
                 ) : message.agent ? (
                   <AgentReply
                     key={message.id}
@@ -588,7 +737,6 @@ export function CoachView({
                   {approvalError.title}: {approvalError.detail}
                 </p>
               )}
-              <div ref={endRef} />
             </div>
           </div>
         </div>
@@ -712,6 +860,7 @@ const FALLBACK_QUESTIONS = [
   "Where am I overspending?",
   "Can I afford a $150 concert ticket?",
 ];
+const AGENT_IDEAS = ["I’m moving to Toronto in September", "Can I afford a $1,299 laptop?"];
 
 /** A short welcome and a few questions to start with. */
 function Welcome({
@@ -719,6 +868,7 @@ function Welcome({
   questions = FALLBACK_QUESTIONS,
   disabled,
   onAsk,
+  onMission,
   onScan,
   onCapture,
 }: {
@@ -726,6 +876,7 @@ function Welcome({
   questions?: string[];
   disabled: boolean;
   onAsk: (text: string) => void;
+  onMission: (kind: MissionKind, title: string) => void;
   onScan: () => void;
   onCapture: () => void;
 }) {
@@ -739,10 +890,46 @@ function Welcome({
               Hi {name}, how can I help?
             </h2>
             <p className="mt-1 text-sm text-white/75">
-              Personal coaching from your own wallet: I know your budgets, bills, goals, and spending. Ask me anything,
-              or tap a question.
+              Ask me anything about your money, or give me a job. My agents research it, check it against your numbers,
+              and do the work. Nothing changes without your OK.
             </p>
           </div>
+        </div>
+        <div className="mt-5 grid grid-cols-3 gap-2" aria-label="Give your agents a job">
+          {AGENT_PRESETS.map((preset) => (
+            <button
+              key={preset.kind}
+              type="button"
+              disabled={disabled}
+              onClick={() => onMission(preset.kind, preset.title)}
+              className="group flex min-h-14 flex-col items-start gap-2 rounded-2xl border border-white/15 bg-white/[0.07] p-3 text-left transition-colors hover:border-white/30 hover:bg-white/[0.12] focus-visible:outline-2 focus-visible:outline-white disabled:opacity-50 sm:flex-row sm:items-center sm:gap-3"
+            >
+              <span
+                className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/90 transition-transform group-hover:scale-110"
+                style={{ color: preset.color }}
+                aria-hidden="true"
+              >
+                <preset.icon className="size-[18px]" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold leading-tight">{preset.title}</span>
+                <span className="mt-0.5 hidden truncate text-xs text-white/65 sm:block">{preset.detail}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {AGENT_IDEAS.map((idea) => (
+            <button
+              key={idea}
+              type="button"
+              disabled={disabled}
+              onClick={() => onAsk(idea)}
+              className="min-h-9 rounded-full border border-white/20 px-3 text-xs font-medium text-white/85 transition-colors hover:bg-white/10 disabled:opacity-50"
+            >
+              “{idea}”
+            </button>
+          ))}
         </div>
       </div>
       <div className="grid gap-2.5 sm:grid-cols-2" aria-label="Suggested questions">
@@ -989,7 +1176,7 @@ function AgentReply({
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
-      <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-info px-4 py-3 text-sm font-medium text-white shadow-[var(--shadow-card)]">
+      <p className="max-w-[85%] whitespace-pre-wrap rounded-3xl rounded-br-md bg-[linear-gradient(135deg,#15977f,#356fc4)] px-4 py-3 text-[15px] font-medium text-white shadow-[0_6px_20px_rgb(53_111_196/0.25)] animate-enter">
         {text}
       </p>
     </div>
@@ -1000,9 +1187,17 @@ function Thinking() {
   return (
     <div className="flex items-center gap-3" role="status">
       <Avatar />
-      <p className="rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
-        <LoaderCircle className="mr-2 inline size-4 animate-spin align-[-3px] text-accent" aria-hidden="true" />
-        Checking your numbers…
+      <p className="flex items-center gap-2 rounded-3xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
+        <span className="flex gap-1" aria-hidden="true">
+          {[0, 150, 300].map((delay) => (
+            <span
+              key={delay}
+              className="size-1.5 animate-bounce rounded-full bg-accent"
+              style={{ animationDelay: `${delay}ms` }}
+            />
+          ))}
+        </span>
+        Penny is thinking…
       </p>
     </div>
   );

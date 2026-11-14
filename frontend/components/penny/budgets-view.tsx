@@ -33,7 +33,7 @@ export function BudgetsView({
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <PennyBanner tone="mint" {...budgetCheer(dashboard, budget)} />
+      <PennyBanner color="mint" {...budgetCheer(dashboard, budget)} />
       {budget > 0 && (
         <section aria-labelledby="budget-summary" className={cn(CARD, "p-5 sm:p-6")}>
           <h2 id="budget-summary" className="sr-only">

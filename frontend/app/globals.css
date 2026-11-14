@@ -1413,3 +1413,15 @@ label {
 @utility bg-joy {
   background-image: linear-gradient(90deg, #19b394, #4a8fe7 55%, #b67df2);
 }
+
+/* Grown-up tone (students and working adults, D-134): Penny stays still and the playful extras
+   are hidden. "Learning first" keeps them all. */
+:root[data-tone="grown"] .animate-bob,
+:root[data-tone="grown"] .animate-wiggle,
+:root[data-tone="grown"] .animate-glow,
+:root[data-tone="grown"] .animate-flicker {
+  animation: none !important;
+}
+:root[data-tone="grown"] .playful-only {
+  display: none !important;
+}

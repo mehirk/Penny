@@ -56,7 +56,15 @@ DATA_KINDS = (
     "persona",
     "delete",
 )
-APP_KINDS = ("navigate", "theme", "palette", "surface", "hide_amounts", "sound", "ask")
+APP_KINDS = ("navigate", "theme", "palette", "surface", "hide_amounts", "sound", "ask", "mission")
+# Missions Penny's agents can be sent on (app.agents); the app starts them in Agents.
+MISSIONS = {
+    "checkup": "a money check-up",
+    "free_money": "finding free money",
+    "payoff": "a card payoff plan",
+    "purchase": "",
+    "life_event": "",
+}
 VIEWS = {
     "today": "Home",
     "spending": "Spending",
@@ -67,6 +75,7 @@ VIEWS = {
     "budgets": "Budgets",
     "learn": "Learn",
     "ai": "Penny AI",
+    "agents": "Agents",
     "settings": "Settings",
 }
 THEMES = ("light", "dark", "system")
@@ -166,6 +175,14 @@ def build_app(intent: Intent) -> AppStep | str:
             )
         title = "Sound on" if on else "Sound off"
         return AppStep(kind="sound", value="on" if on else "off", title=title, emoji="🔊")
+    if intent.kind == "mission":
+        mission = value if value in MISSIONS else "life_event"
+        words = (intent.text or intent.description).strip()
+        if mission == "life_event" and not words:
+            return "What should your agents work on?"
+        shown = words if len(words) <= 60 else f"{words[:57]}…"
+        title = f"Send your agents: {MISSIONS[mission] or f'“{shown}”'}"
+        return AppStep(kind="mission", value=f"{mission}|{words}"[:300], title=title, emoji="🤖")
     question = (intent.text or intent.description).strip()
     if not question:
         return "What should I ask Penny AI?"
@@ -522,6 +539,8 @@ _PAGES = {
     "lessons": "learn",
     "settings": "settings",
     "coach": "ai",
+    "agents": "agents",
+    "missions": "agents",
     "chat": "ai",
     "penny": "ai",
 }
@@ -533,6 +552,34 @@ _QUESTION = re.compile(
 def is_question(text: str) -> bool:
     clean = text.strip()
     return clean.endswith("?") or bool(_QUESTION.match(clean))
+
+
+_MISSION_WORDS: tuple[tuple[str, str], ...] = (
+    ("checkup", r"\bcheck[- ]?up\b|\bcheck (?:on|up on) my (?:money|finances)\b"),
+    ("free_money", r"\bfree money\b|\bbenefits? (?:i|that i) (?:can|could|might) get\b"),
+    ("payoff", r"\b(?:help me|plan to|how (?:do|can) i) pay (?:off|down)\b"),
+    (
+        "purchase",
+        r"\b(?:can|could|should) i (?:afford|buy|get)\b|\bcan i swing\b"
+        r"|\b(?:price|cost) (?:of|for)\b.*\b(?:afford|buy|get)\b"
+        r"|\bhow much (?:is|does|are)\b.*\b(?:afford|buy|get)\b",
+    ),
+    (
+        "life_event",
+        r"\b(?:i'?m|i am|we'?re) (?:moving|relocating)\b|\bget me ready\b"
+        r"|\bplan (?:my|a|for my|for a) (?:move|trip|co-?op|semester|first job)\b"
+        r"|\bhelp me (?:plan|prepare|get ready)\b",
+    ),
+)
+
+
+def rule_mission(text: str, make):  # type: ignore[no-untyped-def]
+    """A goal for Penny's agents ("I'm moving to Toronto, get me ready"), or None."""
+    lower = text.casefold()
+    for mission, pattern in _MISSION_WORDS:
+        if re.search(pattern, lower):
+            return make(kind="mission", option=mission, text=text.strip())
+    return None
 
 
 def rule_more(clause: str, ctx: Context, make) -> Intent | None:  # type: ignore[no-untyped-def]
@@ -554,6 +601,9 @@ def rule_more(clause: str, ctx: Context, make) -> Intent | None:  # type: ignore
         return make(kind="sound", option="off")
     if re.search(r"\b(unmute|sounds? on|turn on (the )?sounds?)\b", lower):
         return make(kind="sound", option="on")
+    mission = rule_mission(clause, make)
+    if mission:
+        return mission
     persona = re.search(
         r"\b(?:i'?m|i am|coach me as)\s+(?:a |an )?(student|working|learner)", lower
     )

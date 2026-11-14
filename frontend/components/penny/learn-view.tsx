@@ -39,6 +39,7 @@ import { Mascot, type Outfit, useOutfit, Wardrobe } from "./mascot";
 import { MoneyGuide } from "./money-guide";
 import { SkillMap } from "./skill-map";
 import { Building, TownScene } from "./money-town";
+import { toneFor } from "./tone";
 import { LessonPlayer } from "./lesson-player";
 import { BadgeChip, Stars, TIER_STYLE } from "./learn-shared";
 import { describeError, SectionHeading } from "./shared";
@@ -99,6 +100,7 @@ export function LearnView({ dashboard, onCompleteMission, onProgress, onNavigate
   const [arcadeVersion, setArcadeVersion] = useState(0);
   const [outfit, setOutfit] = useOutfit(state?.level ?? 1);
   const persona = dashboard.profile.persona;
+  const grown = toneFor(persona) === "grown";
   // Penny's plan opens guides and games elsewhere on Learn.
   const [guideRequest, setGuideRequest] = useState<{ area: string; nonce: number } | null>(null);
   const [gameRequest, setGameRequest] = useState<{ game: string; nonce: number } | null>(null);
@@ -136,7 +138,7 @@ export function LearnView({ dashboard, onCompleteMission, onProgress, onNavigate
           <ProfileForm initial={state.profile} submitLabel="Start learning" onSaved={setState} />
         </Card>
         <div className="mt-6">
-          <Arcade version={arcadeVersion} outfit={outfit} onProgress={reload} />
+          <Arcade version={arcadeVersion} outfit={outfit} onProgress={reload} grown={grown} />
           <MoneyGuide outfit={outfit} />
         </div>
       </div>
@@ -156,6 +158,7 @@ export function LearnView({ dashboard, onCompleteMission, onProgress, onNavigate
         state={state}
         country={country}
         persona={persona}
+        name={dashboard.profile.display_name.split(" ")[0]}
         outfit={outfit}
         onOutfit={setOutfit}
         onEdit={() => setEditing(true)}
@@ -171,7 +174,7 @@ export function LearnView({ dashboard, onCompleteMission, onProgress, onNavigate
         onGuide={(area) => setGuideRequest({ area, nonce: Date.now() })}
         onGame={(game) => setGameRequest({ game, nonce: Date.now() })}
       />
-      <Arcade version={arcadeVersion} outfit={outfit} launch={gameRequest} onProgress={reload} />
+      <Arcade version={arcadeVersion} outfit={outfit} launch={gameRequest} onProgress={reload} grown={grown} />
       <MoneyGuide outfit={outfit} request={guideRequest} />
       <BadgeShelf badges={state.badges} />
 
@@ -454,12 +457,14 @@ const TOPIC_ORDER: Record<string, string[]> = {
   learner: ["budgeting", "saving", "rules", "credit", "tax", "investing"],
 };
 
-/** What Penny says at the top of Learn, by persona. */
-const GREETING: Record<string, string> = {
-  student: "Let’s make your money last until exams are done!",
-  working: "Payday pro in training. Let’s make that paycheque work!",
-  learner: "Let’s learn money the fun way. No real money needed!",
-};
+/** What Penny says at the top of Learn: by name, in each persona's voice. */
+function greeting(persona: string | null, name: string): string {
+  if (persona === "student") return `Hey ${name}! Let’s make your money last all term, rent, books, and fun included.`;
+  if (persona === "working")
+    return `Hi ${name}. Let’s make every paycheque go further: tax, TFSAs, credit, and investing.`;
+  if (persona === "learner") return `Hi ${name}! Let’s learn money the fun way. No real money needed!`;
+  return `Hi ${name}! Let’s level up your money skills.`;
+}
 
 /**
  * The top of Learn, like a game's home screen: Money Town with Penny (tap to change outfits),
@@ -469,6 +474,7 @@ function GameHud({
   state,
   country,
   persona,
+  name,
   outfit,
   onOutfit,
   onEdit,
@@ -476,6 +482,7 @@ function GameHud({
   state: LearnState;
   country: (typeof COUNTRIES)[number];
   persona: string | null;
+  name: string;
   outfit: Outfit;
   onOutfit: (outfit: Outfit) => void;
   onEdit: () => void;
@@ -494,7 +501,7 @@ function GameHud({
   const stars = lessons.reduce((total, lesson) => total + lesson.stars, 0);
   const line = state.completed_today
     ? "You learned something today. Keep the streak going tomorrow!"
-    : (GREETING[persona ?? ""] ?? "Hi! I’m Penny. Let’s level up your money skills.");
+    : greeting(persona, name);
   return (
     <section aria-label="Your progress" className="space-y-3">
       <TownScene className="min-h-48 sm:min-h-52">

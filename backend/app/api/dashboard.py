@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.agents.runs import run_store
 from app.api.deps import (
     AuthenticatedUser,
     PeriodEnd,
@@ -90,6 +91,7 @@ def reset_account(request: ResetRequest, current_user: AuthenticatedUser) -> Das
     del request  # validated: confirm == "reset"
     result = user_store(current_user).reset(current_user.id)
     chat_store.delete_all(stores.data_owner(current_user.id))
+    run_store.delete_all(stores.data_owner(current_user.id))
     return result
 
 
@@ -107,4 +109,5 @@ def delete_account(
             status.HTTP_403_FORBIDDEN, "The fictional demo account can’t be deleted"
         )
     chat_store.delete_all(owner)
+    run_store.delete_all(owner)
     return AccountDeleted(signin_deleted=stores.delete_user(owner))

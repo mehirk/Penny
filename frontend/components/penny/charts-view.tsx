@@ -377,7 +377,10 @@ export function ChartsView({ dashboard }: { dashboard: Dashboard }) {
             {formatMonth(data.start)} to {formatMonth(data.end)}
             {filtering ? " · filtered" : ""}
           </p>
-          <PennyBanner tone="ocean" {...chartsCheer(data.net_cents, formatMonth(data.start), formatMonth(data.end))} />
+          <PennyBanner
+            color="ocean"
+            {...chartsCheer(dashboard, data.net_cents, formatMonth(data.start), formatMonth(data.end))}
+          />
           <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Money in" emoji="💰" tint="#19b394" value={data.income_cents} />
             <Stat label="Money out" emoji="💸" tint="#f0645a" value={data.spending_cents} />
@@ -521,7 +524,9 @@ function Stat({
     >
       <span className="absolute inset-x-0 top-0 h-1" style={{ background: tint }} aria-hidden="true" />
       <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-subtle">
-        <span aria-hidden="true">{emoji}</span>
+        <span className="playful-only" aria-hidden="true">
+          {emoji}
+        </span>
         {label}
       </p>
       <p

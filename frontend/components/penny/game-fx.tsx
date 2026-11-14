@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
+import { pageTone } from "./tone";
 import { cn } from "@/lib/utils";
 
 /**
@@ -30,6 +31,8 @@ type Burst = {
 
 /** A one-off burst of confetti over the whole page; it removes itself when it lands. */
 export function confetti({ x = 0.5, y = 0.35, pieces = 140, spread = 360 }: Burst = {}): void {
+  // The grown-up tone celebrates quietly: no confetti.
+  if (pageTone() === "grown") return;
   if (typeof document === "undefined" || reducedMotion()) return;
   const canvas = document.createElement("canvas");
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -166,7 +169,9 @@ let audio: AudioContext | null = null;
 export function soundOn(): boolean {
   if (typeof window === "undefined") return true;
   try {
-    return window.localStorage.getItem(SOUND_KEY) !== "off";
+    const saved = window.localStorage.getItem(SOUND_KEY);
+    // Unset: on for the playful tone, off for the grown-up one.
+    return saved ? saved !== "off" : pageTone() === "playful";
   } catch {
     return true;
   }

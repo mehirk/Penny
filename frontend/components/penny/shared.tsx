@@ -23,7 +23,17 @@ import { cn } from "@/lib/utils";
 import { usePreferences } from "./preferences";
 
 export type View =
-  "today" | "spending" | "charts" | "accounts" | "recurring" | "goals" | "budgets" | "learn" | "ai" | "settings";
+  | "today"
+  | "spending"
+  | "charts"
+  | "accounts"
+  | "recurring"
+  | "goals"
+  | "budgets"
+  | "learn"
+  | "ai"
+  | "agents"
+  | "settings";
 
 /**
  * Every view. `primary` items sit in the phone tab bar; the rest live under "More".
@@ -59,7 +69,7 @@ export const NAVIGATION: {
     id: "ai",
     label: "Penny AI",
     title: "Penny AI",
-    description: "Your wallet, your coach: personal coaching from your own numbers.",
+    description: "Ask anything or give Penny a job: her agents research it, check it, and do the work.",
     icon: Bot,
     primary: true,
   },
@@ -124,10 +134,15 @@ export const cad = (cents: number, showSign = false) => formatCad(String(cents),
 export function describeError(
   reason: unknown,
   fallback: string,
-): { title: string; detail: string; needsSignIn: boolean } {
+): { title: string; detail: string; needsSignIn: boolean; signedOut?: boolean } {
   if (reason instanceof ApiError) {
     if (reason.status === 401)
-      return { title: "Please sign in", detail: "Sign in to see your Penny dashboard.", needsSignIn: true };
+      return {
+        title: "Please sign in",
+        detail: "Sign in to see your Penny dashboard.",
+        needsSignIn: true,
+        signedOut: true,
+      };
     if (reason.status === 403)
       return {
         title: "This account has no demo data yet",
