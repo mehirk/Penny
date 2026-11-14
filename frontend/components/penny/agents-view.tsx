@@ -47,6 +47,7 @@ import {
   type TraceStep,
   agentApi,
   agentsApi,
+  ApiError,
 } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { haptic, scheduleReminders } from "@/lib/native";
@@ -382,8 +383,10 @@ export function MissionMessage({
           }
           if (next.status === "done") finished.current(next, !first);
         })
-        .catch(() => {
-          if (active && first) setLost(true);
+        .catch((reason) => {
+          // Only a mission the server doesn't have is gone; a network blip or a waking server
+          // is retried on the next tick.
+          if (active && reason instanceof ApiError && reason.status === 404) setLost(true);
         })
         .finally(() => {
           first = false;
