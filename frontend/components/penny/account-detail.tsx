@@ -8,7 +8,7 @@ import type { AccountBalance, Dashboard } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { BackBar } from "./back-bar";
-import { categoryIcon } from "./category-icons";
+import { categoryIcon, categoryTint, tintStyle } from "./category-icons";
 import { ACCOUNT_TYPE_LABELS, settleUp } from "./labels";
 import { accountEmoji } from "./emoji";
 import { BigAmount, cad } from "./shared";
@@ -251,9 +251,9 @@ export function AccountDetail({
                 return (
                   <li key={item.id} className="flex min-h-14 items-center gap-3 px-4 py-2">
                     <span
-                      className={cn(
-                        "grid size-9 shrink-0 place-items-center rounded-full",
-                        income ? "bg-money-in-soft text-money-in" : "bg-sage text-ink-muted",
+                      className="grid size-9 shrink-0 place-items-center rounded-full"
+                      style={tintStyle(
+                        categoryTint(item.category_id ? categories.get(item.category_id) : undefined, item.kind),
                       )}
                       aria-hidden="true"
                     >

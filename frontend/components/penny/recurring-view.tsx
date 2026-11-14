@@ -16,7 +16,6 @@ import {
   Pencil,
   Plus,
   Repeat,
-  Sparkles,
   Trash2,
   Tv,
   Wand2,
@@ -59,7 +58,7 @@ export type RecurringActions = {
   /** A card payment made outside Penny: the card moves to next month and no balance changes. */
   onCardPaid: (card: CardPayment) => void;
 };
-type Props = RecurringActions & { dashboard: Dashboard; onAsk: (question: string) => void };
+type Props = RecurringActions & { dashboard: Dashboard };
 
 const FREQUENCY_SHORT: Record<BillFrequency, string> = {
   weekly: "weekly",
@@ -80,7 +79,7 @@ const billInput = (bill: Bill): BillInput => ({
 
 type Section = "upcoming" | "paid" | "all";
 
-export function RecurringView({ dashboard, onAsk, onMarkPaid, onSave, onDelete, onCardPaid }: Props) {
+export function RecurringView({ dashboard, onMarkPaid, onSave, onDelete, onCardPaid }: Props) {
   const summary = dashboard.recurring;
   const [editing, setEditing] = useState<Bill | BillInput | "new" | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -279,13 +278,6 @@ export function RecurringView({ dashboard, onAsk, onMarkPaid, onSave, onDelete, 
             <Tv className="size-4 shrink-0 text-[#7047b7] dark:text-[#c1a5ee]" aria-hidden="true" />
             {cad(summary.subscriptions_monthly_cents)} a month on subscriptions. Small charges add up over a year.
           </p>
-          <Button
-            variant="outline"
-            onClick={() => onAsk("Are any of my subscriptions worth cancelling? What would it save me in a year?")}
-          >
-            <Sparkles className="size-4" aria-hidden="true" />
-            Review with Penny
-          </Button>
         </Card>
       )}
       <p className="flex gap-2 px-1 text-xs leading-relaxed text-ink-subtle">

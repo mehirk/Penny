@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, LoaderCircle, ScanFace, ShieldCheck } from "lucide-react";
-import { BrandMark } from "@/components/penny/app-shell";
+import { Mascot } from "@/components/penny/mascot";
 import { Field } from "@/components/penny/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -173,7 +173,7 @@ export default function LoginPage() {
     <main className="grid min-h-dvh place-items-center px-4 py-10">
       <div className="w-full max-w-sm animate-enter">
         <div className="flex items-center gap-3">
-          <BrandMark />
+          <Mascot className="size-16 shrink-0 animate-bob" />
           <div>
             <p className="text-lg font-semibold tracking-tight text-ink">Penny</p>
             <p className="text-xs text-ink-subtle">Your wallet. Your coach.</p>

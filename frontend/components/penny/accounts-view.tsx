@@ -33,7 +33,6 @@ import { useSubpage } from "./subpage";
 type Props = {
   dashboard: Dashboard;
   onNavigate: (view: View, anchor?: string, motion?: "push" | "pop") => void;
-  onAsk: (question: string) => void;
 };
 
 const TYPE_STYLE: Record<AccountType, { icon: LucideIcon; tone: string }> = {
@@ -50,7 +49,7 @@ const TYPE_STYLE: Record<AccountType, { icon: LucideIcon; tone: string }> = {
 const ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "person", "credit"];
 
 /** Every account's balance as of today, and the one number they add up to. All figures come from the API. */
-export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
+export function AccountsView({ dashboard, onNavigate }: Props) {
   const overview = dashboard.accounts_overview;
   // Phones: an account opens as its own page ("#accounts/<id>"); wider screens show every card.
   const [pageId, openAccount, back] = useSubpage("accounts");
@@ -153,7 +152,7 @@ export function AccountsView({ dashboard, onNavigate, onAsk }: Props) {
       </section>
 
       <div className="max-sm:order-1">
-        <AccountsRead version={dashboard.accounts_overview.net_worth_cents} onAsk={onAsk} />
+        <AccountsRead version={dashboard.accounts_overview.net_worth_cents} />
       </div>
 
       <section aria-label="Where your money is" className="hidden gap-3 sm:grid sm:grid-cols-3">
@@ -334,7 +333,7 @@ function AccountCard({ account, onOpen }: { account: AccountBalance; onOpen: () 
                 <Progress
                   className="h-2.5"
                   value={Math.min(100, used / 100)}
-                  indicatorClassName={used > 3000 ? "bg-danger" : "bg-accent"}
+                  indicatorClassName={used > 3000 ? "bg-danger" : "bg-joy"}
                   aria-label={`${(used / 100).toFixed(0)}% of the limit used`}
                 />
                 <p className="mt-1.5 flex justify-between gap-2 text-xs text-ink-subtle">

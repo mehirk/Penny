@@ -1,12 +1,13 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useSyncExternalStore } from "react";
 import { Check, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Penny, the coin mascot of Learn: drawn in SVG, with outfits unlocked by level. The outfit is a
- * look only, remembered on this device; it never affects XP or scores.
+ * Penny, the coin mascot: drawn in SVG, all over the app (Learn, Penny AI, the capture orb, empty
+ * and error states, notifications). Outfits are unlocked by level in Learn and worn everywhere;
+ * the outfit is a look only, remembered on this device, and never affects XP or scores.
  */
 
 export type Outfit = "none" | "cap" | "glasses" | "headphones" | "grad" | "crown";
@@ -22,6 +23,7 @@ export const OUTFITS: { id: Outfit; label: string; level: number }[] = [
 ];
 
 const OUTFIT_KEY = "penny-mascot-outfit";
+const OUTFIT_EVENT = "penny-outfit";
 
 function savedOutfit(): Outfit {
   if (typeof window === "undefined") return "none";
@@ -33,34 +35,59 @@ function savedOutfit(): Outfit {
   }
 }
 
+function subscribe(onChange: () => void) {
+  window.addEventListener(OUTFIT_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(OUTFIT_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** The outfit picked on this device ("none" while rendering on the server). Every mascot wears it. */
+export function useSavedOutfit(): Outfit {
+  return useSyncExternalStore(subscribe, savedOutfit, () => "none");
+}
+
 /** The outfit picked on this device, falling back to Classic if it's above the player's level. */
 export function useOutfit(level: number): [Outfit, (outfit: Outfit) => void] {
-  const [outfit, setOutfit] = useState<Outfit>(savedOutfit);
+  const outfit = useSavedOutfit();
   const allowed = (OUTFITS.find((item) => item.id === outfit)?.level ?? 1) <= level ? outfit : "none";
   const choose = (next: Outfit) => {
-    setOutfit(next);
     try {
       window.localStorage.setItem(OUTFIT_KEY, next);
     } catch {
-      /* storage blocked: the outfit lasts until the page reloads */
+      /* storage blocked: nothing to remember */
     }
+    window.dispatchEvent(new Event(OUTFIT_EVENT));
   };
   return [allowed, choose];
 }
 
 export function Mascot({
-  outfit = "none",
+  outfit,
   mood = "happy",
+  face: faceOnly = false,
   className,
 }: {
+  /** Defaults to the outfit picked in Learn. */
   outfit?: Outfit;
   mood?: Mood;
+  /** Just the coin and face, for avatars and small buttons. */
+  face?: boolean;
   className?: string;
 }) {
+  const saved = useSavedOutfit();
+  // Small faces skip hats that would be cut off; glasses and headphones still fit.
+  const look = outfit ?? (faceOnly && ["cap", "grad", "crown"].includes(saved) ? "none" : saved);
   // Unique per drawing: several mascots can be on screen at once.
   const face = `penny-face-${useId().replace(/:/g, "")}`;
   return (
-    <svg viewBox="0 0 120 130" className={cn("overflow-visible", className)} aria-hidden="true">
+    <svg
+      viewBox={faceOnly ? "12 18 96 98" : "0 0 120 130"}
+      className={cn(faceOnly ? "overflow-hidden" : "overflow-visible", className)}
+      aria-hidden="true"
+    >
       <defs>
         <radialGradient id={face} cx="38%" cy="32%" r="75%">
           <stop offset="0%" stopColor="#ffe9b0" />
@@ -69,17 +96,21 @@ export function Mascot({
         </radialGradient>
       </defs>
       {/* Shadow, arms, and feet */}
-      <ellipse cx="60" cy="124" rx="30" ry="5" fill="rgb(0 0 0 / 0.18)" />
-      <path d="M18 78 q-12 6 -8 18" stroke="#c98a1c" strokeWidth="6" strokeLinecap="round" fill="none" />
-      <path d="M102 78 q12 -10 10 -22" stroke="#c98a1c" strokeWidth="6" strokeLinecap="round" fill="none" />
-      <rect x="40" y="110" width="14" height="10" rx="5" fill="#8a5a10" />
-      <rect x="66" y="110" width="14" height="10" rx="5" fill="#8a5a10" />
+      {!faceOnly && (
+        <>
+          <ellipse cx="60" cy="124" rx="30" ry="5" fill="rgb(0 0 0 / 0.18)" />
+          <path d="M18 78 q-12 6 -8 18" stroke="#c98a1c" strokeWidth="6" strokeLinecap="round" fill="none" />
+          <path d="M102 78 q12 -10 10 -22" stroke="#c98a1c" strokeWidth="6" strokeLinecap="round" fill="none" />
+          <rect x="40" y="110" width="14" height="10" rx="5" fill="#8a5a10" />
+          <rect x="66" y="110" width="14" height="10" rx="5" fill="#8a5a10" />
+        </>
+      )}
       {/* The coin */}
       <circle cx="60" cy="68" r="46" fill="#b07612" />
       <circle cx="60" cy="66" r="46" fill={`url(#${face})`} />
       <circle cx="60" cy="66" r="38" fill="none" stroke="#d99a2b" strokeWidth="3" strokeDasharray="3 5" />
       {/* Face */}
-      {outfit !== "glasses" && (
+      {look !== "glasses" && (
         <>
           <ellipse cx="45" cy="60" rx="5" ry={mood === "wow" ? 7 : 6} fill="#3b2506" />
           <ellipse cx="75" cy="60" rx="5" ry={mood === "wow" ? 7 : 6} fill="#3b2506" />
@@ -97,14 +128,14 @@ export function Mascot({
         <path d="M48 82 q12 -9 24 0" stroke="#3b2506" strokeWidth="4" strokeLinecap="round" fill="none" />
       )}
       {/* Outfits */}
-      {outfit === "cap" && (
+      {look === "cap" && (
         <g>
           <path d="M22 40 q38 -38 76 0 z" fill="#2f6fd6" />
           <path d="M90 38 q22 0 26 8 q-14 2 -30 -2 z" fill="#1f4fa0" />
           <circle cx="60" cy="16" r="4" fill="#1f4fa0" />
         </g>
       )}
-      {outfit === "glasses" && (
+      {look === "glasses" && (
         <g>
           <rect x="30" y="52" width="26" height="16" rx="6" fill="#1b1b1f" />
           <rect x="64" y="52" width="26" height="16" rx="6" fill="#1b1b1f" />
@@ -113,14 +144,14 @@ export function Mascot({
           <path d="M68 56 l8 0" stroke="#6b7cff" strokeWidth="2.5" strokeLinecap="round" />
         </g>
       )}
-      {outfit === "headphones" && (
+      {look === "headphones" && (
         <g>
           <path d="M16 64 q0 -50 44 -50 q44 0 44 50" stroke="#e84f6b" strokeWidth="7" fill="none" />
           <rect x="6" y="56" width="16" height="26" rx="7" fill="#e84f6b" />
           <rect x="98" y="56" width="16" height="26" rx="7" fill="#e84f6b" />
         </g>
       )}
-      {outfit === "grad" && (
+      {look === "grad" && (
         <g>
           <path d="M60 4 l46 16 l-46 16 l-46 -16 z" fill="#20222b" />
           <path d="M36 28 v12 q24 10 48 0 v-12" fill="#2b2e3a" />
@@ -128,7 +159,7 @@ export function Mascot({
           <circle cx="100" cy="46" r="4" fill="#f5b82e" />
         </g>
       )}
-      {outfit === "crown" && (
+      {look === "crown" && (
         <g>
           <path
             d="M30 32 l6 -26 l14 16 l10 -20 l10 20 l14 -16 l6 26 z"

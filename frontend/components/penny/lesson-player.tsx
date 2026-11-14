@@ -900,7 +900,7 @@ function ResultScreen({
             className="mt-3 bg-surface"
             onClick={() => detail.task && onTask(detail.task)}
           >
-            {detail.task.prompt ? "Ask Penny" : "Go there"}
+            {detail.task.prompt ? "Try it" : "Go there"}
             <ArrowRight className="size-4" aria-hidden="true" />
           </Button>
         </div>

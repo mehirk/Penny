@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     demo_owner_user_id: str | None = None
     openai_api_key: str | None = None
     openai_model: str = "gpt-6.1-sol"
+    # Speech to text for voice notes to Penny's agent.
+    openai_transcribe_model: str = "gpt-4o-mini-transcribe"
     # Upper bound for one coach reply, including every tool round and any revision.
     coach_timeout_seconds: float = 45.0
 

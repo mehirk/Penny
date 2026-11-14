@@ -1220,3 +1220,103 @@ export const coachApi = {
       body: JSON.stringify({ approved: true, version: proposal.version }),
     }),
 };
+
+// ------------------------------------------------------------------ Penny's agent
+
+export type FriendRef = { id: string | null; name: string };
+export type AgentAction =
+  | {
+      kind: "expense";
+      description: string;
+      amount_cents: number;
+      category_id: string | null;
+      account_id: string;
+      occurred_on: string;
+      repeat: "weekly" | "biweekly" | "monthly" | "yearly" | null;
+    }
+  | {
+      kind: "income";
+      description: string;
+      amount_cents: number;
+      category_id: string | null;
+      account_id: string;
+      occurred_on: string;
+    }
+  | {
+      kind: "split";
+      description: string;
+      total_cents: number;
+      category_id: string | null;
+      occurred_on: string;
+      account_id: string;
+      friends: FriendRef[];
+      paid_by: number | null;
+      group_id: string | null;
+    }
+  | { kind: "budget"; category_id: string | null; new_category?: string | null; limit_cents: number }
+  | { kind: "goal_add"; goal_id: string; amount_cents: number; account_id: string }
+  | { kind: "goal_new"; name: string; target_cents: number; target_date: string | null }
+  // Edits, deletes, bills, pay, transfers, accounts, and the rest: sent back exactly as planned.
+  | {
+      kind:
+        | "goal_update"
+        | "transfer"
+        | "bill_new"
+        | "bill_paid"
+        | "bill_update"
+        | "transaction_update"
+        | "account_new"
+        | "account_update"
+        | "category_new"
+        | "pay_new"
+        | "pay_received"
+        | "group_new"
+        | "persona"
+        | "delete";
+      [field: string]: unknown;
+    };
+/** Something the app does on this device: open a page, change the look, or ask Penny AI. */
+export type AppStep = {
+  kind: "navigate" | "theme" | "palette" | "surface" | "hide_amounts" | "sound" | "ask";
+  value: string;
+  title: string;
+  emoji: string;
+};
+export type AgentStep = {
+  id: string;
+  emoji: string;
+  title: string;
+  lines: string[];
+  action: AgentAction;
+  needs_friends: number;
+};
+export type ReceiptItem = {
+  description: string;
+  amount_cents: number;
+  category_id: string | null;
+  occurred_on: string;
+};
+export type AgentPlan = {
+  heard: string;
+  steps: AgentStep[];
+  app: AppStep[];
+  question: string | null;
+  /** Quick answers to the question, shown as chips. */
+  choices: string[];
+  receipt: ReceiptItem[];
+  source: "ai" | "built_in";
+  model: string | null;
+};
+export type AgentUpload = { filename: string; data_base64: string };
+export type AgentApplied = { dashboard: Dashboard; done: string[]; undo_id: string };
+
+/** Penny's agent. `plan` and `transcribe` save nothing; `apply` is the user's one-tap approval. */
+export const agentApi = {
+  plan: (body: { text?: string; image?: AgentUpload; receipt?: ReceiptItem[]; context?: string }) =>
+    authorizedRequest<AgentPlan>("/api/v1/agent/plan", { method: "POST", body: JSON.stringify(body) }),
+  transcribe: (upload: AgentUpload) =>
+    authorizedRequest<{ text: string }>("/api/v1/agent/transcribe", { method: "POST", body: JSON.stringify(upload) }),
+  apply: (actions: AgentAction[]) =>
+    authorizedRequest<AgentApplied>("/api/v1/agent/apply", { method: "POST", body: JSON.stringify({ actions }) }),
+  undo: (undo_id: string) => request("/api/v1/agent/undo", { method: "POST", body: JSON.stringify({ undo_id }) }),
+};

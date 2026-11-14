@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { Mascot } from "./mascot";
 import { ACCOUNT_TYPE_LABELS, PERSONAS } from "./labels";
 import { accountEmoji } from "./emoji";
 import { PalettePicker, ThemePicker } from "./app-shell";
@@ -51,6 +52,15 @@ const PAY_OPTIONS: { value: PayFrequency; label: string }[] = [
   { value: "monthly", label: "Once a month" },
 ];
 const STEPS = ["Accounts", "Income", "Bills", "Everyday", "Savings", "Your plan"];
+// What Penny says at each step of setup.
+const PENNY_TIPS = [
+  "Hi, I’m Penny! Let’s see what you’ve got to work with 👋",
+  "Payday is my favourite day. When does yours land? 💰",
+  "Bills first, so nothing sneaks up on you.",
+  "Everyday money: food, fun, and getting around.",
+  "Even a little each week adds up. I’ll cheer you on 🐷",
+  "Here’s your plan! You can change any of it later.",
+];
 
 /** `due` is the next payment's date; `paid` says one due today is already paid. */
 type Bill = { key: string; on: boolean; name: string; category: string; amount: string; due: string; paid: boolean };
@@ -424,6 +434,13 @@ export function Onboarding({
           />
         ))}
       </ol>
+
+      <div className="mt-5 flex items-center gap-3" aria-hidden="true">
+        <Mascot mood={step === STEPS.length - 1 ? "wow" : "happy"} className="size-14 shrink-0 animate-bob" />
+        <p key={step} className="rounded-2xl rounded-tl-sm bg-sage-soft px-3.5 py-2.5 text-sm text-ink animate-enter">
+          {PENNY_TIPS[step]}
+        </p>
+      </div>
 
       <div key={step} className="mt-6 flex-1 animate-enter">
         {step === 0 && (

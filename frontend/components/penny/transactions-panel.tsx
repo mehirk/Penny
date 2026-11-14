@@ -36,7 +36,7 @@ import { BackBar } from "./back-bar";
 import { categoryOptions } from "./labels";
 import { cad, EmptyState } from "./shared";
 import { SwipeRow } from "./swipe-row";
-import { categoryIcon } from "./category-icons";
+import { categoryIcon, categoryTint, tintStyle } from "./category-icons";
 
 type Props = {
   dashboard: Dashboard;
@@ -551,14 +551,11 @@ export function TransactionsPanel({ dashboard, onChangePeriod, onAdd, onOpen, on
 
 /** The category's icon, as on Home, so a list of purchases can be scanned by kind. */
 function TransactionIdentity({ item, category }: { item: Transaction; category: Category | undefined }) {
-  const income = item.kind === "income";
   return (
     <>
       <span
-        className={cn(
-          "grid size-10 shrink-0 place-items-center rounded-xl",
-          income ? "bg-money-in-soft text-money-in" : "bg-sage text-ink-muted",
-        )}
+        className="grid size-10 shrink-0 place-items-center rounded-xl"
+        style={tintStyle(categoryTint(category, item.kind))}
         aria-hidden="true"
       >
         {createElement(categoryIcon(category, item.kind), { className: "size-[1.1rem]" })}

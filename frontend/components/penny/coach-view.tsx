@@ -3,12 +3,13 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
-  Bot,
+  Camera,
   Check,
   ChevronRight,
   History,
   LoaderCircle,
   LockKeyhole,
+  Mic,
   PiggyBank,
   Plus,
   ReceiptText,
@@ -24,7 +25,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  type AgentApplied,
+  agentApi,
+  type AgentPlan,
   ApiError,
+  type AppStep,
   type BudgetSuggestion,
   coachApi,
   type CoachBrief,
@@ -36,6 +41,9 @@ import {
   type SavedConversation,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { type CaptureStart, PlanCard } from "./agent-capture";
+import { confetti, play } from "./game-fx";
+import { Mascot } from "./mascot";
 import type { SaveChange } from "./settings-view";
 import { cad, describeError } from "./shared";
 import { PlanBreakdown } from "./smart-cards";
@@ -46,7 +54,12 @@ const HISTORY_LIMIT = 11;
 const MAX_QUESTION_LENGTH = 600;
 
 type ProposalState = "approving" | "approved" | "dismissed";
-type CoachMessage = { id: string; role: CoachRole; content: string; reply?: CoachReply };
+/** A plan from Penny's agent shown in the chat: open (waiting for Do it), done, undone, or
+ * replaced by a newer plan after the user added something ("it was $45"). */
+type AgentState = "open" | "done" | "undone" | "replaced";
+type AgentMessage = { plan: AgentPlan; state: AgentState; done?: string[]; undoId?: string };
+type CoachMessage = { id: string; role: CoachRole; content: string; reply?: CoachReply; agent?: AgentMessage };
+type AppRunner = { current: ((step: AppStep) => void) | null };
 type ChatError = { title: string; detail: string };
 type Conversation = {
   id: string;
@@ -127,7 +140,12 @@ function uploadedBefore(): boolean {
 function fromSaved(saved: SavedConversation): Conversation {
   return {
     ...saved,
-    messages: saved.messages.map(({ reply, ...message }) => (reply ? { ...message, reply } : message)),
+    messages: saved.messages.map(({ reply, ...message }) => {
+      // Agent plans are saved in the reply slot as { agent }.
+      const agent = (reply as { agent?: AgentMessage } | null | undefined)?.agent;
+      if (agent) return { ...message, agent };
+      return reply ? { ...message, reply } : message;
+    }),
   };
 }
 
@@ -138,7 +156,9 @@ function upload(conversation: Conversation): Promise<unknown> {
   );
   return coachApi.saveConversation({
     ...conversation,
-    messages: conversation.messages.slice(-MAX_SAVED_MESSAGES),
+    messages: conversation.messages
+      .slice(-MAX_SAVED_MESSAGES)
+      .map(({ agent, ...message }) => (agent ? { ...message, reply: { agent } as unknown as CoachReply } : message)),
     proposals,
   });
 }
@@ -150,7 +170,7 @@ const newest = (a: Conversation, b: Conversation) => b.updated_at.localeCompare(
  * kept in a history list saved to the account (and cached on this device for offline use);
  * "New chat" starts a fresh one.
  */
-export function useCoachChat() {
+export function useCoachChat(appRunner?: AppRunner) {
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -221,7 +241,8 @@ export function useCoachChat() {
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    /** `direct` skips the agent: the question goes straight to the coach. */
+    async (text: string, options?: { direct?: boolean }) => {
       const question = text.trim().slice(0, MAX_QUESTION_LENGTH);
       if (!question || pending) return;
       const userMessage: CoachMessage = { id: crypto.randomUUID(), role: "user", content: question };
@@ -248,7 +269,62 @@ export function useCoachChat() {
       setPending(true);
       setError(null);
       try {
-        const history = thread.slice(-HISTORY_LIMIT - 1).map(({ role, content }) => ({ role, content }));
+        // Penny's agent reads it first: things to do become a plan to approve right here;
+        // questions and conversation go on to the coach.
+        if (!options?.direct) {
+          const before = existing?.messages ?? [];
+          const lastAssistant = before.findLast((message) => message.role === "assistant");
+          const open = lastAssistant?.agent?.state === "open" ? lastAssistant : undefined;
+          const context = before
+            .slice(-6)
+            .map(
+              (message) =>
+                `${message.role === "user" ? "User" : "Penny"}: ${message.agent ? message.agent.plan.heard : message.content}`,
+            )
+            .join("\n")
+            .slice(-2500);
+          const plan = await agentApi
+            .plan({
+              text: (open ? `${open.agent!.plan.heard}. ${question}` : question).slice(0, 1000),
+              receipt: open?.agent?.plan.receipt ?? [],
+              context,
+            })
+            .catch(() => null);
+          if (plan) {
+            const asks = plan.app.filter((step) => step.kind === "ask");
+            const onDevice = plan.app.filter((step) => step.kind !== "ask");
+            if (plan.steps.length || onDevice.length || (plan.question && !asks.length)) {
+              const shown = { ...plan, app: onDevice };
+              let agent: AgentMessage = { plan: shown, state: "open" };
+              // Only things on this device (a page, the theme): nothing to approve, so do them now.
+              if (!plan.steps.length && !plan.question) {
+                onDevice.forEach((step) => appRunner?.current?.(step));
+                agent = { plan: shown, state: "done", done: onDevice.map((step) => `${step.emoji} ${step.title}`) };
+              }
+              update(conversationId, (conversation) => ({
+                ...conversation,
+                messages: [
+                  ...conversation.messages.map((message) =>
+                    open && message.id === open.id
+                      ? { ...message, agent: { ...message.agent!, state: "replaced" as const } }
+                      : message,
+                  ),
+                  {
+                    id: crypto.randomUUID(),
+                    role: "assistant",
+                    content: plan.question ?? (plan.steps.length ? "Here’s what I’ll do" : "Done"),
+                    agent,
+                  },
+                ],
+              }));
+              if (!asks.length) return;
+            }
+          }
+        }
+        const history = thread
+          .filter((message) => !message.agent)
+          .slice(-HISTORY_LIMIT - 1)
+          .map(({ role, content }) => ({ role, content }));
         while (history[0]?.role === "assistant") history.shift();
         const reply = await chatThroughBackground(history);
         update(conversationId, (conversation) => ({
@@ -264,7 +340,22 @@ export function useCoachChat() {
         setPending(false);
       }
     },
-    [pending, update],
+    [pending, update, appRunner],
+  );
+
+  /** Records what happened to a plan in the chat (done, undone). */
+  const updateAgent = useCallback(
+    (messageId: string, change: Partial<AgentMessage>) => {
+      const id = latest.current.activeId;
+      if (!id) return;
+      update(id, (conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((message) =>
+          message.id === messageId && message.agent ? { ...message, agent: { ...message.agent, ...change } } : message,
+        ),
+      }));
+    },
+    [update],
   );
 
   /** Resends the last question after a failure. */
@@ -322,6 +413,7 @@ export function useCoachChat() {
     open,
     remove,
     setProposal,
+    updateAgent,
   };
 }
 
@@ -334,6 +426,8 @@ export function CoachView({
   onApproved,
   onApplyBudgets,
   save,
+  onCapture,
+  onApp,
 }: {
   chat: CoachChat;
   dashboard: Dashboard;
@@ -341,6 +435,11 @@ export function CoachView({
   onApproved: (message: string) => void;
   onApplyBudgets: (month: string, picked: BudgetSuggestion[]) => Promise<string | null>;
   save: SaveChange;
+  /** Opens Penny's agent: snap a receipt or say what happened. With `onText`, the voice note
+   * comes back as text (the chat's mic). */
+  onCapture: (how: CaptureStart, onText?: (text: string) => void) => void;
+  /** Runs a plan step on this device (a page, the theme, sound). */
+  onApp: (step: AppStep) => void;
 }) {
   const [brief, setBrief] = useState<CoachBrief | null>(null);
   const [approvalError, setApprovalError] = useState<ChatError | null>(null);
@@ -423,6 +522,7 @@ export function CoachView({
                 disabled={pending}
                 onAsk={(text) => void chat.send(text)}
                 onScan={() => setScanOpen(true)}
+                onCapture={() => onCapture("menu")}
               />
             )}
 
@@ -436,6 +536,17 @@ export function CoachView({
               {messages.map((message) =>
                 message.role === "user" ? (
                   <UserBubble key={message.id} text={message.content} />
+                ) : message.agent ? (
+                  <AgentReply
+                    key={message.id}
+                    agent={message.agent}
+                    dashboard={dashboard}
+                    onDashboardChange={onDashboardChange}
+                    onApp={onApp}
+                    onSay={(text) => void chat.send(text)}
+                    onVoice={() => onCapture("voice", (text) => void chat.send(text))}
+                    onChange={(change) => chat.updateAgent(message.id, change)}
+                  />
                 ) : (
                   <AssistantMessage
                     key={message.id}
@@ -484,7 +595,12 @@ export function CoachView({
 
         {/* No box on phones, so the composer can stick above the tab bar while the page scrolls. */}
         <div className="contents lg:mx-auto lg:block lg:w-full lg:max-w-3xl lg:space-y-3 lg:px-8 lg:pb-4 lg:pt-2">
-          <Composer disabled={pending} onSend={(text) => void chat.send(text)} onScan={() => setScanOpen(true)} />
+          <Composer
+            disabled={pending}
+            onSend={(text) => void chat.send(text)}
+            onCamera={() => onCapture("camera")}
+            onVoice={() => onCapture("voice", (text) => void chat.send(text))}
+          />
           <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-ink-subtle">
             <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             Educational guidance using fictional data. Every amount Penny quotes is checked against your records, and
@@ -604,20 +720,20 @@ function Welcome({
   disabled,
   onAsk,
   onScan,
+  onCapture,
 }: {
   name: string;
   questions?: string[];
   disabled: boolean;
   onAsk: (text: string) => void;
   onScan: () => void;
+  onCapture: () => void;
 }) {
   return (
     <section aria-labelledby="welcome-title" className="space-y-4">
       <div className="rounded-[var(--radius-card)] bg-hero p-5 text-white shadow-[var(--shadow-raised)] sm:p-6">
         <div className="flex items-start gap-3">
-          <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white/15" aria-hidden="true">
-            <Sparkles className="size-5" />
-          </span>
+          <Mascot className="size-16 shrink-0 animate-bob" />
           <div>
             <h2 id="welcome-title" className="text-xl font-semibold tracking-tight sm:text-2xl">
               Hi {name}, how can I help?
@@ -649,6 +765,22 @@ function Welcome({
         ))}
         <button
           type="button"
+          onClick={onCapture}
+          className="flex min-h-16 items-center gap-3 rounded-[var(--radius-card)] border border-accent/40 bg-accent-soft p-3 text-left text-sm font-medium text-ink transition-colors hover:border-accent"
+        >
+          <span
+            className="grid size-9 shrink-0 place-items-center rounded-xl bg-[conic-gradient(from_200deg,#15977f,#356fc4,#8b5cf6,#ef6f6c,#efad3d,#15977f)] text-white"
+            aria-hidden="true"
+          >
+            <Sparkles className="size-4" />
+          </span>
+          <span>
+            Snap or say what you did
+            <span className="block text-xs font-normal text-ink-subtle">Penny adds it, splits it, and budgets it</span>
+          </span>
+        </button>
+        <button
+          type="button"
           onClick={onScan}
           className="flex min-h-16 items-center gap-3 rounded-[var(--radius-card)] border border-dashed border-line-strong bg-surface p-3 text-left text-sm font-medium text-ink transition-colors hover:border-accent hover:bg-accent-soft"
         >
@@ -659,8 +791,8 @@ function Welcome({
             <ReceiptText className="size-4" />
           </span>
           <span>
-            Scan a receipt
-            <span className="block text-xs font-normal text-ink-subtle">Penny sorts it by category</span>
+            Import a statement
+            <span className="block text-xs font-normal text-ink-subtle">PDF, Excel, or CSV. Penny sorts it</span>
           </span>
         </button>
       </div>
@@ -671,11 +803,14 @@ function Welcome({
 function Composer({
   disabled,
   onSend,
-  onScan,
+  onCamera,
+  onVoice,
 }: {
   disabled: boolean;
   onSend: (text: string) => void;
-  onScan: () => void;
+  onCamera: () => void;
+  /** Talk instead of typing: the words are sent like a typed message. */
+  onVoice: () => void;
 }) {
   const [text, setText] = useState("");
   const submit = () => {
@@ -705,12 +840,12 @@ function Composer({
           type="button"
           variant="ghost"
           size="icon"
-          onClick={onScan}
-          aria-label="Scan a receipt or statement"
-          title="Scan a receipt or statement"
+          onClick={onCamera}
+          aria-label="Snap a receipt"
+          title="Snap a receipt: Penny adds it for you"
           className="text-ink-subtle hover:text-ink"
         >
-          <ReceiptText className="size-5" aria-hidden="true" />
+          <Camera className="size-5" aria-hidden="true" />
         </Button>
         <textarea
           id="coach-question"
@@ -720,9 +855,21 @@ function Composer({
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
           enterKeyHint="send"
-          placeholder="Can I afford a $300 concert trip?"
+          placeholder="Ask anything, or tell me what to do"
           className="max-h-40 min-h-11 flex-1 resize-none bg-transparent px-2 py-2.5 text-base text-ink [field-sizing:content] placeholder:text-ink-subtle/80 focus:outline-none"
         />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onVoice}
+          disabled={disabled}
+          aria-label="Talk to Penny"
+          title="Talk to Penny: ask anything, or tell her what to do"
+          className="text-ink-subtle hover:text-ink"
+        >
+          <Mic className="size-5" aria-hidden="true" />
+        </Button>
         <Button type="submit" size="icon" disabled={disabled || !text.trim()} aria-label="Send question">
           {disabled ? (
             <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />
@@ -732,6 +879,110 @@ function Composer({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** A plan from Penny's agent, inside the chat: approve it here, then see what was done (with Undo). */
+function AgentReply({
+  agent,
+  dashboard,
+  onDashboardChange,
+  onApp,
+  onSay,
+  onVoice,
+  onChange,
+}: {
+  agent: AgentMessage;
+  dashboard: Dashboard;
+  onDashboardChange: (dashboard: Dashboard) => void;
+  onApp: (step: AppStep) => void;
+  onSay: (text: string) => void;
+  onVoice: () => void;
+  onChange: (change: Partial<AgentMessage>) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const finish = (done: string[], applied?: AgentApplied) => {
+    agent.plan.app.forEach(onApp);
+    onChange({ state: "done", done, undoId: applied?.undo_id });
+    play("win");
+    confetti({ y: 0.5, pieces: 120 });
+  };
+  async function undo() {
+    if (!agent.undoId) return;
+    setBusy(true);
+    setError("");
+    try {
+      onDashboardChange(await agentApi.undo(agent.undoId));
+      onChange({ state: "undone" });
+    } catch (reason) {
+      setError(describeError(reason, "Couldn’t undo").detail);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (agent.state === "replaced")
+    // Penny's question stays in the conversation; an older plan just points to the newer one.
+    return agent.plan.question && !agent.plan.steps.length ? (
+      <div className="flex items-start gap-3">
+        <Avatar />
+        <p className="rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm text-ink">
+          {agent.plan.question}
+        </p>
+      </div>
+    ) : (
+      <p className="pl-12 text-xs text-ink-subtle">↻ Updated below</p>
+    );
+  return (
+    <div className="flex items-start gap-3">
+      <Avatar />
+      <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-line bg-surface p-4 shadow-[var(--shadow-card)]">
+        {agent.state === "open" ? (
+          <PlanCard
+            compact
+            plan={agent.plan}
+            photo={null}
+            dashboard={dashboard}
+            applyChange={onDashboardChange}
+            onRefine={onSay}
+            onVoice={onVoice}
+            onDone={(applied) => finish(applied.done, applied)}
+            onAppOnly={() => finish(agent.plan.app.map((step) => `${step.emoji} ${step.title}`))}
+          />
+        ) : (
+          <div className="space-y-2">
+            <p className="font-semibold text-ink">
+              {agent.state === "undone" ? "Undone, all back how it was" : "Done!"}
+            </p>
+            <ul className="space-y-1.5">
+              {(agent.done ?? []).map((line) => (
+                <li
+                  key={line}
+                  className={cn(
+                    "flex items-center gap-2 text-sm text-ink",
+                    agent.state === "undone" && "text-ink-subtle line-through",
+                  )}
+                >
+                  <Check className="size-4 shrink-0 text-zone-green" aria-hidden="true" />
+                  {line}
+                </li>
+              ))}
+            </ul>
+            {agent.state === "done" && agent.undoId && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void undo()}>
+                <RotateCcw className="size-4" aria-hidden="true" />
+                Undo
+              </Button>
+            )}
+            {error && (
+              <p role="alert" className="text-sm font-medium text-danger">
+                {error}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -759,8 +1010,8 @@ function Thinking() {
 
 function Avatar() {
   return (
-    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent text-white" aria-hidden="true">
-      <Bot className="size-5" />
+    <span className="grid size-9 shrink-0 place-items-center" aria-hidden="true">
+      <Mascot face className="size-9 drop-shadow-sm" />
     </span>
   );
 }

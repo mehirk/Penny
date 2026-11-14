@@ -20,3 +20,21 @@ def split_totals(balances: Iterable[int]) -> SplitTotals:
         else:
             owe -= cents
     return SplitTotals(owed, owe, owed - owe)
+
+
+class EvenSplit(NamedTuple):
+    mine_cents: int
+    each_cents: int
+
+
+def even_split(total_cents: int, people: int) -> EvenSplit:
+    """A total shared evenly by `people` (the user included). Each friend's share is floored to
+    the cent, so the user's share takes the odd cents: $100 by 3 is $33.34 mine, $33.33 each."""
+    if total_cents <= 0:
+        raise ValueError("The total must be more than $0")
+    if not 2 <= people <= 50:
+        raise ValueError("Split between 2 and 50 people")
+    each = total_cents // people
+    if each <= 0:
+        raise ValueError("Each share comes to less than a cent")
+    return EvenSplit(total_cents - each * (people - 1), each)
