@@ -48,6 +48,7 @@ DOING = {
     "simulate_spending_cut": "Testing a spending cut",
     "check_affordability": "Checking what you can afford",
     "plan_savings": "Working out a savings plan",
+    "price_with_tax": "Adding sales tax",
     "credit_card_payment": "Modelling a card payment",
     "move_cost_estimate": "Estimating moving costs",
     "who_owes_me": "Checking who owes you",
@@ -382,7 +383,12 @@ async def run_lane(
     report: Report | None = None
     if use_model:
         act = Act(lane, ws, out, clock, pace=0)
-        prompt = f"Mission: {ws.goal or kind}\nYour task: {lane.task}\nToday: {ws.today}"
+        profile = ws.dashboard.profile
+        where = ", ".join(x for x in (profile.city, profile.province) if x) or "Canada"
+        prompt = (
+            f"Mission: {ws.goal or kind}\nYour task: {lane.task}\nToday: {ws.today}\n"
+            f"The user lives in: {where}"
+        )
         if context:
             prompt += f"\n\n{context}"
         # A light agent starts on the cheaper model; if that fails, it tries again on the main

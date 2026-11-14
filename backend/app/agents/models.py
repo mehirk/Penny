@@ -185,6 +185,9 @@ class MissionRun(DashboardModel):
     tokens: TokenUse = Field(default_factory=TokenUse)
     source: Source = "built_in"
     error: str | None = None
+    # A follow-up: what the user said or picked next, and the mission it follows.
+    follow_up: str | None = None
+    after: str | None = None
     # The question and the numbers it was worked out from, so the same mission asked again on
     # the same numbers can be answered from this one.
     fingerprint: str | None = None
@@ -194,6 +197,9 @@ class MissionStart(DashboardModel):
     kind: MissionKind
     # The user's own words for a life event or a custom mission.
     goal: str = Field(default="", max_length=500)
+    # A follow-up in the same chat: the mission it follows (its kind and question carry over,
+    # and `goal` is what the user said or picked next).
+    after: str | None = Field(default=None, max_length=40)
 
 
 class MissionApproved(DashboardModel):

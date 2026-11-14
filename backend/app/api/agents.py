@@ -39,7 +39,20 @@ REUSE_WINDOW = timedelta(minutes=30)
 WATCH_COOLDOWN = timedelta(minutes=10)
 
 
-def _start(user: CurrentUser, kind: MissionKind, goal: str) -> MissionRun:
+def _earlier(run: MissionRun) -> str:
+    """The earlier answer a follow-up builds on, for the agents."""
+    lines = [f"The user asked: {run.goal or run.title}"]
+    if run.brief:
+        lines.append(f"Penny answered: {run.brief.answer}")
+        lines += [f"- {n.label}: {n.value}" for n in run.brief.numbers]
+        if run.brief.options:
+            lines.append("Options offered: " + "; ".join(o.title for o in run.brief.options))
+    elif run.summary:
+        lines.append(f"Penny answered: {run.summary}")
+    return "\n".join(lines)
+
+
+def _start(user: CurrentUser, kind: MissionKind, goal: str, after: str | None = None) -> MissionRun:
     store = user_store(user)
     store.require_owner(user.id)
     goal = goal.strip()
@@ -47,10 +60,20 @@ def _start(user: CurrentUser, kind: MissionKind, goal: str) -> MissionRun:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Tell Penny what the mission is")
     owner = stores.data_owner(user.id)
     history = run_store.list(owner)
+    # A follow-up keeps the earlier mission's kind and question; the new words are the choice.
+    earlier = run_store.get(owner, after) if after else None
+    follow_up = goal if earlier else ""
+    if earlier:
+        kind = earlier.kind if earlier.kind not in ("autopilot", "watch") else "custom"
+        goal = earlier.goal or earlier.title
     # Everything the agents read is loaded now, while this request holds the user's data.
     ws = load_workspace(store, user.id, goal, history)
+    if earlier:
+        ws.follow_up, ws.earlier = follow_up, _earlier(earlier)
+        ws.facts.allow_user_amounts(follow_up)
     fingerprint = hashlib.sha256(
-        f"{kind}|{' '.join(goal.casefold().split())}|{ws.dashboard.model_dump_json()}".encode()
+        f"{kind}|{' '.join(goal.casefold().split())}|{follow_up.casefold()}|"
+        f"{ws.dashboard.model_dump_json()}".encode()
     ).hexdigest()
     now = datetime.now(UTC)
     for older in history:
@@ -65,10 +88,12 @@ def _start(user: CurrentUser, kind: MissionKind, goal: str) -> MissionRun:
         id=f"run-{secrets.token_urlsafe(9)}",
         kind=kind,
         goal=goal,
-        title=title_for(kind, goal),
+        title=follow_up[:1].upper() + follow_up[1:80] if follow_up else title_for(kind, goal),
         started_at=datetime.now(UTC),
         trigger=goal if kind == "watch" else None,
         fingerprint=fingerprint,
+        follow_up=follow_up or None,
+        after=earlier.id if earlier else None,
     )
     # Older drafts were worked out from numbers this mission may change: only the newest counts.
     # A Watch mission leaves the user's own missions alone.
@@ -97,7 +122,7 @@ async def watch(user: CurrentUser, trigger: str) -> None:
 @router.post("/agents/runs", response_model=MissionRun, status_code=status.HTTP_201_CREATED)
 async def start_mission(request: MissionStart, current_user: AuthenticatedUser) -> MissionRun:
     """Starts a mission in the background; poll GET /agents/runs/{id} to watch it."""
-    return _start(current_user, request.kind, request.goal)
+    return _start(current_user, request.kind, request.goal, request.after)
 
 
 @router.post("/agents/autopilot", response_model=MissionRun | None)

@@ -27,6 +27,9 @@ class Workspace:
     learn: LearnState
     goal: str
     memory: Memory = field(default_factory=Memory)
+    # In a follow-up: what the user said or picked next, and the earlier answer it follows.
+    follow_up: str = ""
+    earlier: str = ""
     # Set when the mission starts: questions for the user, and web research.
     asker: Asker | None = None
     researcher: Researcher | None = None

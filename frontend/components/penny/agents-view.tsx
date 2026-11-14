@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
   Bell,
   BookOpen,
@@ -185,182 +185,67 @@ function AgentGlyph({
 
 // ------------------------------------------------------------------ while it runs
 
-type StageState = "todo" | "active" | "done";
-
 const isDone = (lane: AgentLane) => lane.status === "done" || lane.status === "failed";
 
+/** The agents at work, kept small inside the chat: who's on it, what's happening now, and any
+ * question for the user. The full trace is in the answer's details. */
 function MissionLive({ run }: { run: MissionRun }) {
-  const first = run.lanes.filter((lane) => lane.wave === 1);
-  const followUps = run.lanes.filter((lane) => lane.wave > 1);
   const finished = run.lanes.filter(isDone).length;
-  const firstDone = first.length > 0 && first.every(isDone);
-  const allDone = firstDone && followUps.every(isDone) && run.plan_steps.some((s) => s.title.startsWith("Read"));
-  const stages: { label: string; state: StageState }[] = [
-    { label: "Plan", state: run.lanes.length ? "done" : "active" },
-    { label: "Agents", state: !first.length ? "todo" : firstDone ? "done" : "active" },
-    { label: "Follow-ups", state: !firstDone ? "todo" : allDone ? "done" : "active" },
-    {
-      label: "Verify",
-      state: !allDone ? "todo" : run.verification && run.verification.status !== "running" ? "done" : "active",
-    },
-  ];
-  // The newest things any agent did, as a live feed.
-  const feed = run.lanes
-    .flatMap((lane) => lane.steps.map((step, index) => ({ step, lane, key: `${lane.agent}-${lane.wave}-${index}` })))
-    .sort((a, b) => b.step.at_ms - a.step.at_ms)
-    .slice(0, 5);
+  const share = run.lanes.length ? Math.max(8, (finished / run.lanes.length) * 92) : 4;
+  const latest = run.lanes
+    .flatMap((lane) => lane.steps.map((step) => ({ step, lane })))
+    .sort((a, b) => b.step.at_ms - a.step.at_ms)[0];
+  const status = run.question
+    ? `${AGENTS[run.question.agent].name} has a question for you`
+    : latest
+      ? `${latest.lane.name} · ${latest.lane.current ?? latest.step.title}`
+      : "Penny is picking the team…";
 
   return (
-    <Card className="overflow-hidden" aria-live="polite">
-      <div className="flex items-center gap-3 border-b border-line p-5">
+    <Card className="overflow-hidden animate-enter" aria-live="polite">
+      <div className="flex items-center gap-3 p-4">
         <span className="relative shrink-0">
           <span className="absolute inset-0 animate-ring rounded-full bg-accent/30" aria-hidden="true" />
-          <Mascot face className="relative size-11" />
+          <Mascot face className="relative size-10" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-lg font-semibold tracking-tight text-ink">{run.title}</p>
-          <p className="text-sm text-ink-subtle">
-            {run.question
-              ? "An agent needs you for a second"
-              : run.lanes.length
-                ? `${finished} of ${run.lanes.length} agents done`
-                : "Penny is picking the team…"}
+          <p className="truncate font-semibold text-ink">{run.title}</p>
+          <p key={status} className="truncate text-sm text-ink-subtle animate-fade">
+            {status}
           </p>
         </div>
+        {run.lanes.length > 0 && (
+          <span className="shrink-0 text-xs font-semibold tabular-nums text-ink-subtle">
+            {finished}/{run.lanes.length}
+          </span>
+        )}
       </div>
-
+      <div className="h-1 bg-sage" aria-hidden="true">
+        <div className="h-full bg-joy transition-[width] duration-500" style={{ width: `${share}%` }} />
+      </div>
+      {run.lanes.length > 0 && (
+        <ul className="flex flex-wrap gap-2 px-4 py-3" aria-label="Agents">
+          {run.lanes.map((lane) => (
+            <li
+              key={`${lane.agent}-${lane.wave}`}
+              className={cn(
+                "flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-xs font-medium animate-enter",
+                lane.status === "running" || lane.status === "waiting"
+                  ? "border-transparent bg-sage-soft text-ink"
+                  : "border-line text-ink-muted",
+              )}
+              title={lane.because ?? lane.task}
+            >
+              <AgentGlyph agent={lane.agent} size="xs" status={lane.status} />
+              {lane.wave > 1 && <CornerDownRight className="size-3 text-ink-subtle" aria-hidden="true" />}
+              {lane.name}
+              <span className="sr-only">: {lane.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {run.question && <QuestionCard run={run} question={run.question} />}
-
-      <ol className="flex items-center gap-2 px-5 pt-5" aria-label="Progress">
-        {stages.map((stage, index) => (
-          <li key={stage.label} className={cn("flex items-center gap-2", index < stages.length - 1 && "flex-1")}>
-            <span
-              className={cn(
-                "grid size-6 shrink-0 place-items-center rounded-full text-xs",
-                stage.state === "done" && "bg-[#0f8a72] text-white",
-                stage.state === "active" && "bg-accent-soft text-accent-strong",
-                stage.state === "todo" && "border border-line-strong text-ink-subtle",
-              )}
-              aria-hidden="true"
-            >
-              {stage.state === "done" ? (
-                <Check className="size-3.5" strokeWidth={3} />
-              ) : stage.state === "active" ? (
-                <LoaderCircle className="size-3.5 animate-spin" />
-              ) : (
-                index + 1
-              )}
-            </span>
-            <span
-              className={cn(
-                "text-xs font-semibold",
-                stage.state === "todo" ? "text-ink-subtle" : "text-ink",
-                stage.state !== "active" && "hidden sm:inline",
-              )}
-            >
-              {stage.label}
-              <span className="sr-only">: {stage.state === "todo" ? "next" : stage.state}</span>
-            </span>
-            {index < stages.length - 1 && (
-              <span
-                className={cn("h-0.5 flex-1 rounded-full", stage.state === "done" ? "bg-accent" : "bg-line")}
-                aria-hidden="true"
-              />
-            )}
-          </li>
-        ))}
-      </ol>
-
-      <LiveLanes lanes={first} />
-      {followUps.length > 0 && (
-        <div className="px-5 pb-5 animate-enter">
-          <div className="flex gap-3 rounded-2xl border border-dashed border-line-strong p-3">
-            <Mascot face className="size-8 shrink-0" />
-            <div className="min-w-0 text-sm">
-              <p className="font-semibold text-ink">Penny read the reports and sent follow-ups</p>
-              {run.review && <p className="text-ink-muted">{run.review}</p>}
-            </div>
-          </div>
-          <LiveLanes lanes={followUps} className="px-0 pb-0 pt-3" />
-        </div>
-      )}
-
-      {feed.length > 0 && (
-        <div className="border-t border-line bg-sage-soft/60 px-5 py-4">
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-ink-subtle">
-            <span className="relative flex size-2" aria-hidden="true">
-              <span className="absolute inset-0 animate-ring rounded-full bg-danger" />
-              <span className="relative size-2 rounded-full bg-danger" />
-            </span>
-            Live
-          </p>
-          <ul className="mt-2.5 space-y-2">
-            {feed.map(({ step, lane, key }, index) => (
-              <li
-                key={key}
-                className={cn("flex items-center gap-2.5 text-sm animate-enter", index > 0 && "opacity-70")}
-              >
-                <AgentGlyph agent={lane.agent} size="xs" />
-                <span className="min-w-0 flex-1 truncate text-ink">
-                  <span className="font-medium">{lane.name}</span>
-                  <span className="text-ink-muted"> · {step.title}</span>
-                </span>
-                <span className="shrink-0 text-xs tabular-nums text-ink-subtle">{seconds(step.at_ms)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </Card>
-  );
-}
-
-function LiveLanes({ lanes, className }: { lanes: AgentLane[]; className?: string }) {
-  return (
-    <ul className={cn("grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3", className)}>
-      {lanes.map((lane) => (
-        <li
-          key={`${lane.agent}-${lane.wave}`}
-          className={cn(
-            "relative flex items-center gap-3 overflow-hidden rounded-2xl border p-3 transition-colors animate-enter",
-            lane.status === "running" || lane.status === "waiting" ? "border-transparent bg-sage-soft" : "border-line",
-          )}
-          style={
-            lane.status === "running" || lane.status === "waiting"
-              ? ({
-                  boxShadow: `inset 0 0 0 1.5px ${lane.status === "waiting" ? "var(--color-gold)" : AGENTS[lane.agent].color}`,
-                } satisfies CSSProperties)
-              : undefined
-          }
-        >
-          <AgentGlyph agent={lane.agent} status={lane.status} />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-ink">{lane.name}</p>
-            {lane.because && lane.status === "queued" ? (
-              <p className="flex items-center gap-1 truncate text-xs text-ink-subtle">
-                <CornerDownRight className="size-3 shrink-0" aria-hidden="true" />
-                {lane.because}
-              </p>
-            ) : (
-              <p className="truncate text-xs text-ink-subtle">
-                {lane.status === "queued"
-                  ? "Waiting…"
-                  : lane.status === "done"
-                    ? `Done · ${plural(lane.findings.length, "finding")}`
-                    : lane.status === "failed"
-                      ? "Couldn’t finish"
-                      : (lane.current ?? lane.steps.at(-1)?.title)}
-              </p>
-            )}
-          </div>
-          {lane.tool_calls > 0 && (
-            <span className="shrink-0 rounded-full bg-sage px-2 py-0.5 text-[11px] font-semibold tabular-nums text-ink-muted">
-              {plural(lane.tool_calls, "tool")}
-            </span>
-          )}
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -386,7 +271,7 @@ function QuestionCard({ run, question }: { run: MissionRun; question: AgentQuest
   }
 
   return (
-    <div className="border-b border-line bg-gold-soft/50 p-5 animate-enter" role="group" aria-labelledby={inputId}>
+    <div className="border-t border-line bg-gold-soft/50 p-4 animate-enter" role="group" aria-labelledby={inputId}>
       <div className="flex gap-3">
         <AgentGlyph agent={question.agent} status="waiting" />
         <div className="min-w-0 flex-1">
@@ -459,10 +344,11 @@ export function MissionMessage({
   dashboard: Dashboard;
   applyChange: (dashboard: Dashboard) => void;
   onNavigate: (view: View) => void;
-  /** An option the user picked, sent to Penny as their next message. */
-  onSend: (text: string) => void;
-  /** The mission finished: its answer, so the chat can carry it as context. */
-  onFinished: (run: MissionRun) => void;
+  /** A message for Penny: an option the user picked follows up on this mission (`after`). */
+  onSend: (text: string, after?: string) => void;
+  /** The mission finished: its answer, so the chat can carry it as context. `live` is true
+   * when it finished while on screen (not when an old chat is opened). */
+  onFinished: (run: MissionRun, live: boolean) => void;
 }) {
   const toast = useToast();
   const [run, setRun] = useState<MissionRun | null>(null);
@@ -494,7 +380,7 @@ export function MissionMessage({
                 });
             });
           }
-          if (next.status === "done") finished.current(next);
+          if (next.status === "done") finished.current(next, !first);
         })
         .catch(() => {
           if (active && first) setLost(true);
@@ -548,7 +434,7 @@ function MissionAnswer({
   dashboard: Dashboard;
   applyChange: (dashboard: Dashboard) => void;
   onNavigate: (view: View) => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, after?: string) => void;
   onChange: (run: MissionRun) => void;
 }) {
   const toast = useToast();
@@ -635,18 +521,13 @@ function MissionAnswer({
         {rest && <p className="mt-1.5 text-[15px] leading-relaxed text-ink-muted">{rest}</p>}
 
         {brief && brief.numbers.length > 0 && (
-          <dl
-            className={cn(
-              "mt-4 grid gap-2",
-              brief.numbers.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 sm:grid-cols-3",
-            )}
-          >
-            {brief.numbers.map((number) => (
+          <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {brief.numbers.slice(0, 4).map((number) => (
               <div key={number.label} className="rounded-2xl border border-line bg-surface/80 p-3">
-                <dt className="truncate text-xs font-medium text-ink-subtle">{number.label}</dt>
+                <dt className="line-clamp-2 text-xs font-medium leading-snug text-ink-subtle">{number.label}</dt>
                 <dd
                   className={cn(
-                    "mt-0.5 text-lg font-semibold tabular-nums tracking-tight",
+                    "mt-1 text-lg font-semibold tabular-nums tracking-tight",
                     /^[-−]/.test(number.value) ? "text-danger" : "text-ink",
                   )}
                 >
@@ -669,7 +550,7 @@ function MissionAnswer({
                   aria-pressed={picked === option.title}
                   onClick={() => {
                     setPicked(option.title);
-                    onSend(option.title);
+                    onSend(option.title, run.id);
                   }}
                   className={cn(
                     "flex min-h-14 flex-col items-start gap-1 rounded-2xl border p-3 text-left transition-colors disabled:cursor-default",

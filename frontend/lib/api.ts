@@ -1433,6 +1433,9 @@ export type MissionRun = {
   /** A newer mission started, so steps not approved here are out of date. */
   superseded: boolean;
   ai_calls: number;
+  /** A follow-up: what the user said or picked next, and the mission it follows. */
+  follow_up: string | null;
+  after: string | null;
   /** Model tokens the mission used; `cached` input tokens are billed at a discount. */
   tokens: { input: number; cached: number; output: number; reused: number };
   source: "ai" | "built_in";
@@ -1453,8 +1456,12 @@ export type MissionSummary = {
 };
 /** Missions run in the background: start one, then poll `get` until it's no longer running. */
 export const agentsApi = {
-  start: (kind: MissionKind, goal = "") =>
-    authorizedRequest<MissionRun>("/api/v1/agents/runs", { method: "POST", body: JSON.stringify({ kind, goal }) }),
+  /** `after`: the mission this follows in the same chat (its question carries over). */
+  start: (kind: MissionKind, goal = "", after: string | null = null) =>
+    authorizedRequest<MissionRun>("/api/v1/agents/runs", {
+      method: "POST",
+      body: JSON.stringify({ kind, goal, after }),
+    }),
   autopilot: () => authorizedRequest<MissionRun | null>("/api/v1/agents/autopilot", { method: "POST" }),
   list: () => authorizedRequest<MissionSummary[]>("/api/v1/agents/runs"),
   get: (id: string) => authorizedRequest<MissionRun>(`/api/v1/agents/runs/${encodeURIComponent(id)}`),

@@ -101,7 +101,7 @@ class Researcher:
         result = {
             "answer": text,
             "sources": [source.url for source in sources],
-            "note": "From the web: an estimate to check against the sources, not a quote.",
+            "note": "From the web, with sources: use the figure and name where it's from.",
         }
         if len(_cache) >= MAX_CACHED:
             _cache.pop(next(iter(_cache)))

@@ -164,7 +164,12 @@ async def _model_plan(
         "`plan` as one or two plain sentences to the user about how the team will tackle it.",
         f"Mission: {TITLES[kind]}\nUser's words: {goal or '(none)'}\nPersona: "
         f"{ws.dashboard.profile.persona}\nToday: {ws.today}\nYour team:\n{team}"
-        + (f"\nWhat Penny remembers:\n{ws.memory.prompt()}" if ws.memory.prompt() else ""),
+        + (f"\nWhat Penny remembers:\n{ws.memory.prompt()}" if ws.memory.prompt() else "")
+        + (
+            f"\nEarlier in this chat:\n{ws.earlier}\nThe user now says: {ws.follow_up}"
+            if ws.follow_up
+            else ""
+        ),
         "mission_plan",
         _PLAN_SCHEMA,
         timeout_seconds=PLAN_TIMEOUT_SECONDS,
@@ -460,9 +465,8 @@ def _first_sentence(text: str) -> str:
 
 
 def _fact(ws: Workspace, label_starts: str) -> str | None:
-    return next(
-        (f.display for f in reversed(ws.facts.facts) if f.label.startswith(label_starts)), None
-    )
+    """The first figure registered under a label (the 3-month plan comes before the 6-month)."""
+    return next((f.display for f in ws.facts.facts if f.label.startswith(label_starts)), None)
 
 
 def _built_in_brief(ws: Workspace, run: MissionRun) -> Brief:
@@ -479,38 +483,50 @@ def _built_in_brief(ws: Workspace, run: MissionRun) -> Brief:
     planner = next((lane for lane in run.lanes if lane.agent == "planner"), None)
     if planner and planner.summary:
         answer = planner.summary
-    price = _fact(ws, f"{item} price")
+    price = _fact(ws, f"{item} before tax") or _fact(ws, f"{item} price")
     if price is None:  # no price yet: nothing to weigh
         return Brief(answer=answer[:400])
+    total = _fact(ws, f"{item} with tax")
     numbers = [
         BriefNumber(label=label, value=value)
         for label, value in (
             ("Price", price),
+            ("With tax", total),
             ("Safe to spend", _fact(ws, "Safe to spend")),
             ("Chequing after buying", _fact(ws, f"Chequing after bills and {item}")),
             ("Saving for 3 months", _fact(ws, f"Monthly saving for {item}")),
         )
         if value
     ]
-    fits = lead.tone == "good"
-    options = [
-        BriefOption(
-            title="Buy it now",
-            detail="It fits after bills this month."
-            if fits
-            else "Possible, but it eats into savings or your budget.",
-            recommended=fits,
-        ),
+    save = [
         BriefOption(
             title="Save for it over 3 months",
             detail="Start a goal and set money aside after each payday.",
-            recommended=not fits,
+            recommended=lead.tone != "good",
         ),
         BriefOption(
-            title="Look for a cheaper option",
-            detail="A previous model or a refurbished one costs less.",
+            title="Save for it over 6 months",
+            detail="Smaller monthly amounts that leave more room each month.",
         ),
     ]
+    cheaper = BriefOption(
+        title="Look for a cheaper option",
+        detail="A previous model or a refurbished one costs less.",
+    )
+    if lead.tone == "alert":  # it doesn't fit: buying now isn't an option
+        options = [*save, cheaper]
+    else:
+        buy = BriefOption(
+            title="Buy it now",
+            detail="It fits after bills this month."
+            if lead.tone == "good"
+            else "Possible, but it eats into savings or your budget.",
+            recommended=lead.tone == "good",
+        )
+        options = [buy, save[0], cheaper]
+    # After the user picked an option, the others are what's left to choose.
+    picked = ws.follow_up.casefold()
+    options = [o for o in options if o.title.casefold() != picked]
     return Brief(answer=answer[:400], numbers=numbers[:5], options=options)
 
 
@@ -559,19 +575,32 @@ async def _brief(settings: Settings, budget: Budget, ws: Workspace, run: Mission
         facts = "\n".join(f"- {f.label}: {f.display}" for f in ws.facts.facts[-60:])
         value = await ask_json(
             settings,
-            "You are Penny, a money coach for a Canadian student or young adult. Answer the "
-            "user's question the way a good financial adviser would, from your agents' work "
-            "below. `answer`: two or three short sentences, under 60 words. Start with the direct"
-            " answer (yes, not yet, yes if…), then the reason in their numbers: what it costs, "
-            "what they have, and what buying or doing it leaves them with. `numbers`: the 3 to 5 "
-            "figures that matter most, each a short label and its value exactly as written below "
-            "(a price, safe to spend, what's left after, a monthly saving). `options`: 2 or 3 "
-            "things the user could choose to do next, each a title in their voice under 6 words "
-            "('Buy it now', 'Save for it over 3 months', 'Look at a cheaper model') and one "
-            "sentence on what happens; mark the one you'd suggest as recommended. Use only "
-            "figures that appear below; say when a price is from the web. No investment, tax, "
+            "You are Penny, a sharp money coach for a Canadian student or young adult. Answer"
+            " like a confident financial adviser, from your agents' work below. `answer`: two"
+            " or three short sentences, under 60 words. Start with the direct answer (yes, "
+            "not yet, yes if…), then the reason in their numbers: what it costs with tax, "
+            "what they have, and what doing it leaves them with. Every figure below is "
+            "checked: state them plainly. Never say a figure is unverified, an estimate to "
+            "double-check, or needs confirming; never tell the user to confirm the price or "
+            "tax; never say you can't do something or that earlier answers were wrong. Name "
+            "where a web price comes from ('Apple Canada lists…'). Sales tax is for the "
+            "user's province on file. `numbers`: the 4 figures that matter most, each a label"
+            " of one to three words ('Price', 'With tax', 'Left after', 'Monthly saving') and"
+            " its value exactly as written below. `options`: 2 or 3 different paths they "
+            "could take next, each a title in their voice under 6 words ('Buy it now', 'Save "
+            "for it over 6 months', 'Look at a cheaper model') and one sentence under 18 "
+            "words on what happens; mark the one you'd suggest as recommended. Approving a "
+            "draft is the button under your answer, so never offer 'approve' as an option. "
+            "When the user already picked an option, answer that choice: say what's now set "
+            "up and what's next. Use only figures that appear below. No investment, tax, "
             "legal, or credit advice.",
-            f"User's words: {run.goal or run.title}\nAgent reports:\n{_reports(run.lanes)}\n"
+            (
+                f"Earlier in this chat:\n{ws.earlier}\nThe user now says: {ws.follow_up}\n"
+                "Answer what they chose.\n"
+                if ws.follow_up
+                else ""
+            )
+            + f"User's words: {run.goal or run.title}\nAgent reports:\n{_reports(run.lanes)}\n"
             f"Drafted for approval:\n{steps or '(nothing)'}\nVerified figures:\n{facts}",
             "mission_brief",
             _BRIEF_SCHEMA,
@@ -672,7 +701,14 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
         if use_model and run.kind == "purchase":
             # The price comes first: the Planner finds it, then Penny hands on what it found.
             run.source = "ai"
-            tasks = [("planner", PURCHASE_TASK)]
+            tasks = [
+                (
+                    "planner",
+                    f"The user chose “{ws.follow_up}”: do that for this purchase."
+                    if ws.follow_up
+                    else PURCHASE_TASK,
+                )
+            ]
             run.plan = (
                 "I'll have the Planner find the price and check it against your money, then "
                 "hand on whatever needs more work."
@@ -708,7 +744,17 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
             )
         )
         remembered = ws.memory.prompt()
-        context = f"What Penny remembers:\n{remembered}" if remembered else ""
+        context = "\n\n".join(
+            part
+            for part in (
+                f"Earlier in this chat:\n{ws.earlier}\nThe user now says: {ws.follow_up}\n"
+                "Act on that: do what they chose, without re-checking what's settled."
+                if ws.follow_up
+                else "",
+                f"What Penny remembers:\n{remembered}" if remembered else "",
+            )
+            if part
+        )
         outcomes = list(
             await asyncio.gather(
                 *(

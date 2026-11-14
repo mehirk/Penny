@@ -332,60 +332,117 @@ async def _purchase(act: Act, ws: Workspace) -> Report:
                 )
             ],
         )
+    taxed = await act.use("price_with_tax", item=item, price=price, province=None)
+    total, tax_words = price, ""
+    if "error" not in taxed:
+        total = _price_in(taxed["total_with_tax"]) or price
+        tax_words = f" with {taxed['sales_tax']}"
     await act.think(f"Checking whether the {item} fits after bills")
-    fit = await act.use("check_affordability", item=item, price=price)
+    fit = await act.use("check_affordability", item=item, price=total)
     if "error" in fit:
         return Report(summary="Couldn't check that price.")
-    findings = [
-        {
-            "fits_now": Finding(
-                tone="good",
-                title=f"The {item} fits now",
-                detail=f"At {fit['price']}, chequing keeps "
-                f"{fit['chequing_after_bills_and_purchase']} after bills and the purchase.",
+    at = f"At {fit['price']}{tax_words}"
+    verdict = {
+        "fits_now": Finding(
+            tone="good",
+            title=f"The {item} fits now",
+            detail=f"{at}, chequing keeps {fit['chequing_after_bills_and_purchase']} after bills "
+            "and the purchase.",
+        ),
+        "stretch": Finding(
+            tone="watch",
+            title=f"The {item} would be a stretch",
+            detail=(
+                f"{at}, chequing covers it ({fit['chequing_after_bills_and_purchase']} left "
+                f"after bills), but this month's budget would be at "
+                f"{fit['budget_left_after_purchase']}."
+                if not fit["chequing_after_bills_and_purchase"].startswith("-")
+                else f"{at}, chequing can't cover it after bills; it would take savings, "
+                f"leaving {fit['all_cash_after_bills_and_purchase']} in all."
             ),
-            "stretch": Finding(
-                tone="watch",
-                title=f"The {item} would be a stretch",
-                detail=(
-                    f"At {fit['price']}, chequing covers it "
-                    f"({fit['chequing_after_bills_and_purchase']} left after bills), but this "
-                    "month's budget would be at "
-                    f"{fit['budget_left_after_purchase']}."
-                    if not fit["chequing_after_bills_and_purchase"].startswith("-")
-                    else f"At {fit['price']}, chequing can't cover it after bills; it would take "
-                    f"savings, leaving {fit['all_cash_after_bills_and_purchase']} in all."
-                ),
-            ),
-            "not_yet": Finding(
-                tone="alert",
-                title=f"The {item} doesn't fit yet",
-                detail=f"At {fit['price']} it's more than all your cash after bills "
-                f"({fit['chequing_after_bills']} in chequing after bills).",
-            ),
-        }[fit["verdict"]]
-    ]
-    if fit["verdict"] != "fits_now":
-        for months in (3, 6):
-            plan = await act.use(
-                "plan_savings", item=item, price=price, months=months, goal_id=None
-            )
-            if "error" not in plan:
-                findings.append(
-                    Finding(
-                        tone="info",
-                        title=f"Save {plan['monthly_saving']} a month for {months} months",
-                        detail=f"Leaves {plan['typical_surplus_left_after_saving']} of your "
-                        "typical monthly surplus.",
-                    )
-                )
+        ),
+        "not_yet": Finding(
+            tone="alert",
+            title=f"The {item} doesn't fit yet",
+            detail=f"{at} it's more than all your cash after bills "
+            f"({fit['chequing_after_bills']} in chequing after bills).",
+        ),
+    }[fit["verdict"]]
+    choice = ws.follow_up.casefold()
+    name = item[:1].upper() + item[1:40]
+
+    async def save_for(months: int) -> Finding | None:
+        plan = await act.use("plan_savings", item=item, price=total, months=months, goal_id=None)
+        if "error" in plan:
+            return None
+        return Finding(
+            tone="info",
+            title=f"Save {plan['monthly_saving']} a month for {months} months",
+            detail=f"Reaches {fit['price']}{tax_words} and leaves "
+            f"{plan['typical_surplus_left_after_saving']} of your typical monthly surplus.",
+        )
+
+    # The user picked one of the options: do that, rather than weighing it all again.
+    if "save" in choice or "wait" in choice:
+        months = 6 if ("6" in choice or "six" in choice) else 3
+        plan = await save_for(months)
         await act.use(
             "draft_goal",
-            name=item[:1].upper() + item[1:40],
-            target=price,
+            name=name,
+            target=total,
+            target_date=_months_ahead(ws.today, months).isoformat(),
+        )
+        findings = [f for f in (plan, verdict) if f]
+        lead = f"Here's your {months}-month plan for the {item}"
+        return Report(
+            summary=f"{lead}: {plan.title.lower() if plan else 'a goal'}.", findings=findings
+        )
+    if "buy" in choice:
+        if fit["verdict"] == "not_yet":
+            return Report(summary=f"{verdict.title}. {verdict.detail}", findings=[verdict])
+        status = await act.use("goals_status")
+        due = [
+            g
+            for g in ws.dashboard.savings_goals
+            if g.status == "active"
+            and g.monthly_needed_cents
+            and g.contributed_this_month_cents == 0
+            and "error" not in status
+        ]
+        protected = []
+        for goal in due[:2]:
+            drafted = await act.use(
+                "draft_goal_contribution",
+                goal_id=goal.id,
+                amount=_plain(goal.monthly_needed_cents or 0),
+            )
+            if "error" not in drafted:
+                protected.append(goal.name)
+        ready = Finding(
+            tone="good",
+            title=f"You're set to buy the {item}",
+            detail=f"{at}, chequing keeps {fit['chequing_after_bills_and_purchase']} after bills. "
+            + (
+                f"First, this month's share for {', '.join(protected)} is ready to approve."
+                if protected
+                else "Record it in Penny when you buy and your budgets update."
+            ),
+        )
+        return Report(summary=f"{ready.title}. {ready.detail}", findings=[ready])
+
+    findings = [verdict]
+    if fit["verdict"] != "fits_now":
+        for months in (3, 6):
+            plan = await save_for(months)
+            if plan:
+                findings.append(plan)
+        await act.use(
+            "draft_goal",
+            name=name,
+            target=total,
             target_date=_months_ahead(ws.today, 3).isoformat(),
         )
-    return Report(summary=findings[0].title + ". " + findings[0].detail, findings=findings)
+    return Report(summary=f"{verdict.title}. {verdict.detail}", findings=findings)
 
 
 async def planner(act: Act, ws: Workspace, kind: MissionKind) -> Report:
@@ -712,6 +769,7 @@ TEAM: dict[AgentId, Subagent] = {
                 "project_goal",
                 "simulate_spending_cut",
                 "check_affordability",
+                "price_with_tax",
                 "plan_savings",
                 "spending_by_category",
                 "move_cost_estimate",
@@ -774,6 +832,9 @@ Rules:
 - Don't suggest anything Penny's memory says the user turned down.
 - Recurring bills are planned outside budgets; a category's spending can include them.
 - No individual investment, tax, legal, or credit advice: say what's worth checking, and why.
+- Be sharp and plain. Every figure a tool or web search gives you is checked: state it. Never
+  call figures unverified or estimates, and never tell the user to confirm a price or tax.
+  The user's city and province are given: use them, never assume another.
 - Call tools that don't depend on each other together, in the same turn: every extra turn
   re-sends the whole conversation.
 - At most 7 tool calls, then your report: a summary of one or two short sentences and up to 4
@@ -788,11 +849,20 @@ PLAYS: dict[str, str] = {
     "its first_and_last_month as the target and the move month as the date; 5) set_reminder "
     "for right after the next payday to start saving toward it. As a follow-up with money "
     "found by a teammate, set a reminder to put it toward the goal it fits.",
-    "planner_purchase": "For a purchase: 1) web_research the item's current Canadian price "
-    "(the exact model and size the user named; say it's from the web); 2) check_affordability "
-    "at that price; 3) plan_savings over 3 and 6 months; 4) if it doesn't fit now, draft_goal "
-    "for it with the price as the target. Findings: the price, the verdict with what's left "
-    "after buying, and the savings plans.",
+    "planner_purchase": (
+        "For a purchase: 1) web_research the item's current price at a major Canadian "
+        "retailer (Apple Canada, Best Buy; the exact model and storage the user named); 2) "
+        "price_with_tax with that price (the user's province is on file: never assume another"
+        " one); 3) check_affordability with the total with tax; 4) plan_savings over 3 and 6 "
+        "months with that total; 5) if it doesn't fit now, draft_goal for it with the total "
+        "as the target. If the user picked an option, do that instead: saving → plan_savings "
+        "for those months and draft_goal; buying → check_affordability and "
+        "draft_goal_contribution for any goal still owed this month; a cheaper model → "
+        "web_research one and run steps 2 to 4 on it. Findings: the price and where it's "
+        "from, the total with tax, the verdict with what's left, and the plan. Never call "
+        "figures unverified or ask the user to confirm the price or tax. Name a goal after the "
+        "exact model they asked about (iPhone 18 Pro Max, not iPhone 18 Pro)."
+    ),
     "benefits": "After benefits_screen, use web_research once to check the most valuable match's "
     "current amount or deadline, and cite it.",
 }

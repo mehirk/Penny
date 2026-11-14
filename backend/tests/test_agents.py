@@ -536,13 +536,49 @@ def test_web_figures_feed_estimates_but_never_move_money(store: DashboardStore) 
 
 def test_a_purchase_question_gets_an_answer_numbers_and_options(store: DashboardStore) -> None:
     run = _mission(store, "purchase", "Can I afford a $1,999 laptop?")
-    assert run.brief and run.summary == "The Laptop would be a stretch."
-    assert run.brief.answer.startswith("The Laptop would be a stretch. At $1,999.00")
+    # Maya lives in Halifax: Nova Scotia's 14% HST is on top of the price.
+    assert run.brief and run.summary == "The Laptop doesn't fit yet."
+    assert run.brief.answer.startswith("The Laptop doesn't fit yet. At $2,278.86 with HST 14%")
     numbers = {n.label: n.value for n in run.brief.numbers}
-    assert numbers["Price"] == "$1,999.00" and numbers["Saving for 3 months"] == "$333.17"
-    assert [o.title for o in run.brief.options if o.recommended] == ["Save for it over 3 months"]
-    # Saving toward it is drafted; paying the card off isn't this question.
-    assert [step.title for step in run.steps] == ["Start a goal: Laptop"]
+    assert numbers["Price"] == "$1,999.00" and numbers["With tax"] == "$2,278.86"
+    assert numbers["Saving for 3 months"] == "$759.62"
+    assert [o.title for o in run.brief.options] == [
+        "Save for it over 3 months",
+        "Save for it over 6 months",
+        "Look for a cheaper option",
+    ]
+    # Saving toward it is drafted (at the total with tax); paying the card off isn't this question.
+    [goal] = run.steps
+    assert goal.title == "Start a goal: Laptop" and goal.action.target_cents == 227_886  # type: ignore[union-attr]
+
+
+def test_picking_an_option_does_that(store: DashboardStore) -> None:
+    ws = load_workspace(store, _user(store), "Can I afford a $1,999 laptop?")
+    ws.follow_up = "Save for it over 6 months"
+    run = MissionRun(
+        id="run-follow",
+        kind="purchase",
+        goal=ws.goal,
+        title="Save for it over 6 months",
+        started_at=datetime.now(UTC),
+    )
+    asyncio.run(run_mission(get_settings(), ws, run))
+    planner = next(lane for lane in run.lanes if lane.agent == "planner")
+    assert planner.findings[0].title == "Save $379.81 a month for 6 months"
+    [goal] = run.steps
+    assert goal.action.target_date == date(2027, 4, 1)  # type: ignore[union-attr]
+
+
+def test_sales_tax_by_province() -> None:
+    from app.domain import sales_tax
+
+    assert sales_tax.with_tax(189_900, "NS").total_cents == 216_486
+    assert sales_tax.with_tax(189_900, "Ontario").tax_cents == 24_687
+    assert sales_tax.with_tax(100_000, "qc").total_cents == 114_975
+    assert sales_tax.with_tax(1, "AB").tax_cents == 0
+    assert sales_tax.province_code("Nowhere") is None
+    with pytest.raises(ValueError):
+        sales_tax.with_tax(0, "NS")
 
 
 def test_a_purchase_without_a_price_asks_for_it(store: DashboardStore) -> None:
@@ -663,3 +699,21 @@ def test_a_long_answer_keeps_whole_sentences() -> None:
     kept = _whole_sentences(text, 120)
     assert len(kept) <= 120 and kept.endswith(".") and kept.startswith("Yes, it fits.")
     assert _whole_sentences("Short.", 120) == "Short."
+
+
+def test_api_follow_up_keeps_the_question_and_acts_on_the_choice(client: TestClient) -> None:
+    first = _wait(
+        client,
+        client.post(
+            "/api/v1/agents/runs",
+            json={"kind": "purchase", "goal": "Can I afford a $1,999 laptop?"},
+        ).json()["id"],
+    )
+    picked = client.post(
+        "/api/v1/agents/runs",
+        json={"kind": "custom", "goal": "Save for it over 6 months", "after": first["id"]},
+    ).json()
+    assert picked["kind"] == "purchase" and picked["goal"] == "Can I afford a $1,999 laptop?"
+    assert picked["title"] == "Save for it over 6 months" and picked["after"] == first["id"]
+    run = _wait(client, picked["id"])
+    assert run["summary"].startswith("Here's your 6-month plan for the Laptop")

@@ -18,6 +18,7 @@ from app.assist import agent as planner
 from app.coach import tools as coach_tools
 from app.coach.facts import parse_cad
 from app.domain import benefits as benefit_rules
+from app.domain import sales_tax
 from app.domain.cash_forecast import Flow, Forecast, forecast
 from app.domain.finance import format_cad
 
@@ -338,6 +339,32 @@ def move_cost_estimate(ws: Workspace, out: Outbox, args: dict[str, Any]) -> dict
     return result
 
 
+def price_with_tax(ws: Workspace, out: Outbox, args: dict[str, Any]) -> dict[str, Any]:
+    """The checkout total: the price plus the sales tax where the user lives (from their
+    profile, unless they named another province)."""
+    item = str(args.get("item") or "it").strip()[:40]
+    price = _cents(args.get("price"), "price")
+    _known(ws, price, "price", web=True)
+    where = sales_tax.province_code(args.get("province")) or sales_tax.province_code(
+        ws.dashboard.profile.province
+    )
+    if where is None:
+        raise ToolError("No province on the profile: pass province (like ON or Nova Scotia)")
+    taxed = sales_tax.with_tax(price, where)
+    # A price only the web gave stays a web figure, and so does its total: it can set a goal's
+    # target but never an amount to move.
+    source = "price_with_tax" if ws.facts.knows_cents(price) else "web"
+    f = ws.facts
+    return {
+        "item": item,
+        "province": taxed.province,
+        "price_before_tax": f.money(f"{item} before tax", price, source),
+        "sales_tax": taxed.tax_name,
+        "tax": f.money(f"{item} {taxed.tax_name}", taxed.tax_cents, source),
+        "total_with_tax": f.money(f"{item} with tax", taxed.total_cents, source),
+    }
+
+
 def who_owes_me(ws: Workspace, out: Outbox, args: dict[str, Any]) -> dict[str, Any]:
     f = ws.facts
     people = []
@@ -646,6 +673,18 @@ TOOLS: dict[str, Tool] = {
             "Whether a purchase fits now after bills and budget.",
             {"item": _text("What it is"), "price": _text("CAD amount")},
             _coach("check_affordability"),
+        ),
+        Tool(
+            "price_with_tax",
+            "read",
+            "The checkout total: a price plus sales tax where the user lives (their province is "
+            "on file; pass one only if they name another). Use the total for affordability.",
+            {
+                "item": _text("What it is"),
+                "price": _text("CAD amount before tax"),
+                "province": _optional("Only if the user named one, else null"),
+            },
+            price_with_tax,
         ),
         Tool(
             "plan_savings",
