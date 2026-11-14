@@ -106,7 +106,8 @@ export const SURFACE_OPTIONS: { value: SurfaceSetting; label: string; descriptio
   { value: "halo", label: "Halo", description: "A fine gilded edge with a soft glow." },
 ];
 const SURFACE_VALUES = SURFACE_OPTIONS.map((option) => option.value);
-// What someone sees before choosing: the Graphite style on the Clay surface.
+// What someone sees before choosing: dark, with the Graphite style on the Clay surface.
+export const DEFAULT_THEME: ThemeSetting = "dark";
 export const DEFAULT_PALETTE: PaletteSetting = "graphite";
 export const DEFAULT_SURFACE: SurfaceSetting = "clay";
 
@@ -122,7 +123,7 @@ export const THEME_OPTIONS: { value: ThemeSetting; label: string }[] = [
  */
 export const PREFERENCES_BOOT_SCRIPT = `(() => {
   const root = document.documentElement;
-  let theme = "system";
+  let theme = "${DEFAULT_THEME}";
   let palette = "${DEFAULT_PALETTE}";
   let surface = "${DEFAULT_SURFACE}";
   try {
@@ -190,7 +191,9 @@ const subscribeToSystemTheme = (onChange: () => void) => {
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   // The boot script has already applied these; reading them lazily keeps React in agreement.
   const [theme, setThemeState] = useState<ThemeSetting>(() =>
-    typeof window === "undefined" ? "system" : read(THEME_KEY, ["light", "dark", "system"] as const, "system"),
+    typeof window === "undefined"
+      ? DEFAULT_THEME
+      : read(THEME_KEY, ["light", "dark", "system"] as const, DEFAULT_THEME),
   );
   const systemDark = useSyncExternalStore(
     subscribeToSystemTheme,

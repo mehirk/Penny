@@ -1,25 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Lock, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, Check, Database, Landmark, Lock, Plus, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input, Select } from "@/components/ui/input";
 import {
   type AccountType,
   type Dashboard,
+  dashboardApi,
   onboardingApi,
   type OnboardingAnswers,
   type PayFrequency,
+  type Persona,
   type StarterCheck,
   type StarterPlan,
 } from "@/lib/api";
 import { centsToInput, parseCadToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { ACCOUNT_TYPE_LABELS } from "./labels";
+import { ACCOUNT_TYPE_LABELS, PERSONAS } from "./labels";
 import { accountEmoji } from "./emoji";
 import { PalettePicker, ThemePicker } from "./app-shell";
-import { DEFAULT_PALETTE, DEFAULT_SURFACE, usePreferences } from "./preferences";
+import { DEFAULT_PALETTE, DEFAULT_SURFACE, DEFAULT_THEME, usePreferences } from "./preferences";
 import { monthEndAfter } from "@/lib/format";
 import { cad, describeError, Field } from "./shared";
 
@@ -75,14 +77,28 @@ const toCents = (value: string): number | null => {
  * First-run setup for a real (non-demo) account: a few questions, then a starting budget built
  * by Penny's rules (the AI only explains it). Nothing is saved until the user approves the plan.
  */
-export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone: (data: Dashboard) => void }) {
+export function Onboarding({
+  dashboard,
+  onDone,
+  onPersona,
+  onLearnFirst,
+}: {
+  dashboard: Dashboard;
+  onDone: (data: Dashboard) => void;
+  /** The persona was saved; setup carries on. */
+  onPersona: (data: Dashboard) => void;
+  /** "Just learning" chose to start with Learn and practice before any money setup. */
+  onLearnFirst: (data: Dashboard) => void;
+}) {
   const today = dashboard.money_calendar.today ?? isoDay(new Date());
   const categoryIds = useMemo(
     () => new Set(dashboard.categories.filter((c) => c.kind === "spending").map((c) => c.id)),
     [dashboard.categories],
   );
   const editable = dashboard.accounts_overview.accounts.filter((a) => a.last_activity_on === null);
-  // Picking a look comes first; it isn't one of the numbered steps.
+  // Who Penny is coaching (and how data is handled) comes first, then picking a look; neither is
+  // one of the numbered steps.
+  const [welcome, setWelcome] = useState(!dashboard.profile.persona);
   const [intro, setIntro] = useState(true);
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
@@ -363,6 +379,21 @@ export function Onboarding({ dashboard, onDone }: { dashboard: Dashboard; onDone
     </div>
   );
 
+  if (welcome) {
+    return (
+      <WelcomeIntro
+        initial={dashboard.profile.persona}
+        onDone={(data, learnFirst) => {
+          if (learnFirst) {
+            onLearnFirst(data);
+            return;
+          }
+          onPersona(data);
+          setWelcome(false);
+        }}
+      />
+    );
+  }
   if (intro) return <AppearanceIntro onDone={() => setIntro(false)} />;
 
   return (
@@ -870,10 +901,134 @@ function SetupScreen({ children }: { children: React.ReactNode }) {
 }
 
 /** Before the questions: pick how Penny looks, or keep the default. Saved on this device. */
+
+const PROMISES = [
+  { icon: Landmark, text: "Penny never connects to your bank. You type in only what you want it to know." },
+  {
+    icon: Database,
+    text: "What you enter is saved to your account, only you can see it, and Settings › Delete account erases it all.",
+  },
+  {
+    icon: Bot,
+    text: "Penny AI sends your numbers (never your password) to OpenAI to write a reply, with storage turned off.",
+  },
+  {
+    icon: ShieldCheck,
+    text: "Every number is worked out by Penny’s code and checked before you see it. AI can still be wrong: this is education, not financial advice.",
+  },
+];
+
+/** Before any setup: who Penny is coaching, and plainly how data and AI are handled. */
+function WelcomeIntro({
+  initial,
+  onDone,
+}: {
+  initial: Persona | null;
+  onDone: (data: Dashboard, learnFirst: boolean) => void;
+}) {
+  const [persona, setPersona] = useState<Persona | null>(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(learnFirst: boolean) {
+    if (!persona) return;
+    setBusy(true);
+    setError("");
+    try {
+      onDone(await dashboardApi.setPersona(persona), learnFirst);
+    } catch (reason) {
+      setError(describeError(reason, "Penny couldn’t save that").detail);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SetupScreen>
+      <p className="flex min-h-11 items-center text-xs font-semibold text-ink-subtle">Welcome to Penny</p>
+      <section className="mt-2 flex-1 animate-enter">
+        <h1 id="setup-title" className="text-2xl font-semibold tracking-tight text-ink">
+          Your wallet. Your coach.
+        </h1>
+        <p className="mt-2 text-sm text-ink-muted">
+          Penny teaches money with your own numbers. Tell it a little about you so the coaching fits.
+        </p>
+        <fieldset className="mt-6">
+          <legend className="text-sm font-semibold text-ink">Which sounds most like you?</legend>
+          <div className="mt-2 space-y-2.5">
+            {PERSONAS.map((item) => (
+              <label
+                key={item.value}
+                className={cn(
+                  "flex min-h-16 cursor-pointer items-center gap-3 rounded-[var(--radius-card)] border p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent",
+                  persona === item.value ? "border-accent bg-accent-soft" : "border-line bg-surface hover:bg-sage-soft",
+                )}
+              >
+                <input
+                  type="radio"
+                  name="persona"
+                  value={item.value}
+                  checked={persona === item.value}
+                  onChange={() => setPersona(item.value)}
+                  className="sr-only"
+                />
+                <span
+                  className="grid size-11 shrink-0 place-items-center rounded-full bg-sage text-2xl"
+                  aria-hidden="true"
+                >
+                  {item.emoji}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold text-ink">{item.title}</span>
+                  <span className="block text-sm text-ink-subtle">{item.description}</span>
+                </span>
+                {persona === item.value && <Check className="size-5 shrink-0 text-accent-strong" aria-hidden="true" />}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <section aria-labelledby="promises-title" className="mt-6 rounded-[var(--radius-card)] bg-sage-soft p-4">
+          <h2 id="promises-title" className="text-sm font-semibold text-ink">
+            Before you share anything
+          </h2>
+          <ul className="mt-2 space-y-2.5">
+            {PROMISES.map(({ icon: Icon, text }) => (
+              <li key={text} className="flex gap-2.5 text-sm text-ink-muted">
+                <Icon className="mt-0.5 size-4 shrink-0 text-accent-strong" aria-hidden="true" />
+                {text}
+              </li>
+            ))}
+          </ul>
+        </section>
+        {error && (
+          <p role="alert" className="mt-4 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
+        )}
+      </section>
+      <div className="sticky bottom-0 -mx-4 mt-6 flex flex-col gap-2 bg-canvas/90 px-4 pb-1 pt-3 backdrop-blur sm:flex-row">
+        {persona === "learner" ? (
+          <>
+            <Button className="min-h-12 flex-1 text-base" disabled={busy} onClick={() => void save(true)}>
+              Start with lessons and practice
+            </Button>
+            <Button variant="outline" className="min-h-12 text-base" disabled={busy} onClick={() => void save(false)}>
+              Set up my money first
+            </Button>
+          </>
+        ) : (
+          <Button className="min-h-12 flex-1 text-base" disabled={!persona || busy} onClick={() => void save(false)}>
+            {persona ? "Continue" : "Pick one to continue"}
+          </Button>
+        )}
+      </div>
+    </SetupScreen>
+  );
+}
+
 function AppearanceIntro({ onDone }: { onDone: () => void }) {
   const { setTheme, setPalette, setSurface } = usePreferences();
   function keepDefault() {
-    setTheme("system");
+    setTheme(DEFAULT_THEME);
     setPalette(DEFAULT_PALETTE);
     setSurface(DEFAULT_SURFACE);
     onDone();

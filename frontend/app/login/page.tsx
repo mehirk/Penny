@@ -176,7 +176,7 @@ export default function LoginPage() {
           <BrandMark />
           <div>
             <p className="text-lg font-semibold tracking-tight text-ink">Penny</p>
-            <p className="text-xs text-ink-subtle">Make money make sense</p>
+            <p className="text-xs text-ink-subtle">Your wallet. Your coach.</p>
           </div>
         </div>
         <div className="mt-8 rounded-[1.5rem] border border-line bg-surface p-6 shadow-[var(--shadow-raised)] sm:p-7">

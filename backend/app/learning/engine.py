@@ -208,7 +208,10 @@ class Learner:
         return sum(result.xp_earned for result in self.results.values())
 
     def badges(self, today: date) -> list[Badge]:
-        passed = [LESSONS_BY_ID[lesson_id] for lesson_id in self.results]
+        # Practice results sit beside lesson results; badges count lessons only.
+        passed = [
+            LESSONS_BY_ID[lesson_id] for lesson_id in self.results if lesson_id in LESSONS_BY_ID
+        ]
         topics_mastered = any(
             {
                 lesson.tier
@@ -222,7 +225,11 @@ class Learner:
         best = longest_streak(self.activity_days)
         earned = {
             "first-steps": bool(passed),
-            "flawless": any(result.stars == MAX_STARS for result in self.results.values()),
+            "flawless": any(
+                result.stars == MAX_STARS
+                for lesson_id, result in self.results.items()
+                if lesson_id in LESSONS_BY_ID
+            ),
             "brain-power": any(lesson.tier == "hard" for lesson in passed),
             "topic-master": topics_mastered,
             "on-a-roll": best >= 3,

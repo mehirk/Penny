@@ -37,6 +37,9 @@ class DemoUser(StrictModel):
     currency: Literal["CAD"]
     # True for the seeded demo data set; False for a fresh account the user fills in.
     is_fictional: bool
+    # Who Penny is coaching, picked before setup: a student, someone working, or someone who
+    # wants to learn first (Practice and lessons before real numbers). None until picked.
+    persona: Literal["student", "working", "learner"] | None = None
 
 
 class Account(StrictModel):

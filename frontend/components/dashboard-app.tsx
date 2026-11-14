@@ -76,7 +76,7 @@ function PennyApp() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // First-run setup for new real accounts. Each step can be skipped, but not the whole setup;
   // a device that skipped it under the old "Skip for now" still opens on Home with a Set up card.
-  const [setupSkipped] = useState(() => {
+  const [setupSkipped, setSetupSkipped] = useState(() => {
     try {
       return typeof window !== "undefined" && window.localStorage.getItem("penny-setup-skipped") === "1";
     } catch {
@@ -365,14 +365,32 @@ function PennyApp() {
     navigate("ai");
     void coachChat.send(question);
   };
+  /** Leaves setup; Home keeps a Set up card while there's still no pay, bill, or budget. */
+  const closeSetup = (data: Dashboard) => {
+    try {
+      window.localStorage.setItem("penny-setup-skipped", "1");
+    } catch {
+      /* storage blocked: setup shows again next time */
+    }
+    setSetupSkipped(true);
+    setSetupOpen(false);
+    applyChange(data);
+  };
   if (dashboard.needs_onboarding && (setupOpen || !setupSkipped)) {
     return (
       <Onboarding
         dashboard={dashboard}
         onDone={(data) => {
-          setSetupOpen(false);
-          applyChange(data);
-          toast({ title: "Your plan is ready", description: "Change any budget from Spending › Budgets." });
+          // Skipping every step saves no pay, bill, or budget, so the account still "needs
+          // setup"; close it anyway or the plan screen would stay up after saving.
+          closeSetup(data);
+          toast({ title: "Your plan is ready", description: "Change any budget from More › Budgets." });
+        }}
+        onPersona={applyChange}
+        onLearnFirst={(data) => {
+          // Lessons and practice first.
+          closeSetup(data);
+          navigate("learn");
         }}
       />
     );
@@ -394,7 +412,14 @@ function PennyApp() {
           onToggle={() => setSidebarCollapsed((value) => !value)}
           onNavigate={navigate}
         />
-        <div className={cn("transition-[padding] duration-200", sidebarCollapsed ? "lg:pl-20" : "lg:pl-64")}>
+        <div
+          className={cn(
+            "transition-[padding] duration-200",
+            sidebarCollapsed ? "lg:pl-20" : "lg:pl-64",
+            // Penny AI fills the screen on laptops; the chat scrolls inside it.
+            view === "ai" && "lg:flex lg:h-dvh lg:flex-col",
+          )}
+        >
           <PageHeader
             view={view}
             dashboard={dashboard}
@@ -405,11 +430,18 @@ function PennyApp() {
           <main
             id="main"
             tabIndex={-1}
-            className="mx-auto max-w-7xl px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-5 focus:outline-none sm:px-6 lg:px-10 lg:pb-12 lg:pt-8"
+            className={cn(
+              "mx-auto px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-5 focus:outline-none sm:px-6",
+              view === "ai" ? "w-full lg:min-h-0 lg:flex-1 lg:p-0" : "max-w-7xl lg:px-10 lg:pb-12 lg:pt-8",
+            )}
           >
             {/* A period that isn't cached yet shows a skeleton until its data arrives, never stale numbers. */}
             {monthLoading && <PageSkeleton />}
-            <div key={view} className={monthLoading ? "hidden" : "animate-fade"} aria-busy={monthLoading}>
+            <div
+              key={view}
+              className={cn(monthLoading ? "hidden" : "animate-fade", view === "ai" && "lg:h-full")}
+              aria-busy={monthLoading}
+            >
               {view === "today" && (
                 <TodayView
                   dashboard={dashboard}
@@ -492,6 +524,7 @@ function PennyApp() {
                   onDashboardChange={applyChange}
                   onApproved={(message) => toast({ title: "Change applied", description: message })}
                   onApplyBudgets={applyBudgetSuggestions}
+                  save={mutate}
                 />
               )}
               {view === "settings" && (

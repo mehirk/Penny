@@ -9,6 +9,7 @@ import asyncio
 import logging
 import re
 import time
+from datetime import date
 
 from app.coach.context import CoachContext, build_signals, build_snapshot, load_context
 from app.coach.guard import validate_user_question
@@ -37,6 +38,8 @@ How to answer:
 - Then give two to four short points: what in their data drives the answer, the trade-off, and \
 one concrete next step they can take this week. Name their categories, goals, bills, and dates.
 - Coach, don't lecture. Warm, direct, no shame, no generic tips unless tied to their data.
+- Fit the coaching to person.situation in the snapshot (a student, someone with a salary, or \
+someone learning first). For someone learning first, explain terms simply and suggest a lesson.
 - Keep it under about 150 words unless they ask for more detail. Plain text, short paragraphs, \
 "- " bullets, and **bold** sparingly.
 - follow_ups: up to three short questions the user might ask next, written in their voice.
@@ -88,6 +91,32 @@ _TOPICS: dict[str, tuple[str, ...]] = {
 _PRICE = re.compile(r"\$\s?(\d[\d,]*(?:\.\d{1,2})?)")
 
 
+# One starter question per persona (DemoUser.persona), so the tiles fit who's asking.
+PERSONA_QUESTIONS = {
+    "student": "How do I make my money last until my next payday?",
+    "working": "How much of my pay should I be saving?",
+    "learner": "Explain budgeting to me like I'm new to it",
+}
+
+
+def _starter_questions(ctx: CoachContext, signal_prompts: list[str]) -> list[str]:
+    """The chat's starter tiles: the nearest goal, the top check-in signal, one for the persona,
+    and need or want. At most four, no repeats."""
+    goals = sorted(
+        (g for g in ctx.dashboard.savings_goals if g.status == "active"),
+        key=lambda g: (g.target_date is None, g.target_date or date.max, g.name),
+    )
+    persona = ctx.dashboard.profile.persona
+    candidates = [
+        *([f"Am I on track for my {goals[0].name}?"] if goals else []),
+        *signal_prompts[:1],
+        PERSONA_QUESTIONS.get(persona or "", "What should I focus on this week?"),
+        "Can I afford a $300 concert trip, or is it just a want?",
+        *signal_prompts[1:2],
+    ]
+    return list(dict.fromkeys(candidates))[:4]
+
+
 class Coach:
     def __init__(self, store: DashboardStore, settings: Settings) -> None:
         self._store = store
@@ -98,8 +127,7 @@ class Coach:
         signals = build_signals(ctx)
         first_name = ctx.dashboard.profile.display_name.split()[0]
         month = ctx.month.strftime("%B")
-        questions = [signal.prompt for signal in signals[:3]]
-        questions.append("What should I focus on this week?")
+        questions = _starter_questions(ctx, [signal.prompt for signal in signals])
         return BriefResponse(
             greeting=f"Hi {first_name}, here's your {month} check-in.",
             month_label=ctx.month.strftime("%B %Y"),

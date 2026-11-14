@@ -13,7 +13,12 @@ from app.api.deps import (
 )
 from app.assist import budgets, explain, onboarding, quick_add, search
 from app.assist.common import AssistText
-from app.assist.statements import StatementDraft, StatementUpload, read_statement
+from app.assist.statements import (
+    StatementDraft,
+    StatementUpload,
+    read_statement,
+    sample_receipt,
+)
 from app.config import get_settings
 from app.dashboard_models import DashboardResponse, OnboardingAnswers, OnboardingApply
 
@@ -53,13 +58,21 @@ async def search_transactions(
 async def read_statement_upload(
     upload: StatementUpload, current_user: AuthenticatedUser
 ) -> StatementDraft:
-    """Read a PDF, Excel, or CSV statement into rows to review. Nothing is saved."""
+    """Read a statement (PDF, Excel, CSV) or a receipt photo into rows to review. Saves nothing."""
     store = user_store(current_user)
     store.require_owner(current_user.id)
     dashboard = store.dashboard_for_user(current_user.id)
     return await read_statement(
         get_settings(), upload, store.today(), dashboard.categories, dashboard.accounts
     )
+
+
+@router.post("/assist/sample-receipt", response_model=StatementDraft, tags=["assist"])
+def read_sample_receipt(current_user: AuthenticatedUser) -> StatementDraft:
+    """Penny's example receipt, read in advance (no model call), to try receipt reading."""
+    store = user_store(current_user)
+    store.require_owner(current_user.id)
+    return sample_receipt(store.today(), store.dashboard_for_user(current_user.id).categories)
 
 
 @router.get("/assist/spending-take", response_model=AssistText, tags=["assist"])

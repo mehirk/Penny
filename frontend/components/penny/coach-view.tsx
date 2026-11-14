@@ -11,6 +11,7 @@ import {
   LockKeyhole,
   PiggyBank,
   Plus,
+  ReceiptText,
   RotateCcw,
   ShieldCheck,
   Sparkles,
@@ -35,8 +36,10 @@ import {
   type SavedConversation,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import type { SaveChange } from "./settings-view";
 import { cad, describeError } from "./shared";
 import { PlanBreakdown } from "./smart-cards";
+import { StatementImport } from "./statement-import";
 
 /** Messages sent per request; the API accepts at most 12, ending with the new question. */
 const HISTORY_LIMIT = 11;
@@ -330,16 +333,19 @@ export function CoachView({
   onDashboardChange,
   onApproved,
   onApplyBudgets,
+  save,
 }: {
   chat: CoachChat;
   dashboard: Dashboard;
   onDashboardChange: (dashboard: Dashboard) => void;
   onApproved: (message: string) => void;
   onApplyBudgets: (month: string, picked: BudgetSuggestion[]) => Promise<string | null>;
+  save: SaveChange;
 }) {
   const [brief, setBrief] = useState<CoachBrief | null>(null);
   const [approvalError, setApprovalError] = useState<ChatError | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const { messages, pending, error } = chat;
 
@@ -379,13 +385,15 @@ export function CoachView({
   const historyList = <ChatHistory chat={chat} onPicked={() => setHistoryOpen(false)} />;
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
-      <aside aria-label="Chat history" className="hidden lg:block">
-        <div className="sticky top-28">{historyList}</div>
+    // Phones scroll the whole page. Laptops get a full-height chat like ChatGPT: chats on the left,
+    // the conversation scrolling on its own, and the composer pinned to the bottom.
+    <div className="grid gap-4 lg:h-full lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-0">
+      <aside aria-label="Chat history" className="hidden overflow-y-auto border-r border-line/70 p-4 lg:block">
+        {historyList}
       </aside>
 
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-        <div className="flex items-center justify-between gap-2">
+      <div className="flex min-w-0 flex-col gap-4 lg:min-h-0 lg:gap-0">
+        <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-2 lg:max-w-none lg:border-b lg:border-line/70 lg:px-8 lg:py-3">
           <h2 className="truncate text-sm font-semibold text-ink-muted">
             {chat.activeId ? chat.conversations.find((item) => item.id === chat.activeId)?.title : "New chat"}
           </h2>
@@ -406,76 +414,97 @@ export function CoachView({
           </div>
         </div>
 
-        {messages.length === 0 && (
-          <Welcome
-            name={dashboard.profile.display_name.split(" ")[0]}
-            questions={brief?.suggested_questions}
-            disabled={pending}
-            onAsk={(text) => void chat.send(text)}
-          />
-        )}
-
-        <div
-          role="log"
-          aria-live="polite"
-          aria-busy={pending}
-          aria-label="Conversation with Penny AI"
-          className="space-y-4"
-        >
-          {messages.map((message) =>
-            message.role === "user" ? (
-              <UserBubble key={message.id} text={message.content} />
-            ) : (
-              <AssistantMessage
-                key={message.id}
-                reply={message.reply!}
-                proposalState={message.reply?.proposal ? chat.proposals[message.reply.proposal.id] : undefined}
-                planState={chat.proposals[`plan:${message.id}`]}
-                onAddPlan={async (month, picked) => {
-                  chat.setProposal(`plan:${message.id}`, "approving");
-                  const failed = await onApplyBudgets(month, picked);
-                  chat.setProposal(`plan:${message.id}`, failed ? null : "approved");
-                  return failed;
-                }}
-                showFollowUps={message === lastAssistant && !pending}
+        <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <div className="mx-auto w-full max-w-3xl space-y-4 lg:px-8 lg:py-6">
+            {messages.length === 0 && (
+              <Welcome
+                name={dashboard.profile.display_name.split(" ")[0]}
+                questions={brief?.suggested_questions}
                 disabled={pending}
                 onAsk={(text) => void chat.send(text)}
-                onApprove={(proposal) => void approve(proposal)}
-                onDismiss={(proposal) => chat.setProposal(proposal.id, "dismissed")}
+                onScan={() => setScanOpen(true)}
               />
-            ),
-          )}
-          {pending && <Thinking />}
-          {error && (
+            )}
+
             <div
-              role="alert"
-              className="flex flex-col gap-3 rounded-2xl border border-danger/25 bg-danger-soft p-4 sm:flex-row sm:items-center sm:justify-between"
+              role="log"
+              aria-live="polite"
+              aria-busy={pending}
+              aria-label="Conversation with Penny AI"
+              className="space-y-4"
             >
-              <div>
-                <p className="font-semibold text-danger">{error.title}</p>
-                <p className="mt-1 text-sm text-ink-muted">{error.detail}</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={chat.retry}>
-                <RotateCcw className="size-4" aria-hidden="true" />
-                Try again
-              </Button>
+              {messages.map((message) =>
+                message.role === "user" ? (
+                  <UserBubble key={message.id} text={message.content} />
+                ) : (
+                  <AssistantMessage
+                    key={message.id}
+                    reply={message.reply!}
+                    proposalState={message.reply?.proposal ? chat.proposals[message.reply.proposal.id] : undefined}
+                    planState={chat.proposals[`plan:${message.id}`]}
+                    onAddPlan={async (month, picked) => {
+                      chat.setProposal(`plan:${message.id}`, "approving");
+                      const failed = await onApplyBudgets(month, picked);
+                      chat.setProposal(`plan:${message.id}`, failed ? null : "approved");
+                      return failed;
+                    }}
+                    showFollowUps={message === lastAssistant && !pending}
+                    disabled={pending}
+                    onAsk={(text) => void chat.send(text)}
+                    onApprove={(proposal) => void approve(proposal)}
+                    onDismiss={(proposal) => chat.setProposal(proposal.id, "dismissed")}
+                  />
+                ),
+              )}
+              {pending && <Thinking />}
+              {error && (
+                <div
+                  role="alert"
+                  className="flex flex-col gap-3 rounded-2xl border border-danger/25 bg-danger-soft p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-semibold text-danger">{error.title}</p>
+                    <p className="mt-1 text-sm text-ink-muted">{error.detail}</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={chat.retry}>
+                    <RotateCcw className="size-4" aria-hidden="true" />
+                    Try again
+                  </Button>
+                </div>
+              )}
+              {approvalError && (
+                <p role="alert" className="rounded-xl bg-danger-soft p-3 text-sm text-danger">
+                  {approvalError.title}: {approvalError.detail}
+                </p>
+              )}
+              <div ref={endRef} />
             </div>
-          )}
-          {approvalError && (
-            <p role="alert" className="rounded-xl bg-danger-soft p-3 text-sm text-danger">
-              {approvalError.title}: {approvalError.detail}
-            </p>
-          )}
-          <div ref={endRef} />
+          </div>
         </div>
 
-        <Composer disabled={pending} onSend={(text) => void chat.send(text)} />
-        <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-ink-subtle">
-          <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-          Educational guidance using fictional data. Every amount Penny quotes is checked against your records, and
-          nothing changes without your approval. Chats are saved to your account.
-        </p>
+        {/* No box on phones, so the composer can stick above the tab bar while the page scrolls. */}
+        <div className="contents lg:mx-auto lg:block lg:w-full lg:max-w-3xl lg:space-y-3 lg:px-8 lg:pb-4 lg:pt-2">
+          <Composer disabled={pending} onSend={(text) => void chat.send(text)} onScan={() => setScanOpen(true)} />
+          <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-ink-subtle">
+            <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            Educational guidance using fictional data. Every amount Penny quotes is checked against your records, and
+            nothing changes without your approval. Chats are saved to your account.
+          </p>
+        </div>
       </div>
+
+      <Dialog open={scanOpen} onOpenChange={setScanOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Scan a receipt or statement</DialogTitle>
+            <DialogDescription>
+              Snap a receipt and Penny AI sorts it into one purchase per category, or upload a bank or card statement
+              (PDF, Excel, or CSV). Nothing is added until you check it.
+            </DialogDescription>
+          </DialogHeader>
+          <StatementImport dashboard={dashboard} save={save} />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent>
@@ -574,11 +603,13 @@ function Welcome({
   questions = FALLBACK_QUESTIONS,
   disabled,
   onAsk,
+  onScan,
 }: {
   name: string;
   questions?: string[];
   disabled: boolean;
   onAsk: (text: string) => void;
+  onScan: () => void;
 }) {
   return (
     <section aria-labelledby="welcome-title" className="space-y-4">
@@ -592,23 +623,60 @@ function Welcome({
               Hi {name}, how can I help?
             </h2>
             <p className="mt-1 text-sm text-white/75">
-              I know your budgets, bills, goals, and spending. Ask me anything, or start with one of these.
+              Personal coaching from your own wallet: I know your budgets, bills, goals, and spending. Ask me anything,
+              or tap a question.
             </p>
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap gap-2" aria-label="Suggested questions">
+      <div className="grid gap-2.5 sm:grid-cols-2" aria-label="Suggested questions">
         {questions.map((question) => (
-          <Chip key={question} disabled={disabled} onClick={() => onAsk(question)}>
+          <button
+            key={question}
+            type="button"
+            disabled={disabled}
+            onClick={() => onAsk(question)}
+            className="flex min-h-16 items-center gap-3 rounded-[var(--radius-card)] border border-line bg-surface p-3 text-left text-sm font-medium text-ink transition-colors hover:border-accent hover:bg-accent-soft disabled:opacity-60"
+          >
+            <span
+              className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-strong"
+              aria-hidden="true"
+            >
+              <Sparkles className="size-4" />
+            </span>
             {question}
-          </Chip>
+          </button>
         ))}
+        <button
+          type="button"
+          onClick={onScan}
+          className="flex min-h-16 items-center gap-3 rounded-[var(--radius-card)] border border-dashed border-line-strong bg-surface p-3 text-left text-sm font-medium text-ink transition-colors hover:border-accent hover:bg-accent-soft"
+        >
+          <span
+            className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-strong"
+            aria-hidden="true"
+          >
+            <ReceiptText className="size-4" />
+          </span>
+          <span>
+            Scan a receipt
+            <span className="block text-xs font-normal text-ink-subtle">Penny sorts it by category</span>
+          </span>
+        </button>
       </div>
     </section>
   );
 }
 
-function Composer({ disabled, onSend }: { disabled: boolean; onSend: (text: string) => void }) {
+function Composer({
+  disabled,
+  onSend,
+  onScan,
+}: {
+  disabled: boolean;
+  onSend: (text: string) => void;
+  onScan: () => void;
+}) {
   const [text, setText] = useState("");
   const submit = () => {
     if (!text.trim() || disabled) return;
@@ -627,12 +695,23 @@ function Composer({ disabled, onSend }: { disabled: boolean; onSend: (text: stri
         event.preventDefault();
         submit();
       }}
-      className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-10 lg:bottom-4"
+      className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-10 lg:static"
     >
       <label htmlFor="coach-question" className="sr-only">
         Ask Penny AI about your money
       </label>
       <div className="flex items-end gap-2 rounded-2xl border border-line-strong bg-surface p-2 shadow-[var(--shadow-raised)] focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onScan}
+          aria-label="Scan a receipt or statement"
+          title="Scan a receipt or statement"
+          className="text-ink-subtle hover:text-ink"
+        >
+          <ReceiptText className="size-5" aria-hidden="true" />
+        </Button>
         <textarea
           id="coach-question"
           rows={1}

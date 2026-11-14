@@ -1,4 +1,4 @@
-import type { AccountType, Category } from "@/lib/api";
+import type { AccountType, Category, Persona } from "@/lib/api";
 
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   chequing: "Chequing",
@@ -43,3 +43,25 @@ export function categoryOptions(categories: Category[], kind: Category["kind"]):
         .map((child) => ({ id: child.id, label: `${parent.name} › ${child.name}` })),
     ]);
 }
+
+/** Who Penny is coaching (profile.persona), as picked before setup or in Settings › About you. */
+export const PERSONAS: { value: Persona; emoji: string; title: string; description: string }[] = [
+  {
+    value: "student",
+    emoji: "🎓",
+    title: "Student",
+    description: "Part-time pay, tuition, and rent. Make it last to payday.",
+  },
+  {
+    value: "working",
+    emoji: "💼",
+    title: "Working",
+    description: "A regular salary. Stay ahead of bills and save more of it.",
+  },
+  {
+    value: "learner",
+    emoji: "🌱",
+    title: "Just learning",
+    description: "New to money? Start with short lessons and a game with pretend money.",
+  },
+];

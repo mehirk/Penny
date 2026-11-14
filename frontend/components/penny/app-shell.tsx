@@ -187,7 +187,7 @@ export function Sidebar({
         {!collapsed && (
           <div>
             <p className="text-lg font-semibold tracking-tight text-ink">Penny</p>
-            <p className="text-xs text-ink-subtle">Make money make sense</p>
+            <p className="text-xs text-ink-subtle">Your wallet. Your coach.</p>
           </div>
         )}
       </div>

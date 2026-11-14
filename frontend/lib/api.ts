@@ -1,6 +1,7 @@
 import { getSupabaseAccessToken } from "./supabase";
 
 export type SpendingFrom = "chequing" | "chequing_and_savings";
+export type Persona = "student" | "working" | "learner";
 /** "person": a friend you share costs with. Positive balance, they owe you; negative, you owe them. */
 export type AccountType = "chequing" | "savings" | "credit" | "cash" | "investment" | "other" | "person";
 export type AccountBalance = {
@@ -293,6 +294,8 @@ export type Dashboard = {
     currency: "CAD";
     is_fictional: boolean;
     spending_from: SpendingFrom;
+    /** Who Penny is coaching; null until picked before setup. */
+    persona: Persona | null;
   };
   accounts: Account[];
   categories: Category[];
@@ -660,6 +663,8 @@ export const dashboardApi = {
   updateGoal: (id: string, body: Partial<GoalWrite> & { status?: SavingsGoal["status"] }, month?: string) =>
     request(inMonth(`/api/v1/savings-goals/${id}`, month), { method: "PATCH", body: JSON.stringify(body) }),
   /** Erases all of the user's data and Penny AI chats; setup shows again. */
+  setPersona: (persona: Persona) =>
+    request("/api/v1/profile/persona", { method: "PUT", body: JSON.stringify({ persona }) }),
   resetData: () => request("/api/v1/account/reset", { method: "POST", body: JSON.stringify({ confirm: "reset" }) }),
   /** Deletes the account, its data, and (when the server can) its sign-in. Can't be undone. */
   deleteMyAccount: () =>
@@ -798,9 +803,12 @@ export type ImportRow = {
 };
 export type StatementRow = ImportRow & { transfer: boolean };
 export type StatementDraft = {
-  source: AssistSource;
+  /** "sample": Penny's example receipt, read in advance (no AI call). */
+  source: AssistSource | "sample";
   model: string | null;
-  file_kind: "pdf" | "xlsx" | "csv";
+  file_kind: "pdf" | "xlsx" | "csv" | "image";
+  /** A receipt's rows are one purchase per category; its closing balance is the printed total. */
+  document: "statement" | "receipt";
   institution: string | null;
   account_name: string | null;
   account_type: "chequing" | "savings" | "credit" | null;
@@ -923,6 +931,7 @@ export const assistApi = {
   safeToSpend: () => authorizedRequest<AssistText>("/api/v1/assist/safe-to-spend"),
   budgetRebalance: () => authorizedRequest<BudgetRebalance>("/api/v1/assist/budget-rebalance"),
   /** Reads a statement into rows to review; nothing is saved. `data_base64` is the file's bytes. */
+  sampleReceipt: () => authorizedRequest<StatementDraft>("/api/v1/assist/sample-receipt", { method: "POST" }),
   readStatement: (filename: string, data_base64: string) =>
     authorizedRequest<StatementDraft>("/api/v1/assist/read-statement", {
       method: "POST",
@@ -1016,7 +1025,97 @@ export const learnApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  arcade: () => authorizedRequest<ArcadeView>("/api/v1/learn/arcade"),
+  practice: (scenario = "pocket-money") =>
+    authorizedRequest<PracticeWeek>(`/api/v1/learn/practice?scenario=${encodeURIComponent(scenario)}`),
+  playPractice: (scenario: string, choices: Record<string, string>) =>
+    authorizedRequest<PracticeOutcome>("/api/v1/learn/practice", {
+      method: "POST",
+      body: JSON.stringify({ scenario, choices }),
+    }),
+  playSort: (answers: Record<string, SortKind>) =>
+    authorizedRequest<SortOutcome>("/api/v1/learn/sort", { method: "POST", body: JSON.stringify({ answers }) }),
+  openChest: () => authorizedRequest<ChestOutcome>("/api/v1/learn/chest", { method: "POST" }),
+  skillCheck: () => authorizedRequest<SkillCheckView>("/api/v1/learn/skill-check"),
+  submitSkillCheck: (answers: Record<string, string>) =>
+    authorizedRequest<SkillCheckResult>("/api/v1/learn/skill-check", {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    }),
+  coachPlan: () => authorizedRequest<CoachPlan>("/api/v1/learn/coach-plan"),
 };
+
+/** Money IQ and the coach plan (backend app/learning/skills.py, app/assist/learning_plan.py). */
+export type SkillArea = "banking" | "registered" | "credit" | "tax" | "grow" | "protect";
+export type SkillQuestion = { id: string; area: SkillArea; prompt: string; options: { id: string; text: string }[] };
+export type SkillCheckView = { questions: SkillQuestion[]; xp: number };
+export type SkillMark = { question_id: string; correct: boolean; answer: string; explanation: string };
+export type AreaMastery = {
+  id: SkillArea;
+  label: string;
+  emoji: string;
+  check_pct: number;
+  lesson_pct: number;
+  mastery_pct: number;
+};
+export type SkillCheckResult = { marks: SkillMark[]; areas: AreaMastery[]; xp_awarded: number };
+export type PlanStep = {
+  kind: "lesson" | "guide" | "game";
+  area: SkillArea;
+  title: string;
+  lesson_id: string | null;
+  game_id: string | null;
+};
+export type CoachPlan = {
+  checked: boolean;
+  checked_on: string | null;
+  areas: AreaMastery[];
+  steps: PlanStep[];
+  note: AssistText | null;
+};
+
+/** A story game (backend app/learning/practice.py), one per persona. Pretend money only. */
+export type PracticeChoice = { id: string; label: string; emoji: string; cost_cents: number; treat: boolean };
+export type PracticeWeek = {
+  id: string;
+  persona: Persona;
+  title: string;
+  emoji: string;
+  blurb: string;
+  start_cents: number;
+  goal_cents: number;
+  goal_name: string;
+  treats_for_three: number;
+  days: { id: string; name: string; situation: string; choices: PracticeChoice[] }[];
+  best_stars: number;
+};
+export type PracticeOutcome = {
+  left_cents: number;
+  spent_cents: number;
+  treats: number;
+  reached_goal: boolean;
+  stars: number;
+  xp_awarded: number;
+  lessons: string[];
+};
+
+/** Needs or wants (backend app/learning/sorting.py). */
+export type SortKind = "need" | "want";
+export type SortCard = { id: string; label: string; emoji: string; kind: SortKind; why: string };
+export type SortView = { cards: SortCard[]; seconds: number; best_stars: number };
+export type SortOutcome = { correct: number; answered: number; stars: number; xp_awarded: number };
+
+/** Learn's games and today's quests (backend app/learning/quests.py). */
+export type QuestView = { id: "lesson" | "story" | "sort"; label: string; emoji: string; done: boolean };
+export type ArcadeView = {
+  featured: string;
+  stories: PracticeWeek[];
+  sort: SortView;
+  quests: QuestView[];
+  chest_xp: number;
+  chest_claimed: boolean;
+};
+export type ChestOutcome = { xp_awarded: number; level_before: number; level_after: number; arcade: ArcadeView };
 
 export type ChartMonth = {
   month: string;

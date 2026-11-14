@@ -7,7 +7,6 @@ import {
   CalendarPlus,
   Check,
   ChevronRight,
-  FileUp,
   Lock,
   type LucideIcon,
   Palette,
@@ -18,6 +17,7 @@ import {
   ShieldCheck,
   Tags,
   Trash2,
+  UserRound,
   UserX,
   Wallet,
 } from "lucide-react";
@@ -40,14 +40,13 @@ import { centsToInput, parseCadToCents } from "@/lib/money";
 import { createSupabaseBrowserClient, getSupabaseUserEmail, signOutOfSupabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { PalettePicker, ProfileCard, SignOutRow, SurfacePicker, ThemePicker, useSignedInEmail } from "./app-shell";
-import { ACCOUNT_TYPE_LABELS, friendStatus } from "./labels";
+import { ACCOUNT_TYPE_LABELS, friendStatus, PERSONAS } from "./labels";
 import { accountEmoji } from "./emoji";
 import { PALETTE_OPTIONS, THEME_OPTIONS, usePreferences } from "./preferences";
 import { cad, Field } from "./shared";
 import { BackBar } from "./back-bar";
 import { CalendarSection } from "./calendar-section";
 import { PaySection } from "./pay-section";
-import { StatementImport } from "./statement-import";
 import { useSubpage } from "./subpage";
 
 /** Saves a change through the app's mutation runner; resolves to an error message or null. */
@@ -215,6 +214,42 @@ function ResetDataRow({ save, onReset }: { save: SaveChange; onReset: () => void
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/** Settings › About you: who Penny is coaching. Tailors Home, Learn, and Penny AI's advice. */
+function AboutYouSection({ dashboard, save }: { dashboard: Dashboard; save: SaveChange }) {
+  const current = dashboard.profile.persona;
+  return (
+    <section aria-labelledby="about-title" className="space-y-3">
+      <p className="text-sm text-ink-muted">Penny fits its coaching, Home, and lessons to this.</p>
+      <div className="space-y-2.5" role="radiogroup" aria-label="Which sounds most like you?">
+        {PERSONAS.map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            role="radio"
+            aria-checked={current === item.value}
+            onClick={() =>
+              void save(() => dashboardApi.setPersona(item.value), `Penny will coach you as: ${item.title}`)
+            }
+            className={cn(
+              "flex min-h-16 w-full items-center gap-3 rounded-[var(--radius-card)] border p-3 text-left transition-colors",
+              current === item.value ? "border-accent bg-accent-soft" : "border-line bg-surface hover:bg-sage-soft",
+            )}
+          >
+            <span className="grid size-11 shrink-0 place-items-center rounded-full bg-sage text-2xl" aria-hidden="true">
+              {item.emoji}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold text-ink">{item.title}</span>
+              <span className="block text-sm text-ink-subtle">{item.description}</span>
+            </span>
+            {current === item.value && <Check className="size-5 shrink-0 text-accent-strong" aria-hidden="true" />}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -499,13 +534,13 @@ export function SettingsView({
       body: <CategoriesSection dashboard={dashboard} save={save} />,
     },
     {
-      id: "import",
-      labelId: "import-title",
-      group: "Money",
-      icon: FileUp,
-      title: "Import a statement",
-      summary: "PDF, Excel, or CSV · read by Penny AI",
-      body: <StatementImport dashboard={dashboard} save={save} />,
+      id: "about",
+      labelId: "about-title",
+      group: "App",
+      icon: UserRound,
+      title: "About you",
+      summary: PERSONAS.find((item) => item.value === dashboard.profile.persona)?.title ?? "Tell Penny who you are",
+      body: <AboutYouSection dashboard={dashboard} save={save} />,
     },
     {
       id: "appearance",

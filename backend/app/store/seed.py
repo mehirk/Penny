@@ -238,6 +238,7 @@ def demo_snapshot() -> StoreSnapshot:
             province="NS",
             currency="CAD",
             is_fictional=True,
+            persona="student",
         ),
         accounts=[
             Account(

@@ -65,6 +65,7 @@ PROFILE_COLUMNS = (
     "currency",
     "is_fictional",
     "spending_from",
+    "persona",
 )
 
 
@@ -93,7 +94,11 @@ def _keyed(table: str, rows: list[Row]) -> TableRows:
 
 
 def profile_row(profile: DemoUser) -> Row:
-    return {column: getattr(profile, column) for column in PROFILE_COLUMNS}
+    row = {column: getattr(profile, column) for column in PROFILE_COLUMNS}
+    # Only written once picked, so saving works before migration 202611130001 adds the column.
+    if row["persona"] is None:
+        del row["persona"]
+    return row
 
 
 def to_rows(snapshot: StoreSnapshot) -> Rows:
@@ -161,7 +166,7 @@ def from_rows(user_id: str, profile: Row, tables: dict[str, list[Row]]) -> Store
     pay = tables.get("pay_schedules") or []
     return StoreSnapshot(
         profile=DemoUser.model_validate(
-            {"id": user_id, **{c: profile[c] for c in PROFILE_COLUMNS}}
+            {"id": user_id, **{c: profile[c] for c in PROFILE_COLUMNS if c in profile}}
         ),
         accounts=[Account.model_validate(row) for row in tables.get("accounts", [])],
         categories=[Category.model_validate(row) for row in tables.get("categories", [])],

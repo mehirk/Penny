@@ -33,6 +33,7 @@ import { accountEmoji } from "./emoji";
 import { AmountsToggle, BigAmount, cad, type View } from "./shared";
 import { useSubpage } from "./subpage";
 import { useTransfers } from "./transfer-dialog";
+import { PracticeCard } from "./practice-game";
 
 // Accounts read like the sum: what you have, then what you owe.
 const ACCOUNT_ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "credit"];
@@ -164,6 +165,8 @@ function HomeOverview({
           <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
         </button>
       )}
+      {/* Learning first: practice with pretend money before (or alongside) real numbers. */}
+      {dashboard.profile.persona === "learner" && <PracticeCard />}
       <SafeToSpendHero
         dashboard={dashboard}
         onOpen={() => onOpenPage("safe")}
