@@ -2,11 +2,12 @@
 live trace and results, the verifier's check, and the steps waiting for the user's approval."""
 
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field
+from pydantic import AfterValidator, Field
 
 from app.agent_models import AgentStep
+from app.coach.guard import Redacted, web_url
 from app.dashboard_models import DashboardModel
 
 AgentId = Literal["analyst", "planner", "cashflow", "benefits", "people", "tutor"]
@@ -49,7 +50,7 @@ class AutoTask(DashboardModel):
 
 class WebSource(DashboardModel):
     title: str
-    url: str
+    url: Annotated[str, AfterValidator(web_url)]
 
 
 class AgentLane(DashboardModel):
@@ -196,7 +197,7 @@ class MissionRun(DashboardModel):
 class MissionStart(DashboardModel):
     kind: MissionKind
     # The user's own words for a life event or a custom mission.
-    goal: str = Field(default="", max_length=500)
+    goal: Annotated[str, Redacted] = Field(default="", max_length=500)
     # A follow-up in the same chat: the mission it follows (its kind and question carry over,
     # and `goal` is what the user said or picked next).
     after: str | None = Field(default=None, max_length=40)
@@ -217,7 +218,7 @@ class MissionDeclined(DashboardModel):
 
 class QuestionAnswer(DashboardModel):
     question_id: str = Field(max_length=40)
-    answer: str = Field(min_length=1, max_length=200)
+    answer: Annotated[str, Redacted] = Field(min_length=1, max_length=200)
 
 
 class MissionSummary(DashboardModel):

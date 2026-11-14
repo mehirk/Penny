@@ -105,6 +105,8 @@ const STEP_ICON: Record<TraceStep["kind"], LucideIcon> = {
 };
 
 const uniqueAgents = (lanes: AgentLane[]) => [...new Set(lanes.map((lane) => lane.agent))];
+/** Only http(s) links are shown, whatever a web page cited (no javascript: or data: links). */
+const isWebLink = (url: string) => /^https?:\/\//i.test(url);
 const hostOf = (url: string) => {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -462,7 +464,7 @@ function MissionAnswer({
   const findings = run.lanes
     .flatMap((lane) => lane.findings.map((finding) => ({ finding, lane })))
     .sort((a, b) => TONE_RANK[a.finding.tone] - TONE_RANK[b.finding.tone]);
-  const sources = run.lanes.flatMap((lane) => lane.sources);
+  const sources = run.lanes.flatMap((lane) => lane.sources).filter((source) => isWebLink(source.url));
   const brief = run.brief;
   const answer = brief?.answer ?? run.summary ?? "";
   const lead = headline(answer);
@@ -723,7 +725,7 @@ function MissionAnswer({
                       key={source.url}
                       href={source.url}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                       title={source.title}
                       className="inline-flex min-h-8 items-center gap-1 rounded-full border border-line px-2.5 text-xs font-medium text-ink-muted hover:border-accent hover:text-ink"
                     >

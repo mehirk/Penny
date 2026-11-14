@@ -1,7 +1,8 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.coach.guard import Redacted
 from app.dashboard_models import DashboardResponse
 
 MAX_HISTORY_MESSAGES = 12
@@ -23,7 +24,7 @@ class Fact(CoachModel):
 
 class ChatMessage(CoachModel):
     role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=4_000)
+    content: Annotated[str, Redacted] = Field(min_length=1, max_length=4_000)
 
 
 class ChatRequest(CoachModel):

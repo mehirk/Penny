@@ -41,7 +41,8 @@ If the model is unavailable, slow, or over a person's daily limit, Penny still a
 
 - **Sign-in:** Supabase Auth. The API verifies each token's signature (JWKS, pinned algorithms), issuer, audience, role, and expiry.
 - **Data isolation:** every table has row-level security with no public access; only the API reads and writes, and every row belongs to one user and is deleted with them.
-- **Abuse limits:** 120 requests a minute and 200 AI calls a day per person; oversized requests are refused.
+- **Abuse limits:** 120 requests a minute, 200 AI calls a day, and 3 running missions per person; oversized requests are refused.
+- **AI guardrails:** card numbers, SINs, emails, and phone numbers are removed from what you type before it's stored or sent to the model. Prompt-injection attempts are refused, web pages that try to give instructions are discarded, only http(s) source links are shown, and answers that pick stocks, funds, or crypto are replaced. Money changes always wait for your approval.
 - **Headers:** no framing, no caching of financial data, a strict content security policy, HSTS in production.
 - **Secrets** stay server-side. **Delete account** in Settings removes the account and everything in it.
 
@@ -71,7 +72,7 @@ backend/app/
   learning/             lessons and game rules
   db/                   Postgres persistence: load once per request, save only what changed
   limits.py             per-person request and AI limits
-backend/tests/          about 390 tests: financial rules, security, and every feature's edge cases
+backend/tests/          about 450 tests: financial rules, security, and every feature's edge cases
 supabase/migrations/    the database schema
 ```
 
