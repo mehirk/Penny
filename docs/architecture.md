@@ -32,10 +32,10 @@ Penny AI chats (messages and the verified replies shown with them) and proposals
 
 - `frontend/` owns presentation, accessibility, Supabase sign-in, and mutation forms. It never calculates financial totals; editable CAD strings are converted to cents with `BigInt` before requests. `components/dashboard-app.tsx` orchestrates views and dialogs; `components/penny/use-dashboard.ts` owns loading, period caching, and applying each change's fresh snapshot.
 - `backend/app/domain/` is the authoritative calculation layer. Pure functions accept and return Python integers representing cents, and each has unit tests.
-- `backend/app/store/` owns each user's financial state and returns a complete authoritative snapshot after each create, update, or delete. `DashboardStore` is assembled from one module per area (`transactions`, `budgets`, `goals`, `bills`, `accounts`, `splits`, `pay`, `calendar`, `planning`, `learning`, `reports`) on top of `state` (data, lookups, validation) and `dashboard`/`insights` (the snapshot). `seed.py` holds the fictional demo and a fresh account's starting point; `registry.py` picks the store for a signed-in user. The store knows nothing about the database: `snapshot()` and the constructor hand its state to `backend/app/db/`, which loads it per request in one query and saves only changed rows, guarded by a version number (409 on a conflicting edit). Without `PENNY_DATABASE_URL` the state is in memory.
+- `backend/app/store/` owns each user's financial state and returns a complete authoritative snapshot after each create, update, or delete. `DashboardStore` is assembled from one module per area (`transactions`, `budgets`, `goals`, `bills`, `accounts`, `splits`, `pay`, `calendar`, `planning`, `learning`, `reports`, and `agent`, which applies an approved snap-or-say plan all or nothing) on top of `state` (data, lookups, validation) and `dashboard`/`insights` (the snapshot). `seed.py` holds the fictional demo and a fresh account's starting point; `registry.py` picks the store for a signed-in user. The store knows nothing about the database: `snapshot()` and the constructor hand its state to `backend/app/db/`, which loads it per request in one query and saves only changed rows, guarded by a version number (409 on a conflicting edit). Without `PENNY_DATABASE_URL` the state is in memory.
 - `backend/app/api/` exposes typed routes, one router per area; `backend/app/main.py` only wires the app (per-request save, security headers and request-size limit, CORS, routers). `backend/app/api/deps.py` resolves the signed-in person and applies their request limit; `backend/app/limits.py` also caps Penny AI calls per person. Every financial endpoint validates the bearer identity (Supabase JWT via JWKS, or the development-only demo token) and passes the user id to the store, which rejects non-owners with 403.
 - `backend/app/coach/` owns the financial snapshot, check-in signals, deterministic tools, prompt-injection filtering, number grounding, provider fallback, and single-use goal proposals. Provider output cannot mutate state.
-- `backend/app/assist/` holds the smaller AI helpers (quick add, search, statement reading, budget suggestions, setup, and short explanations). Each has a built-in fallback, quotes only verified figures, and saves nothing.
+- `backend/app/assist/` holds the smaller AI helpers (snap or say it, voice transcription, quick add, search, statement reading, budget suggestions, setup, and short explanations). Each has a built-in fallback, quotes only verified figures, and saves nothing.
 - `supabase/migrations/` owns schema evolution. The browser receives only the publishable key; service-role credentials must remain server-side.
 
 ## Database model and authorization
@@ -91,3 +91,20 @@ Explicit approval
 ```
 
 The model never calculates. It may quote figures that deterministic code produced, and it can only change data by preparing a proposal that the user must approve. A reply is bounded by `PENNY_COACH_TIMEOUT_SECONDS` (default 45) across all tool rounds.
+
+## Snap or say it flow
+
+```text
+POST /agent/plan (typed or transcribed text, optional photo, recent chat as context)
+  -> the model, or built-in rules without a key, reads intents only: kinds, names,
+     and amounts copied as text; it never totals or splits
+  -> deterministic code parses amounts to cents, matches accounts, categories, and goals,
+     builds typed actions, and asks a question for anything missing; nothing is saved
+POST /agent/apply (the user's tap on Do it, up to 20 actions)
+  -> every action runs through the same store operations as the manual forms;
+     any failure restores the pre-apply state, so a plan applies all or nothing
+POST /agent/undo (within 15 minutes, only if nothing changed since)
+  -> restores the pre-apply state
+```
+
+App steps (open a page, switch theme, hide amounts) run on the device. Chat messages in Penny AI go through the same planner first, so a question reaches the coach and a request comes back as a plan card.

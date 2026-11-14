@@ -49,7 +49,7 @@ export function GoalsView({ dashboard, onAdd, onEdit, onAddMoney, onComplete }: 
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <PennyBanner tone="candy" {...goalsCheer(dashboard)} />
+      <PennyBanner color="candy" {...goalsCheer(dashboard)} />
       <FinancialHealthRow dashboard={dashboard} />
       <section className="grid gap-4 rounded-[var(--radius-card)] border border-line bg-surface p-5 shadow-[var(--shadow-card)] sm:p-6 md:grid-cols-[1fr_1.4fr_auto] md:items-center">
         <div>
@@ -193,7 +193,7 @@ function GoalCard({
           ))}
           {/* Penny rides the bar: she moves along as the goal fills, and cheers when it's done. */}
           <span
-            className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-500"
+            className="playful-only pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-500"
             style={{ left: `clamp(14px, ${Math.min(100, percent)}%, calc(100% - 14px))` }}
             aria-hidden="true"
           >

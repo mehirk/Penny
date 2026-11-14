@@ -45,10 +45,11 @@ To enable model-generated answers, create an OpenAI project API key and put it o
 ```dotenv
 PENNY_OPENAI_API_KEY=your_secret_key_here
 PENNY_OPENAI_MODEL=gpt-6.1-sol
+PENNY_OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
 PENNY_COACH_TIMEOUT_SECONDS=45
 ```
 
-Restart FastAPI after changing the environment file. Without a key, or if the model fails, times out, quotes an unverifiable number, or the person has used their AI calls for the day, the reply is a "Quick answer" assembled from the deterministic check-in signals. Never put this key in `frontend/.env.local` or commit it to source control.
+Restart FastAPI after changing the environment file. Without a key, or if the model fails, times out, quotes an unverifiable number, or the person has used their AI calls for the day, the reply is a "Quick answer" assembled from the deterministic check-in signals. Snap or say it falls back to built-in rules for typed text; speaking needs the key. Never put this key in `frontend/.env.local` or commit it to source control.
 
 #### Authentication
 
@@ -134,7 +135,7 @@ Each request loads the user's data in one query, runs the same integer-cent doma
 | `PENNY_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `PENNY_FRONTEND_ORIGIN` | the hosted website's URL; more in `PENNY_EXTRA_ORIGINS`, comma-separated |
 | `PENNY_DEMO_OWNER_USER_ID` | optional: the user who gets the Maya data |
-| `PENNY_OPENAI_API_KEY` | optional: model answers |
+| `PENNY_OPENAI_API_KEY` | optional: model answers and voice |
 
 Never set `PENNY_DEMO_AUTH_TOKEN` in production (the API refuses to start). Choose a region near the Supabase project: each request makes one or two database round trips.
 

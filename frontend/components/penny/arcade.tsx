@@ -21,9 +21,12 @@ export function Arcade({
   outfit,
   launch,
   onProgress,
+  grown = false,
 }: {
   version: number;
   outfit: Outfit;
+  /** The grown-up tone (students, working adults): "Practice", without daily quests or the chest. */
+  grown?: boolean;
   /** From Penny's plan: open this game ("sort" or a story game id); `nonce` changes per request. */
   launch?: { game: string; nonce: number } | null;
   /** XP changed (a game or the chest): Learn reloads its level and XP. */
@@ -77,17 +80,23 @@ export function Arcade({
     <section aria-labelledby="arcade-title" className="space-y-4">
       <SectionHeading
         id="arcade-title"
-        title="Arcade"
-        description="Pretend-money games. Your best score earns XP, and nothing touches your real accounts."
+        title={grown ? "Practice" : "Arcade"}
+        description={
+          grown
+            ? "Simulations with pretend money. Nothing touches your real accounts."
+            : "Pretend-money games. Your best score earns XP, and nothing touches your real accounts."
+        }
       />
 
-      <Quests
-        arcade={arcade}
-        onOpened={(next) => {
-          setArcade(next);
-          onProgress();
-        }}
-      />
+      {!grown && (
+        <Quests
+          arcade={arcade}
+          onOpened={(next) => {
+            setArcade(next);
+            onProgress();
+          }}
+        />
+      )}
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <GameTile

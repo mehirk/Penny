@@ -1,8 +1,12 @@
 # Penny
 
-**Your wallet. Your coach.** Penny teaches Canadian students and young adults how money works, using their own numbers. It's personal coaching, not just a tracker: it answers the question a bank balance can't, *how much can I actually spend before my next payday, and why?*
+**Your wallet. Your coach.** Penny is a money app for Canadian students and young adults that does the bookkeeping for you and teaches you as you go. Snap a receipt or just say *"Pizza $36 with Sam and Priya, split 3 ways"*, and Penny files it, splits it, and updates your budgets after one tap to approve. Then it answers the question a bank balance can't: *how much can I actually spend before my next payday, and why?*
 
-Built for the Cognizant BrAInstorm AI Innovation Challenge 2026. It runs on the web and as an iPhone app. All demo people, accounts, and amounts in this repository are fictional, and Penny never connects to a bank.
+- **Does the work:** an AI agent turns a photo, a voice note, or a sentence into expenses, splits, budgets, goals, bills, and settings, and learns your usual purchases.
+- **Coaches with your numbers:** Penny AI answers "Can I afford it?" from your real month, and every figure it quotes comes from tested code, never the model.
+- **Teaches:** lessons, games, and a guide library on budgeting, credit, tax, and TFSAs, in a tone that fits you: playful when you're just learning, plain and grown-up for students and working adults.
+
+Built for the Cognizant BrAInstorm AI Innovation Challenge 2026. It runs on the web and as an iPhone app. Sign-in is invite-only during the beta: the website opens on a landing page (`/welcome`) whose **Sign in** works only for existing accounts. All demo people, accounts, and amounts in this repository are fictional, and Penny never connects to a bank.
 
 ## What it does
 
@@ -18,6 +22,7 @@ Built for the Cognizant BrAInstorm AI Innovation Challenge 2026. It runs on the 
 | **Goals** | Savings goals with the monthly amount needed to hit each date. |
 | **Receipts** | Snap a receipt or bill: Penny AI reads each line and the app groups them into one purchase per category (groceries, fuel), checked against the printed total. A pre-read sample receipt shows it without an AI call. |
 | **Penny AI** | A coach that knows the user's numbers: "Can I afford a $300 concert trip?" It suggests budget or goal changes that apply only after the user approves. |
+| **Snap or say it** | Tap Penny's button and say "Pizza $36 with Sam and Priya, split 3 ways" or snap a receipt. Penny drafts every step (expenses, splits, budgets, goals, bills, settings) as one plan; nothing is saved until the user taps **Do it**, and **Undo** reverses the whole plan. **Your usuals** offers the user's most frequent purchases as one-tap shortcuts. |
 
 ## How AI is kept honest
 
@@ -49,7 +54,7 @@ Next.js (web + iPhone via Capacitor) ──HTTPS──▶ FastAPI ──▶ Supa
 
 ```text
 frontend/
-  app/                  pages: the app and sign-in
+  app/                  pages: the app, the landing page (welcome), and sign-in
   components/penny/     one file per screen or feature (home, spending, settings, Penny AI, …)
   components/ui/        shared building blocks (buttons, dialogs, inputs)
   lib/                  API client, money formatting (cents, never floats), sign-in, native iPhone helpers
@@ -59,11 +64,11 @@ backend/app/
   domain/               the financial rules: pure, deterministic, integer-cent, unit tested
   store/                each person's data and every operation on it, one module per area
   coach/                Penny AI: verified snapshot, tools, number checking, proposals
-  assist/               smaller AI helpers (quick add, search, statement reading), each with a fallback
+  assist/               smaller AI helpers (snap or say it, quick add, search, statement reading), each with a fallback
   learning/             lessons and game rules
   db/                   Postgres persistence: load once per request, save only what changed
   limits.py             per-person request and AI limits
-backend/tests/          about 300 tests: financial rules, security, and every feature's edge cases
+backend/tests/          about 360 tests: financial rules, security, and every feature's edge cases
 supabase/migrations/    the database schema
 ```
 

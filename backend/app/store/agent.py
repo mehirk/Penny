@@ -1,6 +1,9 @@
 """Applying a plan the user approved from Penny's agent (app.assist.agent): all or nothing,
 through the same store operations the app's own forms use, so every rule still applies."""
 
+from collections import Counter
+from datetime import date, timedelta
+
 from fastapi import HTTPException
 from pydantic import ValidationError
 
@@ -26,6 +29,7 @@ from app.agent_models import (
     SplitAction,
     TransactionUpdateAction,
     TransferAction,
+    UsualItem,
 )
 from app.dashboard_models import (
     AccountPatch,
@@ -51,6 +55,7 @@ from app.dashboard_models import (
 from app.domain.finance import format_cad
 from app.domain.splits import even_split
 from app.domain.transfers import FRIEND
+from app.models import Transaction
 from app.store.accounts import AccountOps
 from app.store.bills import BillOps
 from app.store.goals import GoalOps
@@ -59,6 +64,8 @@ from app.store.planning import PlanningOps
 from app.store.splits import SplitOps
 from app.store.state import StoreSnapshot, invalid, month_start, not_found
 from app.store.transactions import TransactionOps
+
+USUALS_DAYS = 120
 
 
 class AgentOps(TransactionOps, PlanningOps, GoalOps, BillOps, AccountOps, SplitOps, PayOps):
@@ -79,6 +86,60 @@ class AgentOps(TransactionOps, PlanningOps, GoalOps, BillOps, AccountOps, SplitO
                 self._load(before, self._owner_user_ids)
                 raise
             return self._snapshot(), done, before
+
+    def usual_transactions(self, user_id: str, limit: int = 6) -> list[UsualItem]:
+        """What the user records most in the last few months, most often first (ties: most
+        recent). Bills and paycheques are left out: those record themselves. The amount is
+        the one they pay most often there (ties: the latest)."""
+        with self._lock:
+            self.require_owner(user_id)
+            since = self.today() - timedelta(days=USUALS_DAYS)
+            groups: dict[tuple[str, str], list[Transaction]] = {}
+            for item in self._transactions.values():
+                if item.bill_id or item.pay_id:
+                    continue
+                if not since <= item.occurred_on <= self.today():
+                    continue
+                groups.setdefault((item.description.strip().casefold(), item.kind), []).append(item)
+            ranked = sorted(
+                groups.values(),
+                key=lambda items: (len(items), max(i.occurred_on for i in items)),
+                reverse=True,
+            )
+            usuals = []
+            for items in ranked[:limit]:
+                latest = max(items, key=lambda i: i.occurred_on)
+                amounts = Counter(i.amount_cents for i in items)
+                top = max(amounts.values())
+                amount = next(
+                    i.amount_cents
+                    for i in sorted(items, key=lambda i: i.occurred_on, reverse=True)
+                    if amounts[i.amount_cents] == top
+                )
+                usuals.append(
+                    UsualItem(
+                        text=f"{latest.description} {format_cad(amount)}",
+                        description=latest.description,
+                        amount_cents=amount,
+                        kind=latest.kind,
+                        category_id=latest.category_id,
+                        count=len(items),
+                    )
+                )
+            return usuals
+
+    def learned_categories(self) -> dict[tuple[str, str], str]:
+        """The category the user last gave each place, by (description, kind): Penny files a
+        repeat purchase the way they did before."""
+        with self._lock:
+            learned: dict[tuple[str, str], tuple[date, str]] = {}
+            for item in self._transactions.values():
+                if not item.category_id:
+                    continue
+                key = (item.description.strip().casefold(), item.kind)
+                if key not in learned or item.occurred_on >= learned[key][0]:
+                    learned[key] = (item.occurred_on, item.category_id)
+            return {key: value[1] for key, value in learned.items()}
 
     def restore(self, user_id: str, snapshot: StoreSnapshot) -> DashboardResponse:
         """Puts back data saved earlier (an undo). The caller checks nothing changed since."""

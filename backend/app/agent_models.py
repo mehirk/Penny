@@ -321,5 +321,16 @@ class AgentUndo(DashboardModel):
     undo_id: str = Field(min_length=1, max_length=80)
 
 
+class UsualItem(DashboardModel):
+    """Something the user records often, offered as one tap in Penny's capture sheet."""
+
+    text: str  # what tapping it says to Penny, e.g. "Campus café $4.75"
+    description: str
+    amount_cents: int = Field(gt=0)
+    kind: Literal["income", "spending"]
+    category_id: str | None
+    count: int = Field(ge=1)
+
+
 class Transcript(DashboardModel):
     text: str

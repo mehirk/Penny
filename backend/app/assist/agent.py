@@ -118,6 +118,13 @@ class Context:
     dashboard: DashboardResponse
     # Where money comes from when the user doesn't say (chequing first); None with no account.
     default_account: str | None
+    # The category the user last gave each place, by (description, kind): repeat purchases
+    # are filed the way they filed them before.
+    learned: dict[tuple[str, str], str] = field(default_factory=dict)
+
+    def learned_category(self, description: str, kind: str) -> str | None:
+        found = self.learned.get((description.strip().casefold(), kind))
+        return found if found and self.category_kind(found) == kind else None
 
     @property
     def friends(self) -> list[tuple[str, str]]:
@@ -265,7 +272,8 @@ def build_steps(
             kind: Literal["income", "spending"] = (
                 "spending" if intent.kind == "expense" else "income"
             )
-            category = intent.category_id
+            # The user's own past choice for this place wins; then the reading; then the rules.
+            category = ctx.learned_category(what, kind) or intent.category_id
             if ctx.category_kind(category) != kind:
                 category = categorize(what, kind).category_id
             assert account is not None
@@ -1026,7 +1034,12 @@ def context_for(store: DashboardStore, user_id: str) -> Context:
         account: str | None = store._default_source()
     except Exception:
         account = None
-    return Context(today=store.today(), dashboard=dashboard, default_account=account)
+    return Context(
+        today=store.today(),
+        dashboard=dashboard,
+        default_account=account,
+        learned=store.learned_categories(),
+    )
 
 
 async def _read_receipt(

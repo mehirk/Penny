@@ -21,6 +21,7 @@ from app.agent_models import (
     AgentUndo,
     AgentUpload,
     Transcript,
+    UsualItem,
 )
 from app.api.deps import AuthenticatedUser, user_store
 from app.assist import agent, voice
@@ -75,6 +76,12 @@ async def plan(request: AgentRequest, current_user: AuthenticatedUser) -> AgentP
     store = user_store(current_user)
     store.require_owner(current_user.id)
     return await agent.plan(get_settings(), store, current_user.id, request)
+
+
+@router.get("/agent/usuals", response_model=list[UsualItem])
+def usuals(current_user: AuthenticatedUser) -> list[UsualItem]:
+    """What the user records most often, for one-tap adding. Saves nothing."""
+    return user_store(current_user).usual_transactions(current_user.id)
 
 
 @router.post("/agent/transcribe", response_model=Transcript)

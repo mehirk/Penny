@@ -79,7 +79,7 @@ export function SpendingView(props: Props) {
   }
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <PennyBanner tone="sunset" {...spendingCheer(dashboard)} />
+      <PennyBanner color="sunset" {...spendingCheer(dashboard)} />
       <div role="tablist" aria-label="Spending sections" className="inline-flex rounded-xl bg-sage-soft p-1">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button

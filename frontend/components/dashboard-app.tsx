@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AccountsView } from "@/components/penny/accounts-view";
 import { AgentCapture, type CaptureHandle, CaptureOrb } from "@/components/penny/agent-capture";
 import { DisplaySettingsDialog, MobileNavigation, PageHeader, Sidebar } from "@/components/penny/app-shell";
@@ -31,6 +32,7 @@ import { TodayView } from "@/components/penny/today-view";
 import type { TransactionTarget } from "@/components/penny/transaction-dialog";
 import { TransferContext, TransferDialog, type TransferPrefill } from "@/components/penny/transfer-dialog";
 import { useDashboard } from "@/components/penny/use-dashboard";
+import { toneFor } from "@/components/penny/tone";
 import { useKeyboardShortcuts } from "@/components/penny/use-keyboard-shortcuts";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import {
@@ -46,6 +48,7 @@ import {
   type Transfer,
 } from "@/lib/api";
 import { onPasswordRequired, setAppSignedIn } from "@/lib/face-id";
+import { isNativeApp } from "@/lib/native";
 import { addMonths, formatMonth } from "@/lib/format";
 import { createSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -62,6 +65,7 @@ const isView = (value: string): value is View => NAVIGATION.some((item) => item.
 
 function PennyApp() {
   const toast = useToast();
+  const router = useRouter();
   // Steps Penny's agent runs on this device from the chat (set once runAppStep exists below).
   const appRunner = useRef<((step: AppStep) => void) | null>(null);
   const coachChat = useCoachChat(appRunner);
@@ -188,6 +192,16 @@ function PennyApp() {
   useEffect(() => {
     appRunner.current = runAppStep;
   });
+  // Playful for "learning first", grown-up for everyone else (components/penny/tone.ts).
+  const persona = dashboard?.profile.persona;
+  useEffect(() => {
+    document.documentElement.dataset.tone = toneFor(persona);
+  }, [persona]);
+  // Not signed in: the website shows the landing page; the iPhone app goes straight to sign-in.
+  const signedOut = !dashboard && loadError?.signedOut === true;
+  useEffect(() => {
+    if (signedOut) router.replace(isNativeApp() ? "/login" : "/welcome");
+  }, [signedOut, router]);
   useKeyboardShortcuts(
     dashboard
       ? {
@@ -203,7 +217,7 @@ function PennyApp() {
       : {},
   );
 
-  if (loading && !dashboard) return <DashboardSkeleton />;
+  if ((loading && !dashboard) || signedOut) return <DashboardSkeleton />;
   if (!dashboard)
     return (
       <LoadError

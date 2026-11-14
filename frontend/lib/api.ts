@@ -1308,6 +1308,15 @@ export type AgentPlan = {
   model: string | null;
 };
 export type AgentUpload = { filename: string; data_base64: string };
+/** Something the user records often, offered as one tap. */
+export type UsualItem = {
+  text: string;
+  description: string;
+  amount_cents: number;
+  kind: "income" | "spending";
+  category_id: string | null;
+  count: number;
+};
 export type AgentApplied = { dashboard: Dashboard; done: string[]; undo_id: string };
 
 /** Penny's agent. `plan` and `transcribe` save nothing; `apply` is the user's one-tap approval. */
@@ -1318,5 +1327,6 @@ export const agentApi = {
     authorizedRequest<{ text: string }>("/api/v1/agent/transcribe", { method: "POST", body: JSON.stringify(upload) }),
   apply: (actions: AgentAction[]) =>
     authorizedRequest<AgentApplied>("/api/v1/agent/apply", { method: "POST", body: JSON.stringify({ actions }) }),
+  usuals: () => authorizedRequest<UsualItem[]>("/api/v1/agent/usuals"),
   undo: (undo_id: string) => request("/api/v1/agent/undo", { method: "POST", body: JSON.stringify({ undo_id }) }),
 };

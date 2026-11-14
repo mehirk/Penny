@@ -13,6 +13,7 @@ import { SafeDetail } from "./safe-detail";
 import { SpentDetail } from "./spent-detail";
 import { ACCOUNT_TYPE_LABELS, isOwnAccount } from "./labels";
 import { Mascot, type Mood } from "./mascot";
+import { toneFor } from "./tone";
 import { PaydayPrompt } from "./pay-section";
 import type { SaveChange } from "./settings-view";
 import type { SharedDraft } from "./split-with-friends";
@@ -433,6 +434,32 @@ function CashHeadsUp({ dashboard, onOpenAccount }: Pick<Props, "dashboard"> & { 
 function PennySays({ dashboard, onCapture }: { dashboard: Dashboard; onCapture: () => void }) {
   const runway = dashboard.spending_runway;
   const goal = dashboard.savings_goals.find((item) => item.status === "active");
+  const grown = toneFor(dashboard.profile.persona) === "grown";
+  if (grown) {
+    // The grown-up tone: a quiet shortcut, not a pep talk.
+    const status =
+      runway?.status === "over" || runway?.status === "empty"
+        ? "You’re over this month’s budget."
+        : runway?.status === "tight"
+          ? `About ${cad(runway.per_day_cents)} a day until ${runway.until_payday ? "payday" : "month end"}.`
+          : "On track this month.";
+    return (
+      <button
+        type="button"
+        onClick={onCapture}
+        className="flex w-full items-center gap-3 rounded-[var(--radius-card)] border border-line bg-surface p-3 pr-4 text-left shadow-[var(--shadow-card)] transition-colors hover:border-accent"
+      >
+        <Mascot face className="size-10 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-ink">{status}</span>
+          <span className="block text-sm text-ink-muted">
+            Snap a receipt or say what you spent, and Penny records it.
+          </span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+      </button>
+    );
+  }
   const [mood, line]: [Mood, string] =
     runway?.status === "over" || runway?.status === "empty"
       ? ["sad", "This month’s budget is used up. Tell me what you buy and I’ll keep score with you."]

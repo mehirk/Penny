@@ -124,10 +124,15 @@ export const cad = (cents: number, showSign = false) => formatCad(String(cents),
 export function describeError(
   reason: unknown,
   fallback: string,
-): { title: string; detail: string; needsSignIn: boolean } {
+): { title: string; detail: string; needsSignIn: boolean; signedOut?: boolean } {
   if (reason instanceof ApiError) {
     if (reason.status === 401)
-      return { title: "Please sign in", detail: "Sign in to see your Penny dashboard.", needsSignIn: true };
+      return {
+        title: "Please sign in",
+        detail: "Sign in to see your Penny dashboard.",
+        needsSignIn: true,
+        signedOut: true,
+      };
     if (reason.status === 403)
       return {
         title: "This account has no demo data yet",

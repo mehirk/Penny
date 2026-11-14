@@ -41,7 +41,8 @@ import {
   type SavedConversation,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { type CaptureStart, PlanCard } from "./agent-capture";
+import { type CaptureStart } from "./agent-capture";
+import { PlanCard } from "./plan-card";
 import { confetti, play } from "./game-fx";
 import { Mascot } from "./mascot";
 import type { SaveChange } from "./settings-view";

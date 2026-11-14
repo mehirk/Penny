@@ -1,35 +1,25 @@
 "use client";
 
 import { type ReactNode, type RefObject, useEffect, useImperativeHandle, useRef, useState } from "react";
-import {
-  Camera,
-  Check,
-  Keyboard,
-  LoaderCircle,
-  Mic,
-  PencilLine,
-  Plus,
-  RotateCcw,
-  Send,
-  Sparkles,
-  Undo2,
-} from "lucide-react";
+import { Camera, Check, Keyboard, LoaderCircle, Mic, Plus, RotateCcw, Sparkles, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   type AgentApplied,
   type AgentPlan,
-  type AgentStep,
   type AgentUpload,
   type AppStep,
   type Dashboard,
-  type FriendRef,
+  type Persona,
+  type UsualItem,
   agentApi,
 } from "@/lib/api";
 import { haptic } from "@/lib/native";
 import { cn } from "@/lib/utils";
+import { categoryIcon, categoryTint, tintStyle } from "./category-icons";
 import { confetti, play } from "./game-fx";
 import { Mascot } from "./mascot";
+import { PlanCard } from "./plan-card";
 import { cad, describeError } from "./shared";
 
 export type CaptureStart = "menu" | "camera" | "voice" | "type";
@@ -49,15 +39,24 @@ type Phase =
   | { step: "app-done"; items: AppStep[] }
   | { step: "error"; message: string };
 
-const EXAMPLES = [
-  "Dinner $90 with Sam and Ana, split 3 ways",
-  "Lunch $14.50 at Tim Hortons",
-  "Pay off my credit card",
-  "Add Spotify, $11.99 every month",
-  "Put $50 in my laptop fund",
-  "Switch to dark mode",
-  "Can I afford a $300 concert trip?",
-];
+// Before Penny has learned someone's usuals: a few starters that fit their persona.
+const STARTERS: Record<Persona | "default", string[]> = {
+  student: [
+    "Coffee $5 at the campus café",
+    "Textbook $80",
+    "Pizza $36 with my roommates, split 3 ways",
+    "Can I afford a $200 concert?",
+  ],
+  working: ["Lunch $16", "Gas $60", "Got paid $2,100 today", "Add Netflix, $16.99 every month"],
+  learner: ["Snack $3", "Got $20 allowance today", "Put $10 in my savings goal", "Movie ticket $14"],
+  default: ["Lunch $14.50 at Tim Hortons", "Groceries $62", "Pay off my credit card", "Can I afford a $300 trip?"],
+};
+const SUBTITLES: Record<Persona | "default", string> = {
+  student: "Coffee, textbooks, splitting rent: snap it or say it, and I’ll do the rest.",
+  working: "Lunch, gas, bills, paycheques: snap it or say it, and I’ll do the rest.",
+  learner: "Snap it or say it, and I’ll show you how it’s tracked.",
+  default: "Snap it or say it: spending, bills, goals, settings. I’ll do the rest.",
+};
 const THINKING = ["Reading it…", "Picking categories…", "Doing the math…", "Checking your budgets…"];
 const MAX_RECORDING_MS = 60_000;
 // Bright on every theme, like the confetti.
@@ -101,16 +100,6 @@ function recordingType(): { mimeType?: string; ext: string } {
   const found = options.find(([type]) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type));
   return found ? { mimeType: found[0], ext: found[1] } : { ext: ".m4a" };
 }
-
-/** An even split, for showing the shares after the user picks friends. The API works out the
- * same shares again when it saves (app.domain.splits.even_split). */
-function evenSplit(total: number, people: number) {
-  const each = Math.floor(total / people);
-  return { mine: total - each * (people - 1), each };
-}
-
-const joinNames = (names: string[]) =>
-  names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
 
 /**
  * Snap a receipt or say what happened, and Penny does the rest: it reads it into a plan
@@ -339,6 +328,7 @@ export function AgentCapture({
           </DialogDescription>
           {phase.step === "menu" && (
             <Menu
+              dashboard={dashboard}
               onCamera={() => start("camera")}
               onVoice={() => start("voice")}
               onType={() => setPhase({ step: "type" })}
@@ -495,18 +485,35 @@ export function CaptureOrb({
 // ------------------------------------------------------------------ phases
 
 function Menu({
+  dashboard,
   onCamera,
   onVoice,
   onType,
   onExample,
   onManual,
 }: {
+  dashboard: Dashboard;
   onCamera: () => void;
   onVoice: () => void;
   onType: () => void;
   onExample: (text: string) => void;
   onManual: () => void;
 }) {
+  const persona = dashboard.profile.persona ?? "default";
+  // What this person records most (bills and paycheques record themselves), learned from history.
+  const [usuals, setUsuals] = useState<UsualItem[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    agentApi
+      .usuals()
+      .then((items) => live && setUsuals(items))
+      .catch(() => live && setUsuals([]));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const categories = new Map(dashboard.categories.map((category) => [category.id, category]));
+  const learned = (usuals ?? []).filter((item) => item.count >= 2);
   const tiles: { label: string; hint: string; icon: ReactNode; onClick: () => void; tone: string }[] = [
     {
       label: "Snap",
@@ -536,9 +543,7 @@ function Menu({
         <Mascot className="size-14 shrink-0 animate-bob" />
         <div>
           <p className="text-xl font-semibold tracking-tight text-ink">What happened?</p>
-          <p className="text-sm text-ink-muted">
-            Snap it or say it: spending, bills, goals, settings. I’ll do the rest.
-          </p>
+          <p className="text-sm text-ink-muted">{SUBTITLES[persona]}</p>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-2.5">
@@ -560,19 +565,66 @@ function Menu({
         ))}
       </div>
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Try one</p>
-        <div className="flex flex-wrap gap-2">
-          {EXAMPLES.map((example) => (
-            <button
-              key={example}
-              type="button"
-              onClick={() => onExample(example)}
-              className="min-h-10 rounded-full border border-line bg-surface px-3 text-sm text-ink-muted transition-colors hover:border-accent hover:bg-accent-soft hover:text-ink"
-            >
-              {example}
-            </button>
-          ))}
-        </div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
+          {learned.length ? "Your usuals" : "Try one"}
+        </p>
+        <p className="mb-2 text-xs text-ink-subtle">
+          {learned.length
+            ? "What you add most often. Tap to add it again."
+            : "Penny learns what you add most and shows it here."}
+        </p>
+        {usuals === null ? (
+          <div className="flex gap-2" aria-hidden="true">
+            {[1, 2, 3].map((key) => (
+              <span key={key} className="h-10 w-32 animate-pulse rounded-full bg-sage" />
+            ))}
+          </div>
+        ) : learned.length ? (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {learned.map((item) => {
+              const category = item.category_id ? categories.get(item.category_id) : undefined;
+              const Icon = categoryIcon(category, item.kind);
+              return (
+                <li key={item.text}>
+                  <button
+                    type="button"
+                    onClick={() => onExample(item.text)}
+                    className="flex min-h-12 w-full items-center gap-2.5 rounded-xl border border-line bg-surface px-3 text-left transition-colors hover:border-accent hover:bg-accent-soft"
+                  >
+                    <span
+                      className="grid size-8 shrink-0 place-items-center rounded-lg"
+                      style={tintStyle(categoryTint(category, item.kind))}
+                      aria-hidden="true"
+                    >
+                      <Icon className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-ink">{item.description}</span>
+                      <span className="block text-xs text-ink-subtle">
+                        {item.kind === "income" ? "+" : ""}
+                        {cad(item.amount_cents)} · {item.count}× lately
+                      </span>
+                    </span>
+                    <Plus className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {STARTERS[persona].map((example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() => onExample(example)}
+                className="min-h-10 rounded-full border border-line bg-surface px-3 text-sm text-ink-muted transition-colors hover:border-accent hover:bg-accent-soft hover:text-ink"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <button
         type="button"
@@ -703,394 +755,6 @@ function Thinking({ photo, heard }: { photo: string | null; heard: string | null
       <p className="flex items-center gap-2 text-base font-semibold text-ink">
         <LoaderCircle className="size-5 animate-spin text-accent" aria-hidden="true" />
         {photo && index === 0 ? "Reading your receipt…" : THINKING[index]}
-      </p>
-    </div>
-  );
-}
-
-function FriendPicker({
-  dashboard,
-  taken,
-  picked,
-  wanted,
-  onChange,
-}: {
-  dashboard: Dashboard;
-  taken: FriendRef[];
-  picked: FriendRef[];
-  wanted: number;
-  onChange: (next: FriendRef[]) => void;
-}) {
-  const [name, setName] = useState("");
-  const friends = dashboard.accounts.filter(
-    (account) => account.account_type === "person" && !taken.some((friend) => friend.id === account.id),
-  );
-  const has = (ref: FriendRef) =>
-    picked.some((item) => (ref.id ? item.id === ref.id : item.name.toLowerCase() === ref.name.toLowerCase()));
-  const toggle = (ref: FriendRef) =>
-    onChange(
-      has(ref) ? picked.filter((item) => (ref.id ? item.id !== ref.id : item.name !== ref.name)) : [...picked, ref],
-    );
-  const add = () => {
-    const clean = name.trim().slice(0, 60);
-    if (!clean) return;
-    // A friend already in Penny is picked, not added again.
-    const known = dashboard.accounts.find(
-      (account) => account.account_type === "person" && account.name.toLowerCase() === clean.toLowerCase(),
-    );
-    const ref = known
-      ? { id: known.id, name: known.name }
-      : { id: null, name: clean[0].toUpperCase() + clean.slice(1) };
-    if (!has(ref)) onChange([...picked, ref]);
-    setName("");
-  };
-  return (
-    <div className="mt-3 space-y-2 rounded-xl bg-gold-soft/70 p-3" data-sheet-no-drag>
-      <p className="text-xs font-semibold text-gold-strong">
-        Who were you with?{wanted > 0 && ` (${wanted} more, you said)`}
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        {[...friends.map((f) => ({ id: f.id, name: f.name })), ...picked.filter((p) => !p.id)].map((ref) => (
-          <button
-            key={ref.id ?? `new-${ref.name}`}
-            type="button"
-            aria-pressed={has(ref)}
-            onClick={() => toggle(ref)}
-            className={cn(
-              "min-h-9 rounded-full border px-3 text-sm font-medium transition-colors",
-              has(ref)
-                ? "border-[#15977f] bg-[#15977f] text-white"
-                : "border-line bg-surface text-ink hover:border-accent",
-            )}
-          >
-            {has(ref) && <Check className="mr-1 inline size-3.5 align-[-2px]" aria-hidden="true" />}
-            {ref.name}
-          </button>
-        ))}
-      </div>
-      <div className="flex gap-1.5">
-        <label htmlFor="agent-friend" className="sr-only">
-          Add a friend by name
-        </label>
-        <input
-          id="agent-friend"
-          value={name}
-          maxLength={60}
-          onChange={(event) => setName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              add();
-            }
-          }}
-          placeholder="Add a name"
-          className="min-h-10 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-sm text-ink focus:border-accent focus:outline-none"
-        />
-        <Button type="button" size="sm" variant="outline" onClick={add} disabled={!name.trim()}>
-          Add
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function StepCard({
-  step,
-  index,
-  kept,
-  onToggle,
-  dashboard,
-  picked,
-  onPick,
-}: {
-  step: AgentStep;
-  index: number;
-  kept: boolean;
-  onToggle: () => void;
-  dashboard: Dashboard;
-  picked: FriendRef[];
-  onPick: (next: FriendRef[]) => void;
-}) {
-  const action = step.action;
-  let title = step.title;
-  let lines = step.lines;
-  const split = action.kind === "split" ? action : null;
-  if (split && picked.length) {
-    // The user picked friends here, so show the shares for the people they picked.
-    const people = [...split.friends, ...picked];
-    const { mine, each } = evenSplit(split.total_cents, people.length + 1);
-    const names = people.map((friend) => friend.name);
-    title = `Split ${split.description} ${people.length + 1} ways`;
-    lines = [
-      `You paid ${cad(split.total_cents)} · your share ${cad(mine)}`,
-      names.length === 1 ? `${names[0]} owes you ${cad(each)}` : `${joinNames(names)} owe you ${cad(each)} each`,
-      ...(picked.some((friend) => !friend.id)
-        ? [`Adds ${joinNames(picked.filter((f) => !f.id).map((f) => f.name))} to your friends`]
-        : []),
-    ];
-  }
-  return (
-    <li
-      style={{ animationDelay: `${index * 90}ms` }}
-      className={cn(
-        "rounded-2xl border bg-surface p-3 shadow-[var(--shadow-card)] transition-opacity animate-enter",
-        kept ? "border-line" : "border-dashed border-line opacity-55",
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-sage text-2xl" aria-hidden="true">
-          {step.emoji}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold text-ink">{title}</p>
-          <ul className="mt-0.5 space-y-0.5">
-            {lines.map((line) => (
-              <li
-                key={line}
-                className={cn("text-sm", line.includes("over by") ? "font-medium text-danger" : "text-ink-muted")}
-              >
-                {line}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <button
-          type="button"
-          role="checkbox"
-          aria-checked={kept}
-          aria-label={`Include: ${title}`}
-          onClick={onToggle}
-          className="grid size-11 shrink-0 place-items-center"
-        >
-          <span
-            className={cn(
-              "grid size-7 place-items-center rounded-lg border-2 transition-colors",
-              kept ? "border-[#15977f] bg-[#15977f] text-white" : "border-line-strong bg-surface",
-            )}
-          >
-            {kept && <Check className="size-4" aria-hidden="true" />}
-          </span>
-        </button>
-      </div>
-      {split && kept && (step.needs_friends > 0 || picked.length > 0) && (
-        <FriendPicker
-          dashboard={dashboard}
-          taken={split.friends}
-          picked={picked}
-          wanted={Math.max(0, step.needs_friends - picked.length)}
-          onChange={onPick}
-        />
-      )}
-    </li>
-  );
-}
-
-export function PlanCard({
-  plan,
-  photo,
-  dashboard,
-  applyChange,
-  onRefine,
-  onVoice,
-  onDone,
-  onAppOnly,
-  compact = false,
-}: {
-  /** Inside Penny AI's chat: no header (the chat already shows who said what). */
-  compact?: boolean;
-  plan: AgentPlan;
-  photo: string | null;
-  dashboard: Dashboard;
-  applyChange: (dashboard: Dashboard) => void;
-  onRefine: (text: string) => void;
-  onVoice: () => void;
-  onDone: (applied: AgentApplied) => void;
-  onAppOnly: () => void;
-}) {
-  const [kept, setKept] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(plan.steps.map((step) => [step.id, true])),
-  );
-  const [picked, setPicked] = useState<Record<string, FriendRef[]>>({});
-  const [refining, setRefining] = useState(Boolean(plan.question));
-  const [extra, setExtra] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const chosen = plan.steps.filter((step) => kept[step.id]);
-  const actions = chosen.map((step) =>
-    step.action.kind === "split"
-      ? { ...step.action, friends: [...step.action.friends, ...(picked[step.id] ?? [])] }
-      : step.action,
-  );
-  const missingFriends = actions.some((action) => action.kind === "split" && action.friends.length === 0);
-
-  async function doIt() {
-    if (!actions.length) {
-      onAppOnly();
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const applied = await agentApi.apply(actions);
-      applyChange(applied.dashboard);
-      onDone(applied);
-    } catch (reason) {
-      haptic("error");
-      setError(describeError(reason, "That couldn’t be saved").detail);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      {compact ? (
-        <p className="font-semibold text-ink">
-          {plan.steps.length || plan.app.length ? "Here’s what I’ll do" : "Quick question"}
-        </p>
-      ) : (
-        <div className="flex items-start gap-3">
-          {photo ? (
-            // eslint-disable-next-line @next/next/no-img-element -- a local photo preview
-            <img
-              src={photo}
-              alt="Your receipt"
-              className="size-14 shrink-0 rounded-xl border border-line object-cover"
-            />
-          ) : (
-            <Mascot className="size-14 shrink-0" mood={plan.steps.length || plan.app.length ? "happy" : "wow"} />
-          )}
-          <div className="min-w-0">
-            <p className="text-xl font-semibold tracking-tight text-ink">
-              {plan.steps.length || plan.app.length ? "Here’s what I’ll do" : "One quick question"}
-            </p>
-            <p className="truncate text-sm text-ink-muted">“{plan.heard}”</p>
-          </div>
-        </div>
-      )}
-
-      {plan.steps.length > 0 && (
-        <ul className="space-y-2.5">
-          {plan.steps.map((step, index) => (
-            <StepCard
-              key={step.id}
-              step={step}
-              index={index}
-              kept={Boolean(kept[step.id])}
-              onToggle={() => setKept((value) => ({ ...value, [step.id]: !value[step.id] }))}
-              dashboard={dashboard}
-              picked={picked[step.id] ?? []}
-              onPick={(next) => setPicked((value) => ({ ...value, [step.id]: next }))}
-            />
-          ))}
-        </ul>
-      )}
-
-      {plan.app.length > 0 && (
-        <ul className="space-y-2">
-          {plan.app.map((item, index) => (
-            <li
-              key={item.kind + item.value}
-              style={{ animationDelay: `${(plan.steps.length + index) * 90}ms` }}
-              className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3 shadow-[var(--shadow-card)] animate-enter"
-            >
-              <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-sage text-2xl" aria-hidden="true">
-                {item.emoji}
-              </span>
-              <span className="font-semibold text-ink">{item.title}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {plan.question && (
-        <div className="space-y-2">
-          <p className="rounded-xl border border-gold/50 bg-gold-soft px-4 py-3 text-sm font-medium text-gold-strong">
-            🤔 {plan.question}
-          </p>
-          {plan.choices.length > 0 && (
-            <div className="flex flex-wrap gap-2" aria-label="Quick answers">
-              {plan.choices.map((choice) => (
-                <button
-                  key={choice}
-                  type="button"
-                  onClick={() => onRefine(choice)}
-                  className="min-h-10 rounded-full border border-line bg-surface px-3.5 text-sm font-medium text-ink transition-colors hover:border-accent hover:bg-accent-soft"
-                >
-                  {choice}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {refining ? (
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (extra.trim()) onRefine(extra.trim());
-          }}
-        >
-          <label htmlFor="agent-refine" className="sr-only">
-            {plan.question ?? "What should Penny change?"}
-          </label>
-          <input
-            id="agent-refine"
-            autoFocus
-            value={extra}
-            maxLength={300}
-            onChange={(event) => setExtra(event.target.value)}
-            placeholder={plan.question ? "Type your answer, or tap the mic" : "Actually it was $45, and Ana paid"}
-            className="min-h-11 min-w-0 flex-1 rounded-xl border border-line-strong bg-surface px-3 text-base text-ink focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15"
-          />
-          <Button type="button" variant="outline" size="icon" onClick={onVoice} aria-label="Say it">
-            <Mic className="size-5" aria-hidden="true" />
-          </Button>
-          <Button type="submit" size="icon" disabled={!extra.trim()} aria-label="Send">
-            <Send className="size-5" aria-hidden="true" />
-          </Button>
-        </form>
-      ) : null}
-
-      {error && (
-        <p role="alert" className="rounded-xl bg-danger-soft px-4 py-3 text-sm font-medium text-danger">
-          {error}
-        </p>
-      )}
-
-      {/* While Penny is waiting on an answer, only the answer moves things on. */}
-      {(plan.steps.length > 0 || (plan.app.length > 0 && !plan.question)) && (
-        <div className="flex gap-2">
-          {!refining && (
-            <Button variant="outline" className="gap-2" onClick={() => setRefining(true)}>
-              <PencilLine className="size-4" aria-hidden="true" />
-              Change
-            </Button>
-          )}
-          <Button
-            className="h-12 flex-1 gap-2 bg-gradient-to-r from-[#15977f] to-[#356fc4] text-base text-white hover:brightness-110"
-            disabled={busy || (!chosen.length && !plan.app.length) || missingFriends}
-            onClick={() => void doIt()}
-          >
-            {busy ? (
-              <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />
-            ) : (
-              <Sparkles className="size-5" aria-hidden="true" />
-            )}
-            {missingFriends
-              ? "Pick who you were with"
-              : chosen.length + plan.app.length > 1
-                ? `Do all ${chosen.length + plan.app.length}`
-                : "Do it"}
-          </Button>
-        </div>
-      )}
-      <p className="text-center text-xs text-ink-subtle">
-        {plan.source === "ai" ? "Read by Penny AI" : "Read by Penny"} · amounts and shares worked out by Penny · nothing
-        saved until you tap
       </p>
     </div>
   );

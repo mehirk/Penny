@@ -324,3 +324,18 @@ def test_a_new_category_budget_is_made_in_one_step(store: DashboardStore) -> Non
     assert done == ["Trips budget set to $200.00"]
     trips = next(c for c in dashboard.categories if c.name == "Trips")
     assert any(b.category_id == trips.id and b.limit_cents == 20_000 for b in dashboard.budgets)
+
+
+def test_usuals_are_the_most_frequent_everyday_purchases(store: DashboardStore) -> None:
+    usuals = store.usual_transactions(_user(store))
+    assert usuals[0].text == "Atlantic Market $189.42" and usuals[0].count == 4
+    names = [item.description for item in usuals]
+    # Bills record themselves, so they aren't offered.
+    assert "Mobile plan" not in names and "Halifax Transit pass" not in names
+
+
+def test_a_repeat_purchase_is_filed_the_way_the_user_filed_it(store: DashboardStore) -> None:
+    [step] = _plan(store, "Movie night $18").steps
+    assert isinstance(step.action, ExpenseAction) and step.action.category_id == "cat-fun"
+    [usual] = _plan(store, "Atlantic Market $40").steps
+    assert isinstance(usual.action, ExpenseAction) and usual.action.category_id == "cat-groceries"

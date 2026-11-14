@@ -1,7 +1,6 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Check, LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Sun } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -30,25 +29,13 @@ const THEME_ICONS: Record<ThemeSetting, typeof Sun> = { light: Sun, dark: Moon, 
 
 const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "N", action: "Add a transaction" },
+  { keys: "V", action: "Say it to Penny" },
+  { keys: "S", action: "Snap a receipt" },
   { keys: "[  ]", action: "Previous / next month" },
   { keys: "1 – 9", action: "Jump between sections" },
   { keys: "D", action: "Switch light / dark" },
   { keys: "?", action: "Open display settings" },
 ];
-
-/** The Penny coin. Decorative: the name next to it carries the meaning. */
-export function BrandMark({ className }: { className?: string }) {
-  return (
-    <Image
-      src="/penny-logo.png"
-      alt=""
-      width={256}
-      height={256}
-      priority
-      className={cn("size-10 shrink-0 drop-shadow-sm", className)}
-    />
-  );
-}
 
 export function useSignedInEmail() {
   const [email, setEmail] = useState<string | null>(null);
