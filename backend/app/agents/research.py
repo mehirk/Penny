@@ -20,7 +20,7 @@ from app.config import Settings
 if TYPE_CHECKING:
     from app.agents.runtime import Budget
 
-MAX_SEARCHES = 3
+MAX_SEARCHES = 6
 MAX_SOURCES = 4
 MAX_ANSWER_CHARS = 900
 # Answers are kept this long and reused for the same question (prices and deadlines don't

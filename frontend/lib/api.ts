@@ -1333,12 +1333,52 @@ export const agentApi = {
 
 // ------------------------------------------------------------------ Mission Control (app/agents)
 
-export type AgentId = "analyst" | "planner" | "cashflow" | "benefits" | "people" | "tutor";
+/** "specialist": an agent Penny created for one mission, with its own name, emoji, and role. */
+export type AgentId = "analyst" | "planner" | "cashflow" | "benefits" | "people" | "tutor" | "specialist";
+/** One part of the full picture: what the user does, what Penny did, or what to skip. */
+export type PictureItem = { group: "you_do" | "penny_did" | "skip"; title: string; detail: string };
 /** The answer the way an adviser gives it; picking an option is sent to Penny as the next message. */
 export type Brief = {
   answer: string;
   numbers: { label: string; value: string }[];
   options: { title: string; detail: string; recommended: boolean }[];
+  picture: PictureItem[];
+};
+/** Something Penny decided the user needs to keep in mind, before sending the team. */
+export type Consideration = {
+  topic: string;
+  why: string;
+  kind: "cost" | "task" | "decision" | "risk" | "benefit";
+  source: "penny" | "web" | "user" | "none";
+  owner: string | null;
+};
+export type CostItem = {
+  id: string;
+  label: string;
+  amount: string | null;
+  /** The user said it, the web found it, what they spend now, from the rent, or not priced yet. */
+  basis: "you" | "web" | "now" | "rent" | "to_price";
+  asked: boolean;
+};
+/** A situation costed in full, against what the same things cost now. */
+export type CostPlan = {
+  title: string;
+  upfront: CostItem[];
+  monthly: CostItem[];
+  upfront_total: string;
+  monthly_total: string;
+  monthly_now: string;
+  monthly_change: string;
+  change_up: boolean;
+  surplus_after: string | null;
+  months_to_save: number | null;
+};
+export type ChecklistItem = {
+  id: string;
+  title: string;
+  detail: string;
+  due_on: string;
+  stage: "before" | "moving" | "after";
 };
 export type MissionKind =
   "checkup" | "free_money" | "life_event" | "payoff" | "purchase" | "custom" | "autopilot" | "watch";
@@ -1386,7 +1426,8 @@ export type WebSource = { title: string; url: string };
 /** An agent stopped to ask; without an answer in time it goes with `assumption`. */
 export type AgentQuestion = {
   id: string;
-  agent: AgentId;
+  /** "penny" when Penny asks before sending the team out. */
+  agent: AgentId | "penny";
   question: string;
   why: string;
   choices: string[];
@@ -1425,6 +1466,11 @@ export type MissionRun = {
   verification: Verification | null;
   summary: string | null;
   brief: Brief | null;
+  /** What Penny decided to keep in mind before planning. */
+  considerations: Consideration[];
+  /** The situation costed in full, and a dated checklist (a move). */
+  costs: CostPlan | null;
+  checklist: ChecklistItem[];
   steps: AgentStep[];
   auto: AutoTask[];
   approved: string[];

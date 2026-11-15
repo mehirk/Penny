@@ -25,8 +25,10 @@ from app.agents.models import (
     Brief,
     BriefNumber,
     BriefOption,
+    Consideration,
     MissionKind,
     MissionRun,
+    PictureItem,
     TraceStep,
     Verification,
 )
@@ -34,11 +36,17 @@ from app.agents.research import Researcher
 from app.agents.runtime import Act, Budget, Clock, LaneOutcome, Playbook, Report, run_lane
 from app.agents.team import (
     CUSHION_CENTS,
+    MAX_SPECIALISTS,
+    SPECIALIST_TOOLS,
     TEAM,
+    Subagent,
     benefit_to_goal,
     close_gap,
+    fit_plan,
     instructions_for,
     item_from_text,
+    move_thinking,
+    specialist,
 )
 from app.agents.tools import benefits_screen, forecast_for
 from app.agents.workspace import Outbox, Workspace
@@ -48,13 +56,14 @@ from app.coach.facts import parse_cad
 from app.coach.guard import picks_investments
 from app.coach.llm import ModelUnavailable, ask_json
 from app.config import Settings
+from app.domain import relocation
 from app.domain.finance import format_cad
 
 # The result card's headline, and the whole answer, in characters.
 HEADLINE_CHARS = 140
 ANSWER_CHARS = 400
 # Model calls one mission may make (plan, every subagent's rounds, revisions, summary).
-MISSION_AI_CALLS = 30
+MISSION_AI_CALLS = 40
 MAX_STEPS = 8
 MAX_FOLLOW_UPS = 3
 PURCHASE_TASK = (
@@ -67,6 +76,8 @@ UNATTENDED: tuple[MissionKind, ...] = ("autopilot", "watch")
 # learn what the roster already says. (The agents still use the model.)
 ROSTERS_ARE_ENOUGH: tuple[MissionKind, ...] = ("checkup", "free_money", "payoff")
 PLAN_TIMEOUT_SECONDS = 20.0
+# Thinking a situation through writes the most: the considerations, the team, and questions.
+THINK_TIMEOUT_SECONDS = 45.0
 
 ROSTERS: dict[MissionKind, tuple[AgentId, ...]] = {
     "checkup": ("analyst", "cashflow", "planner", "people", "tutor"),
@@ -120,6 +131,38 @@ def title_for(kind: MissionKind, goal: str) -> str:
     return TITLES[kind]
 
 
+def _move_plan(goal: str) -> list[tuple[AgentId, str]]:
+    """A move touches everything the user has, so the whole team goes (People when there are
+    roommates or friends in it)."""
+    place = relocation.destination(goal)
+    city = place.city if place else "the new city"
+    province = relocation.PROVINCE_NAMES.get(place.province or "") if place else None
+    tasks: list[tuple[AgentId, str]] = [
+        (
+            "planner",
+            f"Cost the whole move to {city}: getting there, deposit, movers, setting up, and "
+            "monthly living costs; build the savings goal and the checklist.",
+        ),
+        (
+            "analyst",
+            f"Show what rent, transit, groceries, and phone cost the user now, as the baseline "
+            f"for {city}, and what flexible spending could make room.",
+        ),
+        (
+            "cashflow",
+            "Check every bill is covered until the move and what can be set aside each payday.",
+        ),
+        (
+            "benefits",
+            f"Find benefits and credits that change with a move to {province or city}.",
+        ),
+        ("tutor", "Pick lessons on renting in a new city and budgeting for a move."),
+    ]
+    if any(word in goal.casefold() for word in _KEYWORDS["people"]):
+        tasks.append(("people", "Check who owes whom before the move, and set reminders."))
+    return tasks
+
+
 def _rule_plan(kind: MissionKind, goal: str) -> list[tuple[AgentId, str]]:
     roster = ROSTERS[kind]
     if kind == "custom":
@@ -129,11 +172,28 @@ def _rule_plan(kind: MissionKind, goal: str) -> list[tuple[AgentId, str]]:
     return [(agent, DEFAULT_TASKS[agent]) for agent in roster]
 
 
-_PLAN_SCHEMA = {
+_KINDS = ["cost", "task", "decision", "risk", "benefit"]
+_SOURCES = ["penny", "web", "user", "none"]
+_THINK_SCHEMA = {
     "type": "object",
     "properties": {
-        "plan": {"type": "string"},
-        "tasks": {
+        "situation": {"type": "string"},
+        "considerations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "why": {"type": "string"},
+                    "kind": {"type": "string", "enum": _KINDS},
+                    "source": {"type": "string", "enum": _SOURCES},
+                    "owner": {"type": "string"},
+                },
+                "required": ["topic", "why", "kind", "source", "owner"],
+                "additionalProperties": False,
+            },
+        },
+        "team": {
             "type": "array",
             "items": {
                 "type": "object",
@@ -145,45 +205,169 @@ _PLAN_SCHEMA = {
                 "additionalProperties": False,
             },
         },
+        "specialists": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "emoji": {"type": "string"},
+                    "role": {"type": "string"},
+                    "task": {"type": "string"},
+                    "tools": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": list(SPECIALIST_TOOLS)},
+                    },
+                },
+                "required": ["name", "emoji", "role", "task", "tools"],
+                "additionalProperties": False,
+            },
+        },
+        "questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "why": {"type": "string"},
+                    "choices": {"type": "array", "items": {"type": "string"}},
+                    "assumption": {"type": "string"},
+                },
+                "required": ["question", "why", "choices", "assumption"],
+                "additionalProperties": False,
+            },
+        },
+        "plan": {"type": "string"},
     },
-    "required": ["plan", "tasks"],
+    "required": ["situation", "considerations", "team", "specialists", "questions", "plan"],
     "additionalProperties": False,
 }
+MAX_CONSIDERATIONS = 10
+MAX_AGENTS = 7
+
+_THINK_INSTRUCTIONS = """You are Penny, the orchestrator of a team of money agents for a Canadian
+student or young adult. Before anyone works, think the situation through like an adviser who
+has helped hundreds of people in exactly this spot.
+1. `situation`: one sentence on what the user is really facing.
+2. `considerations`: 5 to 10 things they need to keep in mind, above all the ones they didn't
+   ask about (a move: the deposit, movers, switching the health card; a car: insurance and
+   parking; an exchange term: tuition still owed at home, a study permit). Each: `topic` under 6
+   words, `why` in one sentence, `kind` (cost, task, decision, risk, benefit), `source` (penny:
+   their own numbers; web: current outside facts; user: only they know; none), and `owner`:
+   the name of the agent who covers it.
+3. `team`: the built-in agents that help, each with one clear task (1 to 5). A situation with
+   costs needs the Planner to cost it in full (cost_plan, or plan_move for a move).
+4. `specialists`: 0 to 3 new agents you create when no built-in agent covers a part well
+   (a "Housing scout" for rent and neighbourhoods, a "Health coverage checker", a "Car cost
+   analyst"). Each: a short `name`, one `emoji`, a one-sentence `role` and `task`, and the
+   `tools` it needs. Never duplicate a built-in agent's job.
+5. `questions`: 0 to 2 questions for the user, only when the answer changes the plan and
+   neither their data nor the web can tell you (their rent budget, whether they'll have a car,
+   a roommate). Each with 2 to 4 short `choices` and the `assumption` used if they don't answer.
+6. `plan`: one or two plain, confident sentences to the user on how the team will tackle it
+   (no hedging: never call anything an estimate or say it could change).
+Don't calculate anything. A month already past this year means next year's."""
 
 
-async def _model_plan(
-    settings: Settings, budget: Budget, kind: MissionKind, goal: str, ws: Workspace
-) -> tuple[str, list[tuple[AgentId, str]]]:
+@dataclass
+class Thinking:
+    plan: str
+    situation: str
+    considerations: list[Consideration]
+    questions: list[dict[str, Any]]
+    tasks: list[tuple[Subagent, str]]
+
+
+def _snapshot(ws: Workspace) -> str:
+    """The user's money in a few lines, so Penny plans around their real situation."""
+    d = ws.dashboard
+    lines = [f"- {a.name}: {format_cad(a.balance_cents)}" for a in d.accounts[:6]]
+    lines += [
+        f"- Goal {g.name}: {format_cad(g.current_cents)} of {format_cad(g.target_cents)}"
+        for g in d.savings_goals
+        if g.status == "active"
+    ][:4]
+    lines.append(f"- Typical monthly surplus: {format_cad(ws.coach.typical_surplus_cents)}")
+    return "\n".join(lines)
+
+
+async def _model_think(
+    settings: Settings, budget: Budget, run: MissionRun, ws: Workspace
+) -> Thinking:
     budget.charge()
     team = "\n".join(f"- {a.id}: {a.name}. {a.role}" for a in TEAM.values())
+    profile = ws.dashboard.profile
+    where = ", ".join(x for x in (profile.city, profile.province) if x) or "Canada"
     value = await ask_json(
         settings,
-        "You are Penny, the orchestrator of a team of money agents for a Canadian student or "
-        "young adult. Break the mission into one task per agent that's needed (2 to 6 agents), "
-        "each a single clear sentence. Don't calculate anything. You can't ask the user anything: "
-        "assume what's sensible (a month already past this year means next year's). Write "
-        "`plan` as one or two plain sentences to the user about how the team will tackle it.",
-        f"Mission: {TITLES[kind]}\nUser's words: {goal or '(none)'}\nPersona: "
-        f"{ws.dashboard.profile.persona}\nToday: {ws.today}\nYour team:\n{team}"
+        _THINK_INSTRUCTIONS,
+        f"Mission: {TITLES[run.kind]}\nUser's words: {run.goal or '(none)'}\nPersona: "
+        f"{profile.persona}\nLives in: {where}\nToday: {ws.today}\nTheir money:\n"
+        f"{_snapshot(ws)}\nBuilt-in team:\n{team}\nTools a specialist can have: "
+        f"{', '.join(SPECIALIST_TOOLS)}"
         + (f"\nWhat Penny remembers:\n{ws.memory.prompt()}" if ws.memory.prompt() else "")
         + (
             f"\nEarlier in this chat:\n{ws.earlier}\nThe user now says: {ws.follow_up}"
             if ws.follow_up
             else ""
         ),
-        "mission_plan",
-        _PLAN_SCHEMA,
-        timeout_seconds=PLAN_TIMEOUT_SECONDS,
-        **_metered(budget, "plan"),
+        "mission_think",
+        _THINK_SCHEMA,
+        timeout_seconds=THINK_TIMEOUT_SECONDS,
+        **_metered(budget, "think"),
     )
-    tasks: list[tuple[AgentId, str]] = []
-    for item in value.get("tasks", []):
-        agent, task = item.get("agent"), str(item.get("task", "")).strip()
-        if agent in TEAM and task and agent not in [a for a, _ in tasks]:
-            tasks.append((agent, task[:300]))
-    if len(tasks) < 1:
+    tasks: list[tuple[Subagent, str]] = []
+    for item in value.get("team", []):
+        agent, task = item.get("agent"), " ".join(str(item.get("task", "")).split())
+        if agent in TEAM and task and agent not in [m.id for m, _ in tasks]:
+            tasks.append((TEAM[agent], task[:300]))
+    taken = {m.name.casefold() for m, _ in tasks} | {a.name.casefold() for a in TEAM.values()}
+    for item in value.get("specialists", [])[:MAX_SPECIALISTS]:
+        member = specialist(
+            str(item.get("name", "")),
+            str(item.get("emoji", "")),
+            str(item.get("role", "")),
+            [str(t) for t in item.get("tools", [])],
+        )
+        task = " ".join(str(item.get("task", "")).split())[:300]
+        if task and member.role and member.name.casefold() not in taken:
+            taken.add(member.name.casefold())
+            tasks.append((member, task))
+    if not tasks:
         raise ModelUnavailable("empty plan")
-    return str(value.get("plan", "")).strip()[:400], tasks[:6]
+    # An owner may be named by its name ("Cash-flow guard") or its id ("cashflow").
+    names = {m.name.casefold(): m.name for m, _ in tasks}
+    names |= {m.id: m.name for m, _ in tasks if m.id != "specialist"}
+    considerations = [
+        Consideration(
+            topic=" ".join(str(c["topic"]).split())[:80],
+            why=" ".join(str(c["why"]).split())[:200],
+            kind=c["kind"],
+            source=c["source"],
+            owner=names.get(str(c.get("owner", "")).casefold()),
+        )
+        for c in value.get("considerations", [])
+        if c.get("kind") in _KINDS and c.get("source") in _SOURCES and str(c.get("topic")).strip()
+    ][:MAX_CONSIDERATIONS]
+    questions = [
+        q
+        for q in value.get("questions", [])
+        if str(q.get("question", "")).strip() and len(q.get("choices", [])) >= 2
+    ][:2]
+    return Thinking(
+        plan=" ".join(str(value.get("plan", "")).split())[:400],
+        situation=" ".join(str(value.get("situation", "")).split())[:300],
+        considerations=considerations,
+        questions=questions,
+        tasks=tasks[:MAX_AGENTS],
+    )
+
+
+def _considered(run: MissionRun) -> str:
+    if not run.considerations:
+        return ""
+    lines = [f"- {c.topic} ({c.kind}): {c.why}" for c in run.considerations]
+    return "\nWhat Penny considered before planning:\n" + "\n".join(lines)
 
 
 @dataclass
@@ -211,6 +395,27 @@ def _rule_follow_ups(ws: Workspace, outcomes: list[LaneOutcome]) -> list[FollowU
                     close_gap(gap),
                 )
             )
+    plan = ws.costs
+    if (
+        plan
+        and plan.surplus_after
+        and plan.surplus_after.startswith("-")
+        and not any(u.agent == "analyst" for u in ups)
+    ):
+        gap = plan.surplus_after.lstrip("-")
+        costed_by = next(
+            (o.lane.name for o in outcomes if o.lane.status == "done" and o.lane.tool_calls),
+            "The team",
+        )
+        ups.append(
+            FollowUp(
+                "analyst",
+                f"Find {gap} a month so {plan.title} fits: trim the wants first, then work "
+                "out what the biggest new cost can be.",
+                f"{costed_by} found it leaves you {gap} short a month",
+                fit_plan(gap),
+            )
+        )
     if "benefits" in done:
         matches = benefits_screen(ws, Outbox(), {})["matches"]
         best = next((m for m in matches if m["status"] == "likely" and m["up_to"]), None)
@@ -478,8 +683,11 @@ def _built_in_brief(ws: Workspace, run: MissionRun) -> Brief:
         None,
     )
     answer = f"{lead.title}. {lead.detail}" if lead else _headline(run)
+    picture = _built_in_picture(ws, run)
+    if ws.costs:
+        return _costs_brief(ws, run).model_copy(update={"picture": picture})
     if run.kind != "purchase" or lead is None:
-        return Brief(answer=answer[:400])
+        return Brief(answer=answer[:400], picture=picture)
     item = item_from_text(run.goal)
     planner = next((lane for lane in run.lanes if lane.agent == "planner"), None)
     if planner and planner.summary:
@@ -531,6 +739,103 @@ def _built_in_brief(ws: Workspace, run: MissionRun) -> Brief:
     return Brief(answer=answer[:400], numbers=numbers[:5], options=options)
 
 
+def _built_in_picture(ws: Workspace, run: MissionRun) -> list[PictureItem]:
+    """Without a model: what the agents drafted and did, and the first dated tasks."""
+    items = [
+        PictureItem(group="you_do", title=t.title, detail=f"By {t.due_on:%B} {t.due_on.day}.")
+        for t in ws.checklist[:3]
+    ]
+    items += [
+        PictureItem(group="penny_did", title=step.title, detail="Drafted: approve it below.")
+        for step in run.steps[:2]
+    ]
+    items += [
+        PictureItem(group="penny_did", title=task.title, detail=task.detail[:240])
+        for task in run.auto[:2]
+    ]
+    return items
+
+
+def _costs_context(ws: Workspace) -> str:
+    """When the situation was costed: the plan in brief, and how to answer it (kept out of the
+    fixed instructions so their prompt cache holds)."""
+    plan = ws.costs
+    if plan is None:
+        return ""
+    priced = [i.label.lower() for i in [*plan.upfront, *plan.monthly] if i.amount and not i.asked]
+    return (
+        f"\nCosted plan, {plan.title}: upfront {plan.upfront_total}; {plan.monthly_total} a "
+        f"month vs {plan.monthly_now} for the same things now; surplus after "
+        f"{plan.surplus_after}."
+        + (f" A {len(ws.checklist)}-step dated checklist is shown too." if ws.checklist else "")
+        + (f" Priced though they didn't ask: {', '.join(priced[:4])}." if priced else "")
+        + "\nSo `numbers` are 'Upfront', 'Monthly', 'Change a month', and 'Surplus after'."
+    )
+
+
+def _costs_numbers(ws: Workspace) -> list[BriefNumber]:
+    plan = ws.costs
+    if plan is None:
+        return []
+    change = ("+" if plan.change_up else "−") + plan.monthly_change
+    return [
+        BriefNumber(label=label, value=value)
+        for label, value in (
+            ("Upfront", plan.upfront_total),
+            ("Monthly", plan.monthly_total),
+            ("Change a month", change),
+            ("Surplus after", plan.surplus_after),
+        )
+        if value
+    ]
+
+
+def _costs_brief(ws: Workspace, run: MissionRun) -> Brief:
+    """Without a model: the plan in numbers, what the user didn't ask about, and three ways to
+    go."""
+    plan = ws.costs
+    assert plan is not None
+    short = bool(plan.surplus_after and plan.surplus_after.startswith("-"))
+    answer = (
+        f"{plan.title} takes about {plan.upfront_total} upfront, and your monthly costs go "
+        f"{'up' if plan.change_up else 'down'} {plan.monthly_change}"
+        + (
+            f", which leaves you {plan.surplus_after.lstrip('-')} short a month."
+            if short and plan.surplus_after
+            else "."
+        )
+    )
+    extra = [i.label.lower() for i in [*plan.upfront, *plan.monthly] if i.amount and not i.asked]
+    if extra:
+        answer += f" I also counted {', '.join(extra[:3])}."
+    months = plan.months_to_save
+    moving = relocation.is_move(run.goal)
+    options = [
+        BriefOption(
+            title=f"Save for it over {months} months" if months else "Start saving for it",
+            detail=f"Set money aside after each payday toward {plan.upfront_total}.",
+            recommended=not short,
+        ),
+        BriefOption(
+            title="Look at a shared place" if moving else "Find a cheaper way",
+            detail="A room in a shared place cuts the rent and the deposit."
+            if moving
+            else "Cut the biggest monthly cost until it fits.",
+            recommended=short,
+        ),
+        BriefOption(
+            title="Move a month later" if moving else "Start a month later",
+            detail="One more month of saving before the upfront costs land.",
+        ),
+    ]
+    picked = ws.follow_up.casefold()
+    return Brief(
+        answer=_whole_sentences(answer, ANSWER_CHARS),
+        numbers=_costs_numbers(ws),
+        options=[o for o in options if o.title.casefold() != picked],
+    )
+
+
 _RANK = {"alert": 0, "watch": 1, "good": 2, "info": 3}
 _BRIEF_SCHEMA = {
     "type": "object",
@@ -558,8 +863,21 @@ _BRIEF_SCHEMA = {
                 "additionalProperties": False,
             },
         },
+        "picture": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "group": {"type": "string", "enum": ["you_do", "penny_did", "skip"]},
+                    "title": {"type": "string"},
+                    "detail": {"type": "string"},
+                },
+                "required": ["group", "title", "detail"],
+                "additionalProperties": False,
+            },
+        },
     },
-    "required": ["answer", "numbers", "options"],
+    "required": ["answer", "numbers", "options", "picture"],
     "additionalProperties": False,
 }
 
@@ -593,8 +911,12 @@ async def _brief(settings: Settings, budget: Budget, ws: Workspace, run: Mission
             "words on what happens; mark the one you'd suggest as recommended. Approving a "
             "draft is the button under your answer, so never offer 'approve' as an option. "
             "When the user already picked an option, answer that choice: say what's now set "
-            "up and what's next. Use only figures that appear below. No investment, tax, "
-            "legal, or credit advice.",
+            "up and what's next. `picture`: the full picture, from what Penny considered and "
+            "the reports: up to 4 `you_do` (what only the user can do, with when if known), up "
+            "to 3 `penny_did` (what the agents set up or drafted), and up to 2 `skip` (what "
+            "looks important but isn't worth their money or time here, and why); titles under "
+            "8 words, details under 20. Use only figures that appear below. No investment, "
+            "tax, legal, or credit advice.",
             (
                 f"Earlier in this chat:\n{ws.earlier}\nThe user now says: {ws.follow_up}\n"
                 "Answer what they chose.\n"
@@ -602,7 +924,9 @@ async def _brief(settings: Settings, budget: Budget, ws: Workspace, run: Mission
                 else ""
             )
             + f"User's words: {run.goal or run.title}\nAgent reports:\n{_reports(run.lanes)}\n"
-            f"Drafted for approval:\n{steps or '(nothing)'}\nVerified figures:\n{facts}",
+            f"Drafted for approval:\n{steps or '(nothing)'}\nVerified figures:\n{facts}"
+            + _considered(run)
+            + _costs_context(ws),
             "mission_brief",
             _BRIEF_SCHEMA,
             timeout_seconds=PLAN_TIMEOUT_SECONDS,
@@ -626,15 +950,29 @@ async def _brief(settings: Settings, budget: Budget, ws: Workspace, run: Mission
             if not ws.facts.unverified_figures(f"{o.get('title', '')} {o.get('detail', '')}")
             and not picks_investments(f"{o.get('title', '')} {o.get('detail', '')}")
         ][:3]
-        return Brief(answer=answer, numbers=numbers, options=options)
+        picture = [
+            PictureItem(
+                group=item["group"],
+                title=str(item["title"])[:80],
+                detail=str(item["detail"])[:240],
+            )
+            for item in value.get("picture", [])
+            if item.get("group") in ("you_do", "penny_did", "skip")
+            and not ws.facts.unverified_figures(f"{item.get('title', '')} {item.get('detail', '')}")
+            and not picks_investments(f"{item.get('title', '')} {item.get('detail', '')}")
+        ][:10]
+        if ws.costs and len(numbers) < 3:
+            numbers = _costs_numbers(ws)
+        return Brief(
+            answer=answer, numbers=numbers, options=options, picture=picture or fallback.picture
+        )
     except ModelUnavailable:
         return fallback
 
 
-def _lane(agent: AgentId, task: str, wave: int = 1, because: str | None = None) -> AgentLane:
-    member = TEAM[agent]
+def _lane(member: Subagent, task: str, wave: int = 1, because: str | None = None) -> AgentLane:
     return AgentLane(
-        agent=agent,
+        agent=member.id,
         name=member.name,
         emoji=member.emoji,
         role=member.role,
@@ -646,6 +984,7 @@ def _lane(agent: AgentId, task: str, wave: int = 1, because: str | None = None) 
 
 async def _run(
     lane: AgentLane,
+    member: Subagent,
     playbook: Playbook,
     ws: Workspace,
     run: MissionRun,
@@ -660,16 +999,54 @@ async def _run(
         ws=ws,
         kind=run.kind,
         playbook=playbook,
-        instructions=instructions_for(TEAM[lane.agent], run.kind),
-        tools=TEAM[lane.agent].tool_list(),
+        instructions=instructions_for(member, run.kind, run.goal),
+        tools=member.tool_list(),
         settings=settings,
         budget=budget,
         clock=clock,
         # Agents whose job is a lookup run their playbook: same result, no tokens.
-        use_model=use_model and TEAM[lane.agent].thinks,
+        use_model=use_model and member.thinks,
         context=context,
-        light=TEAM[lane.agent].light,
+        light=member.light,
     )
+
+
+def _names(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+async def _ask_first(
+    ws: Workspace, questions: list[dict[str, Any]], run: MissionRun, clock: Clock
+) -> str:
+    """Asks the user what Penny can't work out before the team goes out; returns what they said
+    (or the assumptions used) for every agent to know."""
+    if ws.asker is None:
+        return ""
+    lines = []
+    for q in questions:
+        if not ws.asker.can_ask():
+            break
+        asked = await ws.asker.ask(
+            "penny",
+            str(q["question"]),
+            str(q.get("why", "")),
+            [str(c) for c in q.get("choices", [])],
+            str(q.get("assumption", "")),
+        )
+        if asked.answer:
+            ws.facts.allow_user_amounts(asked.answer)
+            lines.append(f"- {asked.question} The user said: {asked.answer}")
+        else:
+            lines.append(f"- {asked.question} No answer; assume: {asked.assumption}")
+        run.plan_steps.append(
+            TraceStep(
+                at_ms=clock.ms(),
+                kind="ask",
+                title=f"Asked you: {asked.question}",
+                detail=asked.answer or f"No answer, so assuming: {asked.assumption}",
+            )
+        )
+    return "Penny asked the user before planning:\n" + "\n".join(lines) if lines else ""
 
 
 async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> None:
@@ -699,13 +1076,15 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
                 at_ms=clock.ms(), kind="plan", title="Reading the mission", detail=run.goal or None
             )
         )
-        tasks: list[tuple[AgentId, str]] | None = None
+        tasks: list[tuple[Subagent, str]] | None = None
+        told = ""  # what the user answered before the team went out
+        moving = run.kind == "life_event" and relocation.is_move(run.goal)
         if use_model and run.kind == "purchase":
             # The price comes first: the Planner finds it, then Penny hands on what it found.
             run.source = "ai"
             tasks = [
                 (
-                    "planner",
+                    TEAM["planner"],
                     f"The user chose “{ws.follow_up}”: do that for this purchase."
                     if ws.follow_up
                     else PURCHASE_TASK,
@@ -716,9 +1095,36 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
                 "hand on whatever needs more work."
             )
         elif use_model and run.kind not in ROSTERS_ARE_ENOUGH:
+            run.plan_steps.append(
+                TraceStep(
+                    at_ms=clock.ms(),
+                    kind="plan",
+                    title="Thinking it through: what does this take?",
+                )
+            )
             try:
-                run.plan, tasks = await _model_plan(settings, budget, run.kind, run.goal, ws)
+                thinking = await _model_think(settings, budget, run, ws)
                 run.source = "ai"
+                run.plan, tasks = thinking.plan, thinking.tasks
+                run.considerations = thinking.considerations
+                created = [m.name for m, _ in tasks if m.id == "specialist"]
+                run.plan_steps[-1] = TraceStep(
+                    at_ms=clock.ms(),
+                    kind="plan",
+                    title=f"Thought it through: {len(run.considerations)} things to keep in mind",
+                    detail=" ".join(
+                        x
+                        for x in (
+                            thinking.situation,
+                            "Including: " + "; ".join(c.topic for c in run.considerations[:6]) + "."
+                            if run.considerations
+                            else "",
+                            f"Created {_names(created)} for this mission." if created else "",
+                        )
+                        if x
+                    ),
+                )
+                told = await _ask_first(ws, thinking.questions, run, clock)
             except ModelUnavailable as error:
                 run.plan_steps.append(
                     TraceStep(
@@ -729,14 +1135,21 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
                     )
                 )
         if tasks is None:
-            tasks = _rule_plan(run.kind, run.goal)
+            if moving:
+                # Without a model: Penny's built-in way through a move.
+                title, detail = move_thinking(ws)
+                run.plan_steps.append(
+                    TraceStep(at_ms=clock.ms(), kind="plan", title=title, detail=detail)
+                )
+                tasks = [(TEAM[a], task) for a, task in _move_plan(run.goal)]
+            else:
+                tasks = [(TEAM[a], task) for a, task in _rule_plan(run.kind, run.goal)]
             if use_model:
                 run.source = "ai"
-            run.plan = (
-                "I'll send " + ", ".join(TEAM[a].name for a, _ in tasks) + " at the same time."
-            )
+            run.plan = "I'll send " + _names([m.name for m, _ in tasks]) + " at the same time."
             await asyncio.sleep(0.4)
-        run.lanes = [_lane(agent, task) for agent, task in tasks]
+        members = {m.name: m for m, _ in tasks}
+        run.lanes = [_lane(member, task) for member, task in tasks]
         run.plan_steps.append(
             TraceStep(
                 at_ms=clock.ms(),
@@ -754,6 +1167,8 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
                 if ws.follow_up
                 else "",
                 f"What Penny remembers:\n{remembered}" if remembered else "",
+                told,
+                _considered(run).strip(),
             )
             if part
         )
@@ -762,7 +1177,8 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
                 *(
                     _run(
                         lane,
-                        TEAM[lane.agent].playbook,
+                        members[lane.name],
+                        members[lane.name].playbook,
                         ws,
                         run,
                         settings,
@@ -789,7 +1205,7 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
             run.review = run.review or "Some of what the team found is worth acting on: " + (
                 "; ".join(u.because.rstrip(".") for u in follow_ups) + "."
             )
-            wave = [_lane(u.agent, u.task, wave=2, because=u.because) for u in follow_ups]
+            wave = [_lane(TEAM[u.agent], u.task, wave=2, because=u.because) for u in follow_ups]
             run.lanes += wave
             run.plan_steps.append(
                 TraceStep(
@@ -805,6 +1221,7 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
                 *(
                     _run(
                         lane,
+                        TEAM[up.agent],
                         up.playbook,
                         ws,
                         run,
@@ -828,6 +1245,7 @@ async def run_mission(settings: Settings, ws: Workspace, run: MissionRun) -> Non
             )
         await _verify(ws, run, outcomes, clock)
         run.auto = [task for lane in run.lanes for task in lane.auto]
+        run.costs, run.checklist = ws.costs, ws.checklist
         run.ai_calls = budget.used
         run.tokens = budget.tokens
         run.brief = await _brief(settings, budget, ws, run)

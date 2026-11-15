@@ -568,7 +568,9 @@ _MISSION_WORDS: tuple[tuple[str, str], ...] = (
         "life_event",
         r"\b(?:i'?m|i am|we'?re) (?:moving|relocating)\b|\bget me ready\b"
         r"|\bplan (?:my|a|for my|for a) (?:move|trip|co-?op|semester|first job)\b"
-        r"|\bhelp me (?:plan|prepare|get ready)\b",
+        r"|\bhelp me (?:plan|prepare|get ready)\b|\bmoving (?:from|to|out)\b"
+        r"|\bwhat (?:all )?(?:do|should) i (?:need to )?(?:keep in mind|know|think about|"
+        r"consider|plan for)\b",
     ),
 )
 

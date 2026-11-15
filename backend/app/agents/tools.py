@@ -12,13 +12,13 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Literal
 
-from app.agents.models import AutoTask
+from app.agents.models import AutoTask, ChecklistItem, CostItem, CostPlan
 from app.agents.workspace import Outbox, Workspace
 from app.assist import agent as planner
 from app.coach import tools as coach_tools
 from app.coach.facts import parse_cad
 from app.domain import benefits as benefit_rules
-from app.domain import sales_tax
+from app.domain import relocation, sales_tax
 from app.domain.cash_forecast import Flow, Forecast, forecast
 from app.domain.finance import format_cad
 
@@ -337,6 +337,221 @@ def move_cost_estimate(ws: Workspace, out: Outbox, args: dict[str, Any]) -> dict
         result["rent_goes"] = "up" if change > 0 else "down"
     result["note"] = f"Based on {basis}."
     return result
+
+
+# plan_move's amount arguments, by cost line.
+MOVE_ARGS = {
+    "travel": "travel",
+    "movers": "movers",
+    "setup": "setup",
+    "rent": "monthly_rent",
+    "transit": "transit_monthly",
+    "groceries": "groceries_monthly",
+    "phone": "phone_monthly",
+    "utilities": "utilities_monthly",
+    "insurance": "insurance_monthly",
+}
+# What the user spends on a monthly line now, by category name.
+_NOW_CATEGORIES = {"transit": "Transportation", "groceries": "Groceries", "phone": "Phone"}
+_DEFAULT_MOVE_MONTHS = 3
+
+
+def _summarize(
+    ws: Workspace,
+    title: str,
+    upfront: list[CostItem],
+    monthly: list[CostItem],
+    totals: tuple[int, int, int],
+    web: bool,
+) -> CostPlan:
+    """Registers a costed plan's totals and keeps it for the answer. `totals`: upfront cents,
+    monthly cents, and what the same monthly things cost now."""
+    f = ws.facts
+    upfront_cents, monthly_cents, now_cents = totals
+    # Totals built on a web figure stay web figures: a goal's target, never an amount to move.
+    source = "web" if web else "cost_plan"
+    change_cents = monthly_cents - now_cents
+    surplus = ws.coach.typical_surplus_cents
+    f.money("Typical monthly surplus", surplus, "history")
+    plan = CostPlan(
+        title=title,
+        upfront=upfront,
+        monthly=monthly,
+        upfront_total=f.money(f"{title}: upfront total", upfront_cents, source),
+        monthly_total=f.money(f"{title}: monthly costs", monthly_cents, source),
+        monthly_now=f.money(f"{title}: same costs now", now_cents, "cost_plan"),
+        monthly_change=f.money(f"{title}: monthly change", abs(change_cents), source),
+        change_up=change_cents > 0,
+        surplus_after=f.money(f"{title}: monthly surplus after", surplus - change_cents, source),
+        months_to_save=relocation.months_to_save(upfront_cents, surplus),
+    )
+    ws.costs = plan
+    return plan
+
+
+def _plan_result(plan: CostPlan) -> dict[str, Any]:
+    def shown(item: CostItem) -> str:
+        return (item.amount or "not priced yet") + (
+            " (what they spend now)" if item.basis == "now" else ""
+        )
+
+    return {
+        "upfront": {i.label: shown(i) for i in plan.upfront},
+        "upfront_total": plan.upfront_total,
+        "monthly": {i.label: shown(i) for i in plan.monthly},
+        "monthly_total": plan.monthly_total,
+        "same_costs_now": plan.monthly_now,
+        "monthly_costs_go": ("up " if plan.change_up else "down ") + plan.monthly_change,
+        "surplus_after": plan.surplus_after,
+        "months_to_save_the_upfront_cost": plan.months_to_save,
+        "still_to_price": [i.label for i in [*plan.upfront, *plan.monthly] if not i.amount],
+    }
+
+
+def cost_plan(ws: Workspace, out: Outbox, args: dict[str, Any]) -> dict[str, Any]:
+    """Any situation costed in full (starting school somewhere, getting a car, an exchange
+    term, a pet): every upfront and monthly cost, against what the same things cost now."""
+    title = " ".join(str(args.get("title") or "").split())[:60] or "Your plan"
+    items = args.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise ToolError("items must list each cost")
+    names = {c.name.casefold(): c.name for c in ws.dashboard.categories}
+    upfront: list[CostItem] = []
+    monthly: list[CostItem] = []
+    totals = [0, 0]
+    replaced: set[str] = set()
+    web = False
+    for index, item in enumerate(items[:14]):
+        label = " ".join(str(item.get("label") or "").split())[:40]
+        if not label:
+            raise ToolError("Every item needs a label")
+        is_monthly = item.get("kind") == "monthly"
+        amount = None
+        basis: relocation.Basis = "to_price"
+        if item.get("amount") not in (None, ""):
+            cents = _cents(item.get("amount"), f"{label} amount")
+            _known(ws, cents, f"{label} amount", web=True)
+            basis = "you" if ws.facts.knows_cents(cents) else "web"
+            web = web or basis == "web"
+            amount = ws.facts.money(
+                f"{title}: {label}", cents, "web" if basis == "web" else "cost_plan"
+            )
+            totals[1 if is_monthly else 0] += cents
+            replaces = str(item.get("replaces") or "").casefold()
+            if is_monthly and replaces in names:
+                replaced.add(names[replaces])
+        line = CostItem(id=f"item-{index}", label=label, amount=amount, basis=basis)
+        (monthly if is_monthly else upfront).append(line)
+    now = sum(ws.coach.category_average_cents(name) or 0 for name in replaced)
+    plan = _summarize(ws, title, upfront, monthly, (totals[0], totals[1], now), web)
+    return {"title": title, **_plan_result(plan), "compared_with_now": sorted(replaced)}
+
+
+# plan_move's amount arguments, by cost line.
+MOVE_ARGS = {
+    "travel": "travel",
+    "movers": "movers",
+    "setup": "setup",
+    "rent": "monthly_rent",
+    "transit": "transit_monthly",
+    "groceries": "groceries_monthly",
+    "phone": "phone_monthly",
+    "utilities": "utilities_monthly",
+    "insurance": "insurance_monthly",
+}
+# What the user spends on a monthly line now, by category name.
+_NOW_CATEGORIES = {"transit": "Transportation", "groceries": "Groceries", "phone": "Phone"}
+_DEFAULT_MOVE_MONTHS = 3
+
+
+def plan_move(ws: Workspace, out: Outbox, args: dict[str, Any]) -> dict[str, Any]:
+    """A move costed in full: every upfront and monthly cost (the ones the user asked about and
+    the ones they didn't), compared with what they spend now, and a dated checklist."""
+    d, f = ws.dashboard, ws.facts
+    place = relocation.destination(str(args.get("city") or "")) or relocation.destination(ws.goal)
+    if place is None:
+        raise ToolError("Where to? Pass city (like Toronto)")
+    when = _date(args.get("move_date"), "move_date") or relocation.move_date(ws.goal, ws.today)
+    if when and when <= ws.today:
+        raise ToolError("move_date must be in the future")
+    assumed = when is None
+    if when is None:
+        when = relocation.first_of_month(ws.today, _DEFAULT_MOVE_MONTHS)
+
+    rent_bill = next((b for b in d.bills if b.category_id == "cat-housing"), None)
+    now: dict[str, int] = {}
+    if rent_bill:
+        now["rent"] = rent_bill.amount_cents
+    for line, category in _NOW_CATEGORIES.items():
+        # Groceries may be kept under Food.
+        average = ws.coach.category_average_cents(category) or (
+            ws.coach.category_average_cents("Food") if line == "groceries" else None
+        )
+        if average:
+            now[line] = average
+
+    amounts: dict[str, tuple[int, relocation.Basis]] = {}
+    for line, name in MOVE_ARGS.items():
+        if args.get(name) in (None, ""):
+            continue
+        cents = _cents(args.get(name), name)
+        _known(ws, cents, name, web=True)
+        amounts[line] = (cents, "you" if f.knows_cents(cents) else "web")
+    # Monthly costs nobody priced: assume they cost what they do now (and say so).
+    for line in ("rent", "transit", "groceries", "phone"):
+        if line not in amounts and line in now:
+            amounts[line] = (now[line], "now")
+    result = relocation.costs(amounts, now)
+    web = any(basis == "web" for _, basis in amounts.values())
+    rent_from_web = amounts.get("rent", (0, ""))[1] == "web"
+    title = f"Move to {place.city}"
+    asked_ids = {c.id for c in relocation.asked_about(f"{ws.goal} {ws.follow_up}")[0]}
+
+    def items(lines: list[relocation.Line]) -> list[CostItem]:
+        shown = []
+        for item in lines:
+            amount = None
+            if item.cents is not None:
+                origin = (
+                    "web"
+                    if item.basis == "web" or (item.basis == "rent" and rent_from_web)
+                    else "cost_plan"
+                )
+                amount = f.money(f"{title}: {item.label}", item.cents, origin)
+            shown.append(
+                CostItem(
+                    id=item.id,
+                    label=item.label,
+                    amount=amount,
+                    basis=item.basis,
+                    asked=item.id in asked_ids,
+                )
+            )
+        return shown
+
+    plan = _summarize(
+        ws,
+        title,
+        items(result.upfront),
+        items(result.monthly),
+        (result.upfront_cents, result.monthly_cents, result.monthly_now_cents),
+        web,
+    )
+    tasks = relocation.checklist(
+        when, ws.today, sales_tax.province_code(d.profile.province), place.province
+    )
+    ws.checklist = [
+        ChecklistItem(id=t.id, title=t.title, detail=t.detail, due_on=t.due_on, stage=t.stage)
+        for t in tasks
+    ]
+    _, missed = relocation.asked_about(f"{ws.goal} {ws.follow_up}")
+    return {
+        "to": f"{place.city}, {place.province}" if place.province else place.city,
+        "move_on": when.isoformat() + (" (assumed: the user gave no date)" if assumed else ""),
+        **_plan_result(plan),
+        "also_covered_they_didnt_ask": [c.label for c in missed],
+        "checklist": [f"{t.due_on:%b} {t.due_on.day}: {t.title}" for t in tasks],
+    }
 
 
 def price_with_tax(ws: Workspace, out: Outbox, args: dict[str, Any]) -> dict[str, Any]:
@@ -713,6 +928,59 @@ TOOLS: dict[str, Tool] = {
             "the user said it or web research found it; otherwise today's rent is used.",
             {"monthly_rent": _optional("CAD amount the new place's rent, or null")},
             move_cost_estimate,
+        ),
+        Tool(
+            "cost_plan",
+            "read",
+            "Costs any situation in full and compares it with today: each upfront and monthly "
+            "cost (amounts the user said or web research found; null amount for one still to "
+            "price, never a guess), the totals, how monthly costs change against the categories "
+            "they replace, the surplus after, and months to save the upfront part.",
+            {
+                "title": _text("Short name, like 'Exchange term in Lyon' or 'Getting a car'"),
+                "items": {
+                    "type": "array",
+                    "description": "Every cost the situation brings, the easy-to-miss ones too",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": _text("Under 5 words"),
+                            "amount": _optional("CAD amount, or null if not priced yet"),
+                            "kind": {"type": "string", "enum": ["upfront", "monthly"]},
+                            "replaces": _optional(
+                                "A category it replaces today (Housing, Transportation, "
+                                "Groceries, Phone…), or null"
+                            ),
+                        },
+                        "required": ["label", "amount", "kind", "replaces"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            cost_plan,
+        ),
+        Tool(
+            "plan_move",
+            "read",
+            "Costs a whole move and builds its dated checklist: getting there, first and last "
+            "month's rent, movers, setting up, and monthly rent, transit, groceries, phone, "
+            "utilities, and tenant insurance, against what the user spends now. Pass every "
+            "amount the user said or web research found (null for the rest: today's spending "
+            "fills in, and anything else stays unpriced, never guessed).",
+            {
+                "city": _optional("Where they're moving, or null to read it from the mission"),
+                "move_date": _optional("YYYY-MM-DD, or null to read it from the mission"),
+                "monthly_rent": _optional("CAD amount, or null"),
+                "travel": _optional("CAD one-way flight, train, or bus, or null"),
+                "movers": _optional("CAD movers, a van, or shipping boxes, or null"),
+                "setup": _optional("CAD furniture and setting up, or null"),
+                "transit_monthly": _optional("CAD monthly transit pass, or null"),
+                "groceries_monthly": _optional("CAD a month for one person, or null"),
+                "phone_monthly": _optional("CAD phone and internet a month, or null"),
+                "utilities_monthly": _optional("CAD utilities a month, or null"),
+                "insurance_monthly": _optional("CAD tenant insurance a month, or null"),
+            },
+            plan_move,
         ),
         Tool(
             "who_owes_me",

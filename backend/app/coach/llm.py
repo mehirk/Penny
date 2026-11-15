@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, ConfigDict, Field
 
 from app import limits
@@ -183,16 +183,22 @@ async def ask_json(
         max_retries=1,
     )
     content: Any = [attachment, {"type": "input_text", "text": prompt}] if attachment else prompt
-    response = await client.responses.create(
-        model=settings.openai_model,
-        instructions=instructions,
-        input=[{"role": "user", "content": content}],
-        max_output_tokens=max_output_tokens,
-        reasoning={"effort": "low"},
-        store=False,
-        text={"format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}},
-        **cache_options(settings, cache_key),
-    )
+    try:
+        response = await client.responses.create(
+            model=settings.openai_model,
+            instructions=instructions,
+            input=[{"role": "user", "content": content}],
+            max_output_tokens=max_output_tokens,
+            reasoning={"effort": "low"},
+            store=False,
+            text={
+                "format": {"type": "json_schema", "name": name, "strict": True, "schema": schema}
+            },
+            **cache_options(settings, cache_key),
+        )
+    except OpenAIError as error:
+        # A timeout or an API error: the caller falls back to its built-in answer.
+        raise ModelUnavailable(type(error).__name__) from error
     if on_usage and response.usage:
         on_usage(response.usage)
     if response.status != "completed" or not response.output_text:

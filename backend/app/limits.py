@@ -16,7 +16,7 @@ from contextvars import ContextVar
 REQUESTS_PER_MINUTE = 120
 # A mission's agents work in parallel, so one mission can make a few dozen calls in a minute.
 AI_CALLS_PER_MINUTE = 40
-AI_CALLS_PER_DAY = 200
+AI_CALLS_PER_DAY = 300
 # People tracked at once per limit; the least recently seen are forgotten first.
 MAX_TRACKED = 20_000
 

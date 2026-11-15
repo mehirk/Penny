@@ -410,7 +410,11 @@ def test_api_answers_a_question_and_the_plan_uses_it(
     assert goal["action"]["target_cents"] == 250_000
     assert run["asked"][0]["answer"] == "$1,250.00 a month"
     lane = next(lane for lane in run["lanes"] if lane["agent"] == "planner")
-    assert any(f["title"] == "Rent goes up $425.00 a month" for f in lane["findings"])
+    assert any(f["title"] == "Monthly costs go up $425.00" for f in lane["findings"])
+    assert (
+        run["costs"]["title"] == "Move to Toronto" and run["costs"]["upfront_total"] == "$2,500.00"
+    )
+    assert run["checklist"] and run["brief"]["picture"]
 
 
 def test_penny_remembers_approvals_and_what_the_user_turned_down(client: TestClient) -> None:
@@ -418,7 +422,7 @@ def test_penny_remembers_approvals_and_what_the_user_turned_down(client: TestCli
         client,
         client.post(
             "/api/v1/agents/runs",
-            json={"kind": "life_event", "goal": "I'm moving to Toronto in September"},
+            json={"kind": "life_event", "goal": "Save $1,500 for a trip in September"},
         ).json()["id"],
     )
     goal = next(step for step in first["steps"] if step["action"]["kind"] == "goal_new")
@@ -431,8 +435,8 @@ def test_penny_remembers_approvals_and_what_the_user_turned_down(client: TestCli
     assert recorded["declined"] == [card["id"]]
 
     later = _wait(client, client.post("/api/v1/agents/runs", json={"kind": "payoff"}).json()["id"])
-    assert later["memory"][0]["title"].startswith("Move to Toronto")
-    assert "You approved “Start a goal: Move to Toronto”" in later["memory"][0]["detail"]
+    assert later["memory"][0]["title"].startswith("Trip fund")
+    assert "You approved “Start a goal: Trip fund”" in later["memory"][0]["detail"]
     # The card payoff the user turned down isn't suggested again.
     assert not any(step["action"]["kind"] == "transfer" for step in later["steps"])
     assert any("you turned it down" in note for note in later["verification"]["notes"])
