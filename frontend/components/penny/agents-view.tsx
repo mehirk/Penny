@@ -2,9 +2,11 @@
 
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
+  Ban,
   Bell,
   BookOpen,
   Brain,
+  Calculator,
   Check,
   ChevronDown,
   Compass,
@@ -17,6 +19,8 @@ import {
   GraduationCap,
   Handshake,
   History,
+  Lightbulb,
+  ListChecks,
   LoaderCircle,
   type LucideIcon,
   MessageCircleQuestion,
@@ -24,9 +28,11 @@ import {
   ScanSearch,
   Shield,
   ShieldCheck,
+  Sparkles,
   Stethoscope,
   TriangleAlert,
   Undo2,
+  UserRound,
   Wrench,
   X,
   Zap,
@@ -40,10 +46,15 @@ import {
   type AgentLane,
   type AgentQuestion,
   type AutoTask,
+  type ChecklistItem,
+  type Consideration,
+  type CostItem,
+  type CostPlan,
   type Dashboard,
   type Finding,
   type MissionKind,
   type MissionRun,
+  type PictureItem,
   type TraceStep,
   agentApi,
   agentsApi,
@@ -75,7 +86,11 @@ const AGENTS: Record<AgentId, { name: string; icon: LucideIcon; color: string; d
   benefits: { name: "Benefits finder", icon: Gift, color: "#e39a2d", does: "Credits and grants" },
   people: { name: "People", icon: Handshake, color: "#ef6f6c", does: "Who owes you" },
   tutor: { name: "Tutor", icon: GraduationCap, color: "#d6589c", does: "Lessons" },
+  specialist: { name: "Specialist", icon: Sparkles, color: "#3f6fd8", does: "Made for this mission" },
 };
+
+/** Who asked: Penny itself (before sending the team) or one of the agents. */
+const askerName = (question: AgentQuestion) => (question.agent === "penny" ? "Penny" : AGENTS[question.agent].name);
 
 /** Missions to start with one tap (from the Penny AI welcome). */
 export const AGENT_PRESETS: { kind: MissionKind; icon: LucideIcon; color: string; title: string; detail: string }[] = [
@@ -104,7 +119,8 @@ const STEP_ICON: Record<TraceStep["kind"], LucideIcon> = {
   web: Globe,
 };
 
-const uniqueAgents = (lanes: AgentLane[]) => [...new Set(lanes.map((lane) => lane.agent))];
+/** One lane per agent (a follow-up wave reuses the agent), specialists each their own. */
+const uniqueLanes = (lanes: AgentLane[]) => [...new Map(lanes.map((lane) => [lane.name, lane])).values()];
 /** Only http(s) links are shown, whatever a web page cited (no javascript: or data: links). */
 const isWebLink = (url: string) => /^https?:\/\//i.test(url);
 const hostOf = (url: string) => {
@@ -148,23 +164,33 @@ const GLYPH_ICON = { xs: "size-3.5", sm: "size-4", md: "size-5" };
 /** An agent's tile: its icon on its colour, with a live ring while it works. */
 function AgentGlyph({
   agent,
+  emoji,
   size = "md",
   status,
   className,
 }: {
   agent: AgentId;
+  /** A specialist's own emoji. */
+  emoji?: string;
   size?: keyof typeof GLYPH_SIZE;
   status?: AgentLane["status"];
   className?: string;
 }) {
   const { icon: Icon, color } = AGENTS[agent];
+  const own = agent === "specialist" && emoji;
   return (
     <span
       className={cn("relative grid shrink-0 place-items-center text-white", GLYPH_SIZE[size], className)}
       style={{ background: `linear-gradient(140deg, ${color}, color-mix(in srgb, ${color} 62%, #0b1a25))` }}
       aria-hidden="true"
     >
-      <Icon className={GLYPH_ICON[size]} strokeWidth={2.25} />
+      {own ? (
+        <span className={cn("leading-none", size === "xs" ? "text-xs" : size === "sm" ? "text-base" : "text-xl")}>
+          {emoji}
+        </span>
+      ) : (
+        <Icon className={GLYPH_ICON[size]} strokeWidth={2.25} />
+      )}
       {(status === "running" || status === "waiting") && (
         <span
           className={cn("absolute inset-0 animate-ring border-2", GLYPH_SIZE[size])}
@@ -199,10 +225,14 @@ function MissionLive({ run }: { run: MissionRun }) {
     .flatMap((lane) => lane.steps.map((step) => ({ step, lane })))
     .sort((a, b) => b.step.at_ms - a.step.at_ms)[0];
   const status = run.question
-    ? `${AGENTS[run.question.agent].name} has a question for you`
+    ? run.question.agent === "penny"
+      ? "Penny has a question before sending the team"
+      : `${askerName(run.question)} has a question for you`
     : latest
       ? `${latest.lane.name} · ${latest.lane.current ?? latest.step.title}`
-      : "Penny is picking the team…";
+      : run.considerations.length
+        ? "Penny is putting the team together…"
+        : "Penny is thinking it through…";
 
   return (
     <Card className="overflow-hidden animate-enter" aria-live="polite">
@@ -226,11 +256,12 @@ function MissionLive({ run }: { run: MissionRun }) {
       <div className="h-1 bg-sage" aria-hidden="true">
         <div className="h-full bg-joy transition-[width] duration-500" style={{ width: `${share}%` }} />
       </div>
+      {run.considerations.length > 0 && <KeepingInMind items={run.considerations} />}
       {run.lanes.length > 0 && (
         <ul className="flex flex-wrap gap-2 px-4 py-3" aria-label="Agents">
           {run.lanes.map((lane) => (
             <li
-              key={`${lane.agent}-${lane.wave}`}
+              key={`${lane.name}-${lane.wave}`}
               className={cn(
                 "flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-xs font-medium animate-enter",
                 lane.status === "running" || lane.status === "waiting"
@@ -239,9 +270,14 @@ function MissionLive({ run }: { run: MissionRun }) {
               )}
               title={lane.because ?? lane.task}
             >
-              <AgentGlyph agent={lane.agent} size="xs" status={lane.status} />
+              <AgentGlyph agent={lane.agent} emoji={lane.emoji} size="xs" status={lane.status} />
               {lane.wave > 1 && <CornerDownRight className="size-3 text-ink-subtle" aria-hidden="true" />}
               {lane.name}
+              {lane.agent === "specialist" && (
+                <span className="rounded-full bg-[#3f6fd8]/12 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#3f6fd8]">
+                  New
+                </span>
+              )}
               <span className="sr-only">: {lane.status}</span>
             </li>
           ))}
@@ -258,8 +294,6 @@ function QuestionCard({ run, question }: { run: MissionRun; question: AgentQuest
   const [sending, setSending] = useState(false);
   const [failed, setFailed] = useState(false);
   const inputId = useId();
-  const agent = AGENTS[question.agent];
-
   async function send(answer: string) {
     if (!answer.trim()) return;
     setSending(true);
@@ -276,9 +310,15 @@ function QuestionCard({ run, question }: { run: MissionRun; question: AgentQuest
   return (
     <div className="border-t border-line bg-gold-soft/50 p-4 animate-enter" role="group" aria-labelledby={inputId}>
       <div className="flex gap-3">
-        <AgentGlyph agent={question.agent} status="waiting" />
+        {question.agent === "penny" ? (
+          <Mascot face className="size-11 shrink-0" />
+        ) : (
+          <AgentGlyph agent={question.agent} status="waiting" />
+        )}
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-ink-subtle">{agent.name} asks</p>
+          <p className="text-xs font-semibold text-ink-subtle">
+            {question.agent === "penny" ? "Before I send the team" : `${askerName(question)} asks`}
+          </p>
           <p id={inputId} className="mt-0.5 text-lg font-semibold leading-snug text-ink">
             {question.question}
           </p>
@@ -501,8 +541,14 @@ function MissionAnswer({
         />
         <div className="flex flex-wrap items-center gap-2 text-xs text-ink-subtle">
           <span className="flex -space-x-1.5">
-            {uniqueAgents(run.lanes).map((agent) => (
-              <AgentGlyph key={agent} agent={agent} size="xs" className="ring-2 ring-surface" />
+            {uniqueLanes(run.lanes).map((lane) => (
+              <AgentGlyph
+                key={lane.name}
+                agent={lane.agent}
+                emoji={lane.emoji}
+                size="xs"
+                className="ring-2 ring-surface"
+              />
             ))}
           </span>
           {run.kind === "watch" ? (
@@ -582,6 +628,9 @@ function MissionAnswer({
       </div>
 
       <div className="space-y-4 border-t border-line p-4 sm:p-5">
+        {brief && brief.picture.length > 0 && <FullPicture items={brief.picture} />}
+        {run.costs && <CostBreakdown plan={run.costs} />}
+        {run.checklist.length > 0 && <Checklist runId={run.id} items={run.checklist} />}
         {run.memory.length > 0 && (
           <ul className="space-y-1.5" aria-label="Penny remembers">
             {run.memory.map((note) => (
@@ -737,6 +786,23 @@ function MissionAnswer({
               )}
             </section>
           )}
+          {run.considerations.length > 0 && (
+            <section aria-label="What Penny thought about first">
+              <SectionTitle color="#e39a2d">What Penny thought about first</SectionTitle>
+              <ul className="mt-2 space-y-1.5">
+                {run.considerations.map((item) => (
+                  <li key={item.topic} className="text-sm">
+                    <span className="font-medium text-ink">{item.topic}</span>
+                    <span className="text-ink-subtle">
+                      {" "}
+                      · {item.why}
+                      {item.owner && ` (${item.owner})`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <section aria-label="How your agents worked it out">
             <SectionTitle color="#19b394">How your agents worked it out</SectionTitle>
             <div className="mt-3">
@@ -746,6 +812,250 @@ function MissionAnswer({
         </Details>
       </div>
     </Card>
+  );
+}
+
+// ------------------------------------------------------------------ the full picture
+
+const KIND_COLOR: Record<Consideration["kind"], string> = {
+  cost: "#e39a2d",
+  task: "#4a8fe7",
+  decision: "#9b6cf0",
+  risk: "#ef6f6c",
+  benefit: "#19b394",
+};
+
+/** While the team works: what Penny decided to keep in mind, including what the user didn't
+ * ask about. */
+function KeepingInMind({ items }: { items: Consideration[] }) {
+  return (
+    <div className="border-b border-line px-4 py-3 animate-enter">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-subtle">
+        <Lightbulb className="size-3.5 text-gold" aria-hidden="true" />
+        Keeping in mind
+      </p>
+      <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="What Penny is keeping in mind">
+        {items.map((item) => (
+          <li
+            key={item.topic}
+            title={item.why}
+            className="inline-flex items-center gap-1.5 rounded-full bg-sage-soft px-2.5 py-1 text-xs font-medium text-ink"
+          >
+            <span className="size-1.5 rounded-full" style={{ background: KIND_COLOR[item.kind] }} aria-hidden="true" />
+            {item.topic}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const PICTURE_GROUPS: { group: PictureItem["group"]; title: string; icon: LucideIcon; color: string }[] = [
+  { group: "you_do", title: "You’ll need to", icon: UserRound, color: "#4a8fe7" },
+  { group: "penny_did", title: "Penny’s on it", icon: Sparkles, color: "#19b394" },
+  { group: "skip", title: "Not worth it", icon: Ban, color: "#8a96a3" },
+];
+
+/** What the user has to do, what the agents did, and what to skip. */
+function FullPicture({ items }: { items: PictureItem[] }) {
+  const groups = PICTURE_GROUPS.map((look) => ({ ...look, items: items.filter((i) => i.group === look.group) })).filter(
+    (look) => look.items.length,
+  );
+  return (
+    <section aria-label="The full picture">
+      <SectionTitle color="#9b6cf0">The full picture</SectionTitle>
+      <div
+        className={cn("mt-2 grid gap-2", groups.length > 1 && "sm:grid-cols-2", groups.length > 2 && "lg:grid-cols-3")}
+      >
+        {groups.map(({ group, title, icon: Icon, color, items: shown }) => (
+          <div key={group} className="rounded-2xl border border-line bg-surface p-3">
+            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.1em]" style={{ color }}>
+              <Icon className="size-3.5" aria-hidden="true" />
+              {title}
+            </p>
+            <ul className="mt-2 space-y-2">
+              {shown.map((item) => (
+                <li key={item.title} className="text-sm leading-snug">
+                  <span
+                    className={cn(
+                      "font-medium",
+                      group === "skip" ? "text-ink-muted line-through decoration-ink-subtle/50" : "text-ink",
+                    )}
+                  >
+                    {item.title}
+                  </span>
+                  {item.detail && <span className="block text-xs text-ink-subtle">{item.detail}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const BASIS_LABEL: Record<CostItem["basis"], string> = {
+  you: "you said",
+  web: "from the web",
+  now: "what you spend now",
+  rent: "from the rent",
+  to_price: "to price",
+};
+
+function CostRows({ items }: { items: CostItem[] }) {
+  return (
+    <ul className="mt-1.5 space-y-1">
+      {items.map((item) => (
+        <li key={item.id} className="flex items-baseline gap-2 text-sm">
+          <span className={cn("min-w-0 flex-1 truncate", item.amount ? "text-ink" : "text-ink-subtle")}>
+            {item.label}
+            {!item.asked && item.amount && (
+              <span className="ml-1.5 rounded-full bg-gold-soft px-1.5 text-[10px] font-semibold text-[#7a5300]">
+                you didn’t ask
+              </span>
+            )}
+          </span>
+          <span className="shrink-0 text-[11px] text-ink-subtle">{BASIS_LABEL[item.basis]}</span>
+          <span className="w-24 shrink-0 text-right font-medium tabular-nums text-ink">{item.amount ?? "—"}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Every cost, upfront and monthly, with where each figure came from. */
+function CostBreakdown({ plan }: { plan: CostPlan }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <section aria-label={`What ${plan.title} costs`} className="rounded-2xl border border-line">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((value) => !value)}
+        className="flex min-h-11 w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm hover:bg-sage-soft/60"
+      >
+        <Calculator className="size-4 text-accent-strong" aria-hidden="true" />
+        <span className="flex-1 font-semibold text-ink">
+          Every cost: {plan.upfront_total} upfront, {plan.monthly_total} a month
+        </span>
+        <ChevronDown
+          className={cn("size-4 text-ink-subtle transition-transform", open && "rotate-180")}
+          aria-hidden="true"
+        />
+      </button>
+      {open && (
+        <div id={id} className="space-y-3 border-t border-line px-3 py-3 animate-fade">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-ink-subtle">Upfront</p>
+            <CostRows items={plan.upfront} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-ink-subtle">Every month</p>
+            <CostRows items={plan.monthly} />
+          </div>
+          <p className="text-sm text-ink-muted">
+            The same things cost you {plan.monthly_now} a month now, so monthly costs go{" "}
+            {plan.change_up ? "up" : "down"} {plan.monthly_change}
+            {plan.surplus_after && (
+              <>
+                {" "}
+                and leave{" "}
+                <span className={cn("font-semibold", plan.surplus_after.startsWith("-") ? "text-danger" : "text-ink")}>
+                  {plan.surplus_after}
+                </span>{" "}
+                a month
+              </>
+            )}
+            .
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const STAGE_TITLE: Record<ChecklistItem["stage"], string> = {
+  before: "Before you go",
+  moving: "Moving week",
+  after: "Once you’re there",
+};
+const CHECKLIST_SHOWN = 4;
+
+function readTicked(key: string): string[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** A dated checklist; ticks stay on this device. */
+function Checklist({ runId, items }: { runId: string; items: ChecklistItem[] }) {
+  const key = `penny-checklist-${runId}`;
+  // Missions only render in the browser (after they're fetched), so storage is there to read.
+  const [ticked, setTicked] = useState<string[]>(() => readTicked(key));
+  const [all, setAll] = useState(false);
+  const shown = all ? items : items.slice(0, CHECKLIST_SHOWN);
+
+  function toggle(id: string) {
+    const next = ticked.includes(id) ? ticked.filter((item) => item !== id) : [...ticked, id];
+    setTicked(next);
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      /* ticks just won't be remembered */
+    }
+  }
+
+  return (
+    <section aria-label="Your checklist">
+      <div className="flex items-center justify-between gap-2">
+        <SectionTitle color="#4a8fe7">Your checklist</SectionTitle>
+        <span className="text-xs tabular-nums text-ink-subtle">
+          {ticked.length}/{items.length} done
+        </span>
+      </div>
+      <ul className="mt-2 space-y-1">
+        {shown.map((item, index) => {
+          const done = ticked.includes(item.id);
+          const stage = index === 0 || shown[index - 1].stage !== item.stage;
+          return (
+            <li key={item.id}>
+              {stage && (
+                <p className="mb-1 mt-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-subtle">
+                  {STAGE_TITLE[item.stage]}
+                </p>
+              )}
+              <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl px-2 py-2 hover:bg-sage-soft/60">
+                <input
+                  type="checkbox"
+                  checked={done}
+                  onChange={() => toggle(item.id)}
+                  className="mt-0.5 size-5 shrink-0 accent-[var(--color-accent)]"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className={cn("block text-sm font-medium", done ? "text-ink-subtle line-through" : "text-ink")}>
+                    {item.title}
+                  </span>
+                  <span className="block text-xs text-ink-subtle">{item.detail}</span>
+                </span>
+                <span className="shrink-0 text-xs tabular-nums text-ink-subtle">{formatShortDate(item.due_on)}</span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      {items.length > CHECKLIST_SHOWN && (
+        <Button variant="ghost" size="sm" className="mt-1 gap-1.5" onClick={() => setAll((value) => !value)}>
+          <ListChecks className="size-4" aria-hidden="true" />
+          {all ? "Show less" : `Show all ${items.length}`}
+        </Button>
+      )}
+    </section>
   );
 }
 
@@ -813,7 +1123,7 @@ function FindingCard({ finding, lane }: { finding: Finding; lane: AgentLane }) {
         style={{ background: TONE_COLOR[finding.tone] }}
         aria-hidden="true"
       />
-      <AgentGlyph agent={lane.agent} size="sm" />
+      <AgentGlyph agent={lane.agent} emoji={lane.emoji} size="sm" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-ink">{finding.title}</p>
         {finding.detail && <p className="mt-0.5 line-clamp-2 text-sm text-ink-muted">{finding.detail}</p>}
@@ -889,7 +1199,7 @@ function HowItWorked({ run }: { run: MissionRun }) {
           </span>
           <div className="min-w-0 pt-1 text-sm">
             <p className="font-semibold text-ink">
-              {AGENTS[asked.agent].name} asked: {asked.question}
+              {askerName(asked)} asked: {asked.question}
             </p>
             <p className="text-ink-muted">
               {asked.answer ? `You said: ${asked.answer}` : `No answer, so it assumed: ${asked.assumption}`}
@@ -957,7 +1267,12 @@ function AgentRow({ lane }: { lane: AgentLane }) {
   const id = useId();
   return (
     <li className="relative flex gap-3">
-      <AgentGlyph agent={lane.agent} size="sm" status={lane.status === "failed" ? "failed" : undefined} />
+      <AgentGlyph
+        agent={lane.agent}
+        emoji={lane.emoji}
+        size="sm"
+        status={lane.status === "failed" ? "failed" : undefined}
+      />
       <div className="min-w-0 flex-1 rounded-2xl border border-line">
         <button
           type="button"

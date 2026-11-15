@@ -113,24 +113,31 @@ App steps (open a page, switch theme, hide amounts) run on the device. Chat mess
 
 Missions run inside the Penny AI chat: the planner turns a request that needs the agents into a `mission` step, the chat starts it and shows it live, and the mission ends with a `brief` (the direct answer, the numbers behind it, and options the user can pick as their next message).
 
-`backend/app/agents/` runs missions with an orchestrator, six subagents, and a verifier.
+`backend/app/agents/` runs missions with an orchestrator, six built-in subagents, specialists the orchestrator creates per mission, and a verifier.
 
 ```text
 POST /agents/runs {kind, goal}            (or /agents/autopilot once a day when the app opens)
   -> load a read-only workspace now, while the request holds the user's data; run in the background
   -> memory: earlier missions' approved steps checked against today; turned-down ones noted
-  -> orchestrator: the model (or rules) picks agents and writes one task each
+  -> think it through (life events and custom missions, with a model): what the user needs to
+     keep in mind (5-10 considerations, including what they didn't ask about), the built-in
+     agents to send, up to 3 specialists to create (name, emoji, role, task, and tools from a
+     safe list that never includes a transfer), and up to 2 questions asked before anyone goes
+     (each with an assumption if unanswered). Without a model: rules (a move gets the whole team)
   -> subagents in parallel (asyncio), each with only its own tools:
-       Analyst, Cash-flow guard, Planner, Benefits finder, People, Tutor
+       Analyst, Cash-flow guard, Planner, Benefits finder, People, Tutor, and any specialists
        model loop: call tools -> read results -> repeat (≤5 rounds) -> report
        without a model: the agent's built-in playbook calls the same tools
        an agent may ask the user one question (the mission waits up to 90 s, then assumes)
-       the Planner and Benefits finder may search the web (≤3 a mission, sources kept)
+       the Planner, Benefits finder, and specialists may search the web (≤6 a mission, sources
+       kept); cost_plan totals any situation (plan_move adds a move's dated checklist) in cents
   -> review: Penny reads the reports and sends follow-ups (a second wave) built on findings
   -> verifier: every $ and % in every report must be a FactBook figure (sent back once, then
      replaced with built-in findings); drafts are rebuilt by the same step builder as the app's
      plans, duplicates merged, and held back if together they'd leave chequing under a $500
      cushion after bills
+  -> brief: the answer, its numbers, options, and the full picture (what you do, what Penny did,
+     what's not worth it); the costed plan and checklist are shown with it
   -> summary; the run is saved to agent_runs (30 per person) as the audit trail
 GET /agents/runs/{id}                     (polled by the app while it runs)
 POST /agents/runs/{id}/answer              (the user's answer to a waiting question)

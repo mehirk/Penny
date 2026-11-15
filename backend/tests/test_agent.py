@@ -237,6 +237,12 @@ def test_answering_how_much_fills_in_the_amount(store: DashboardStore) -> None:
             "mission",
             "life_event|I'm moving to Toronto, get me ready",
         ),
+        (
+            "What do I need to keep in mind moving from Halifax to Toronto as a student?",
+            "mission",
+            "life_event|What do I need to keep in mind moving from Halifax to Toronto as a "
+            "student?",
+        ),
     ],
 )
 def test_app_commands_run_on_the_device(store: DashboardStore, said: str, kind: str, value: str):

@@ -51,6 +51,8 @@ DOING = {
     "price_with_tax": "Adding sales tax",
     "credit_card_payment": "Modelling a card payment",
     "move_cost_estimate": "Estimating moving costs",
+    "plan_move": "Costing the whole move and building a checklist",
+    "cost_plan": "Costing the whole plan",
     "who_owes_me": "Checking who owes you",
     "benefits_screen": "Screening for benefits",
     "learning_progress": "Checking your lessons",

@@ -9,7 +9,7 @@ from datetime import date
 
 from app.agents.asking import Asker
 from app.agents.memory import Memory, recall
-from app.agents.models import AutoTask, MissionRun
+from app.agents.models import AutoTask, ChecklistItem, CostPlan, MissionRun
 from app.agents.research import Researcher
 from app.assist import agent as planner
 from app.coach.context import CoachContext, load_context
@@ -33,6 +33,9 @@ class Workspace:
     # Set when the mission starts: questions for the user, and web research.
     asker: Asker | None = None
     researcher: Researcher | None = None
+    # The situation costed in full (cost_plan, plan_move) and a move's checklist, for the answer.
+    costs: CostPlan | None = None
+    checklist: list[ChecklistItem] = field(default_factory=list)
 
     @property
     def dashboard(self) -> DashboardResponse:

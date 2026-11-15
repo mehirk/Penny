@@ -5,6 +5,7 @@ answers in time. Missions the user didn't start (Autopilot, Watch) never ask.
 
 import asyncio
 import secrets
+from typing import Literal
 
 from app.agents.models import AgentId, AgentQuestion, MissionRun
 
@@ -23,7 +24,12 @@ class Asker:
         self._lock = asyncio.Lock()
 
     async def ask(
-        self, agent: AgentId, question: str, why: str, choices: list[str], assumption: str
+        self,
+        agent: AgentId | Literal["penny"],
+        question: str,
+        why: str,
+        choices: list[str],
+        assumption: str,
     ) -> AgentQuestion:
         """Shows the question and waits for the answer; `answer` stays None when nobody replied."""
         async with self._lock:

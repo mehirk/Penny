@@ -10,7 +10,8 @@ from app.agent_models import AgentStep
 from app.coach.guard import Redacted, web_url
 from app.dashboard_models import DashboardModel
 
-AgentId = Literal["analyst", "planner", "cashflow", "benefits", "people", "tutor"]
+# "specialist": an agent Penny creates for one mission, with its own name, role, and tools.
+AgentId = Literal["analyst", "planner", "cashflow", "benefits", "people", "tutor", "specialist"]
 MissionKind = Literal[
     "checkup", "free_money", "life_event", "payoff", "purchase", "custom", "autopilot", "watch"
 ]
@@ -96,7 +97,8 @@ class AgentQuestion(DashboardModel):
     time, it carries on with `assumption`."""
 
     id: str
-    agent: AgentId
+    # "penny" when Penny asks before sending the team out.
+    agent: AgentId | Literal["penny"]
     question: str = Field(max_length=200)
     why: str = Field(max_length=200)
     choices: list[str] = Field(default_factory=list, max_length=4)
@@ -129,13 +131,37 @@ class BriefOption(DashboardModel):
     recommended: bool = False
 
 
+class PictureItem(DashboardModel):
+    """One part of the full picture: something the user has to do, something Penny's agents
+    did or drafted, or something that isn't worth their money or time."""
+
+    group: Literal["you_do", "penny_did", "skip"]
+    title: str = Field(max_length=80)
+    detail: str = Field(max_length=240)
+
+
 class Brief(DashboardModel):
     """The answer to the user's question, the way an adviser would give it: the direct answer,
-    the numbers behind it, and the options. Every figure is verified like a report's."""
+    the numbers behind it, the full picture, and the options. Every figure is verified like a
+    report's."""
 
     answer: str = Field(max_length=400)
     numbers: list[BriefNumber] = Field(default_factory=list, max_length=5)
     options: list[BriefOption] = Field(default_factory=list, max_length=3)
+    picture: list[PictureItem] = Field(default_factory=list, max_length=10)
+
+
+class Consideration(DashboardModel):
+    """Something the user needs to keep in mind, from Penny thinking the situation through
+    before planning: what it is, why it matters, and who on the team covers it."""
+
+    topic: str = Field(max_length=80)
+    why: str = Field(max_length=200)
+    kind: Literal["cost", "task", "decision", "risk", "benefit"]
+    # Where the answer comes from: Penny's numbers, the web, or the user.
+    source: Literal["penny", "web", "user", "none"]
+    # The name of the agent covering it.
+    owner: str | None = Field(default=None, max_length=60)
 
 
 class TokenUse(DashboardModel):
@@ -146,6 +172,43 @@ class TokenUse(DashboardModel):
     output: int = 0
     # Answers reused instead of asked again (web searches, a repeated mission).
     reused: int = 0
+
+
+class CostItem(DashboardModel):
+    """One cost in a plan. `basis`: the user said it, the web found it, what they spend on it
+    now, worked out from another cost (a deposit from the rent), or not priced yet (never made
+    up)."""
+
+    id: str
+    label: str
+    amount: str | None = None
+    basis: Literal["you", "web", "now", "rent", "to_price"]
+    # The user asked about it (the rest are what the situation needs that they didn't mention).
+    asked: bool = False
+
+
+class CostPlan(DashboardModel):
+    """A situation costed in full (cost_plan or plan_move): upfront and monthly costs, against
+    what the same things cost the user now and their typical surplus."""
+
+    title: str
+    upfront: list[CostItem] = Field(default_factory=list)
+    monthly: list[CostItem] = Field(default_factory=list)
+    upfront_total: str
+    monthly_total: str
+    monthly_now: str
+    monthly_change: str
+    change_up: bool
+    surplus_after: str | None = None
+    months_to_save: int | None = None
+
+
+class ChecklistItem(DashboardModel):
+    id: str
+    title: str
+    detail: str
+    due_on: date
+    stage: Literal["before", "moving", "after"]
 
 
 class MissionRun(DashboardModel):
@@ -173,6 +236,11 @@ class MissionRun(DashboardModel):
     verification: Verification | None = None
     summary: str | None = None
     brief: Brief | None = None
+    # What Penny decided the user needs to keep in mind, before planning.
+    considerations: list[Consideration] = Field(default_factory=list)
+    # The situation costed in full, and a dated checklist (a move).
+    costs: CostPlan | None = None
+    checklist: list[ChecklistItem] = Field(default_factory=list)
     # Everything the agents drafted that changes money or data, for one approval.
     steps: list[AgentStep] = Field(default_factory=list)
     auto: list[AutoTask] = Field(default_factory=list)

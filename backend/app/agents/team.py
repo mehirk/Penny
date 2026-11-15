@@ -18,6 +18,7 @@ from app.agents.tools import TOOLS, Tool, forecast_for
 from app.agents.workspace import Workspace
 from app.coach.facts import parse_cad
 from app.domain import benefits as benefit_rules
+from app.domain import relocation
 from app.domain.cash_forecast import round_up
 from app.domain.categorize import NEED_CATEGORIES
 from app.domain.finance import format_cad
@@ -66,6 +67,28 @@ async def analyst(act: Act, ws: Workspace, kind: MissionKind) -> Report:
     spend = await act.use("spending_by_category")
     subs = await act.use("subscriptions_and_bills")
     findings: list[Finding] = []
+    if kind == "life_event" and relocation.is_move(ws.goal):
+        # What the everyday costs are now: the baseline the new city is measured against.
+        rows = {row["category"]: row for row in spend["categories"]}
+        now = [
+            f"{label} {rows[name]['three_month_average']}"
+            for label, name in (
+                ("housing", "Housing"),
+                ("food", "Food"),
+                ("transit", "Transportation"),
+                ("phone", "Phone"),
+            )
+            if "three_month_average" in rows.get(name, {})
+        ]
+        if now:
+            findings.append(
+                Finding(
+                    tone="info",
+                    title="Your everyday costs today",
+                    detail="A month on average: " + ", ".join(now) + ". The new city is "
+                    "measured against these.",
+                )
+            )
     for row in spend["categories"]:
         name = row["category"]
         if row.get("over_budget"):
@@ -159,8 +182,9 @@ async def cashflow(act: Act, ws: Workspace, kind: MissionKind) -> Report:
         )
     room = ws.coach.account_total("chequing") - ws.coach.unpaid_bills_cents - CUSHION_CENTS
     card = d.credit
-    # A purchase question isn't the time to suggest paying the card off.
-    if card and card.balance_cents > 0 and chequing and kind != "purchase":
+    # A purchase or a move isn't the time to suggest paying the card off: the cash is spoken for.
+    moving = kind == "life_event" and relocation.is_move(ws.goal)
+    if card and card.balance_cents > 0 and chequing and kind != "purchase" and not moving:
         await act.think("Checking whether the card can be paid off")
         await act.use("credit_card_payment", payment=_plain(card.balance_cents))
         if card.balance_cents <= room and not forecast.shortfall_cents:
@@ -445,9 +469,121 @@ async def _purchase(act: Act, ws: Workspace) -> Report:
     return Report(summary=f"{verdict.title}. {verdict.detail}", findings=findings)
 
 
+_RENT = re.compile(
+    r"\brent\b[^$.?!]{0,40}?(\$\s?\d[\d,]*(?:\.\d{2})?)"
+    r"|(\$\s?\d[\d,]*(?:\.\d{2})?)[^$.?!]{0,25}?\brent\b",
+    re.IGNORECASE,
+)
+
+
+def rent_in(text: str) -> int | None:
+    """The rent the user wrote ("my rent will be $1,800", "$1,800 rent"), in cents."""
+    found = _RENT.search(text)
+    amount = found and (found.group(1) or found.group(2))
+    return parse_cad(amount.replace("$", "").strip()) if amount else None
+
+
+def move_thinking(ws: Workspace) -> tuple[str, str]:
+    """What a move involves, and what the user asked about versus what they left out: the
+    question the agents ask themselves before planning one."""
+    place = relocation.destination(ws.goal)
+    asked, missed = relocation.asked_about(f"{ws.goal} {ws.follow_up}")
+    title = (
+        f"Thinking it through: what does moving to {place.city if place else 'a new city'} take?"
+    )
+    detail = (
+        "Getting there, first and last month's rent, movers, and setting up; then rent, "
+        "transit, groceries, phone, utilities, and tenant insurance every month; and the "
+        "paperwork (address, health card, licence)."
+    )
+    if asked:
+        detail += f" You asked about {_listed([c.label.lower() for c in asked])}"
+        if missed:
+            detail += f"; the team also covers {_listed([c.label.lower() for c in missed])}"
+        detail += "."
+    return title, detail
+
+
+def _listed(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+async def _move(act: Act, ws: Workspace) -> Report:
+    """A move, costed in full: the user's own figures (asking for the rent if they gave none),
+    today's spending for the rest, and a checklist; then a goal for the upfront cost. The
+    built-in way: with a model, Penny thinks the situation through itself."""
+    title, detail = move_thinking(ws)
+    await act.think(title)
+    await act.think(detail)
+    place = relocation.destination(ws.goal)
+    city = place.city if place else None
+    rent_cents = rent_in(f"{ws.goal} {ws.follow_up}")
+    rent = _plain(rent_cents) if rent_cents else None
+    if rent is None:
+        rent = await _expected_rent(act, ws, f"Move to {city}" if city else "Moving fund")
+    result = await act.use("plan_move", city=city, monthly_rent=rent)
+    plan = ws.costs
+    if "error" in result or plan is None or not ws.checklist:
+        return Report(summary="Tell me where you're moving and I'll cost the whole move.")
+    priced = ", ".join(f"{i.label.lower()} {i.amount}" for i in plan.upfront if i.amount)
+    unpriced = [i.label.lower() for i in plan.upfront if not i.amount]
+    direction = "up" if plan.change_up else "down"
+    findings = [
+        Finding(
+            tone="info",
+            title=f"Upfront: {plan.upfront_total}",
+            detail=f"Priced: {priced}."
+            + (f" Still to price: {', '.join(unpriced)}." if unpriced else ""),
+        ),
+        Finding(
+            tone="watch" if plan.change_up else "good",
+            title=f"Monthly costs go {direction} {plan.monthly_change}",
+            detail=f"{plan.monthly_total} a month there for the same things that cost "
+            f"{plan.monthly_now} now.",
+        ),
+    ]
+    if plan.surplus_after and plan.surplus_after.startswith("-"):
+        findings.insert(
+            0,
+            Finding(
+                tone="alert",
+                title="Your monthly budget won't fit yet",
+                detail=f"After the move you'd be {plan.surplus_after.lstrip('-')} short each "
+                "month: the rent or the extras need to come down.",
+            ),
+        )
+    first = ws.checklist[0]
+    findings.append(
+        Finding(
+            tone="info",
+            title=f"{len(ws.checklist)}-step moving checklist",
+            detail=f"First: {first.title.lower()} by {_day(first.due_on)}.",
+        )
+    )
+    total = parse_cad(plan.upfront_total.replace("$", ""))
+    move_on = relocation.move_date(ws.goal, ws.today)
+    if total:
+        await act.use(
+            "draft_goal",
+            name=plan.title,
+            target=_plain(total),
+            target_date=move_on.isoformat() if move_on else None,
+        )
+    await act.use(
+        "set_reminder", title=first.title, detail=first.detail, due_on=first.due_on.isoformat()
+    )
+    return Report(
+        summary=f"{plan.title} takes {plan.upfront_total} upfront, and monthly costs go "
+        f"{direction} {plan.monthly_change}.",
+        findings=findings[:4],
+    )
+
+
 async def planner(act: Act, ws: Workspace, kind: MissionKind) -> Report:
     if kind == "purchase":
         return await _purchase(act, ws)
+    if kind == "life_event" and relocation.is_move(ws.goal):
+        return await _move(act, ws)
     d, f = ws.dashboard, ws.facts
     findings: list[Finding] = []
     await act.think("Looking at your goals and what you can set aside")
@@ -699,6 +835,76 @@ def close_gap(shortfall: str) -> Playbook:
     return run
 
 
+# How much of each want a plan trims when a move doesn't fit: enough to matter, not so much
+# that the plan is unrealistic.
+TRIM_PERCENT = 20
+
+
+def fit_plan(gap: str) -> Playbook:
+    """Analyst, after a plan was costed and leaves the user short each month: trim the wants
+    first, then work out the most the biggest new monthly cost (usually the rent) can be."""
+
+    async def run(act: Act, ws: Workspace, kind: MissionKind) -> Report:
+        f, plan = ws.facts, ws.costs
+        await act.think(f"Looking for {gap} a month so the plan fits")
+        await act.use("spending_by_category")
+        gap_cents = parse_cad(gap.replace("$", ""))
+        names = {c.name: c.id for c in ws.dashboard.categories}
+        trims = []
+        for category in ws.coach.prior.categories:
+            if names.get(category.category_name) in NEED_CATEGORIES:
+                continue
+            average = ws.coach.category_average_cents(category.category_name) or 0
+            cut = average * TRIM_PERCENT // 100 // 100 * 100  # whole dollars
+            if cut > 0:
+                trims.append((category.category_name, cut))
+        findings: list[Finding] = []
+        freed = sum(cut for _, cut in trims)
+        if freed:
+            findings.append(
+                Finding(
+                    tone="watch",
+                    title=f"Trim wants {TRIM_PERCENT}%: "
+                    f"{f.money('Freed by trimming wants', freed, 'plan')} a month",
+                    detail=", ".join(
+                        f"{name} {f.money(f'Trim {name}', cut, 'plan')}" for name, cut in trims
+                    )
+                    + " less a month.",
+                )
+            )
+        left = gap_cents - freed
+        priced = [
+            (item, parse_cad(item.amount.replace("$", "")))
+            for item in (plan.monthly if plan else [])
+            if item.amount
+        ]
+        biggest = max(priced, key=lambda pair: pair[1], default=None)
+        if left <= 0:
+            findings.append(Finding(tone="good", title="Trimming wants closes the gap", detail=""))
+        elif biggest and biggest[1] > left:
+            item, cents = biggest
+            label = item.label.lower()
+            fits = f.money(f"{item.label} that fits", cents - left, "plan")
+            findings.append(
+                Finding(
+                    tone="alert",
+                    title=f"{item.label} of {fits} or less fits",
+                    detail=f"That's {f.money(f'{item.label} to cut', left, 'plan')} under "
+                    f"{item.amount}"
+                    + (
+                        ": a shared place or a roommate gets you there." if label == "rent" else "."
+                    ),
+                )
+            )
+        if not findings:
+            return Report(summary="The gap is bigger than any one cost: it needs more income.")
+        return Report(
+            summary=" ".join(f"{finding.title}." for finding in findings), findings=findings
+        )
+
+    return run
+
+
 def benefit_to_goal(benefit: str, up_to: str, goal: str, target: str) -> Playbook:
     """Planner, after the Benefits finder found money the user may get: point it at a goal."""
 
@@ -773,6 +979,8 @@ TEAM: dict[AgentId, Subagent] = {
                 "plan_savings",
                 "spending_by_category",
                 "move_cost_estimate",
+                "plan_move",
+                "cost_plan",
                 "draft_goal",
                 "draft_goal_contribution",
                 "draft_budget",
@@ -868,9 +1076,92 @@ PLAYS: dict[str, str] = {
     ),
     "benefits": "After benefits_screen, use web_research once to check the most valuable match's "
     "current amount or deadline, and cite it.",
+    # A move (a life event, told apart by its words: app.domain.relocation.is_move).
+    "planner_move": (
+        "For a move: plan_move with every figure the user said or a teammate's or your own "
+        "web_research found (null for the rest: today's spending fills in), then draft_goal "
+        "'Move to <City>' with its upfront_total as the target and the move date, and "
+        "set_reminder for the first checklist task. If no teammate is researching costs, "
+        "web_research what you need in at most two questions (rent and a transit pass; a "
+        "one-way trip and movers). Ask the user their expected rent only if they gave none. "
+        "Findings: the upfront total and its biggest parts, the monthly change, the surplus "
+        "after the move, and the costs they didn't ask about that you covered."
+    ),
+    "analyst_move": "For a move: spending_by_category, then report what the user spends now on "
+    "rent, transit, groceries, and phone (the baseline for the new city), and the flexible "
+    "spending that could make room for the move.",
+    "cashflow_move": "For a move: check that every bill until the move is covered, and what "
+    "chequing can set aside after bills each payday; set a reminder for the last rent payment "
+    "at the old place.",
+    "benefits_move": "For a move to another province: after benefits_screen, web_research once "
+    "which provincial benefits or credits for students change with the move, and cite it.",
 }
 
 
-def instructions_for(agent: Subagent, kind: MissionKind | None = None) -> str:
-    play = PLAYS.get(f"{agent.id}_{kind}") or PLAYS.get(agent.id)
+# ------------------------------------------------------------------ specialists
+
+# What a specialist Penny creates for a mission may use: the user's numbers, the web, a question
+# to the user, costing, reminders, and drafting goals and budgets (which the user approves).
+# Never a transfer: moving money stays with the Cash-flow guard and the Planner.
+SPECIALIST_TOOLS: tuple[str, ...] = (
+    "money_overview",
+    "spending_by_category",
+    "subscriptions_and_bills",
+    "goals_status",
+    "check_affordability",
+    "price_with_tax",
+    "plan_savings",
+    "cost_plan",
+    "plan_move",
+    "benefits_screen",
+    "web_research",
+    "ask_user",
+    "set_reminder",
+    "recommend_guide",
+    "draft_goal",
+    "draft_budget",
+)
+MAX_SPECIALISTS = 3
+
+
+async def _specialist_without_model(act: Act, ws: Workspace, kind: MissionKind) -> Report:
+    """A specialist exists only as a model agent; without one its part isn't done."""
+    await act.think("This one needs Penny's AI, which isn't available right now")
+    return Report(summary="Couldn't work on this part this time; the team's other work stands.")
+
+
+def specialist(name: str, emoji: str, role: str, tools: list[str] | None = None) -> Subagent:
+    """An agent Penny creates for one mission (a Housing scout, a Health coverage checker),
+    with a subset of the specialist tools."""
+    allowed = tuple(t for t in (tools or SPECIALIST_TOOLS) if t in SPECIALIST_TOOLS)
+    # Every specialist can read the money overview and search the web.
+    allowed = tuple(dict.fromkeys(("money_overview", "web_research", *allowed)))
+    return Subagent(
+        "specialist",
+        " ".join(name.split())[:40] or "Specialist",
+        (emoji.strip()[:4] or "✨"),
+        " ".join(role.split())[:200],
+        allowed,
+        _specialist_without_model,
+    )
+
+
+_SPECIALIST_BRIEF = (
+    "Penny created you for this mission. Work out your part completely: use web_research for "
+    "current facts Penny's data can't know (prices, rules, deadlines, how things work in the "
+    "user's province), cost things with cost_plan (plan_move for a move), and draft a goal "
+    "or budget when it clearly helps. Your findings tell the user what they must do, what's "
+    "worth their money, and what isn't (say why)."
+)
+
+
+def instructions_for(agent: Subagent, kind: MissionKind | None = None, goal: str = "") -> str:
+    if agent.id == "specialist":
+        return f"{RULES}\nYou are the {agent.name}: {agent.role}\n{_SPECIALIST_BRIEF}"
+    moving = kind == "life_event" and relocation.is_move(goal)
+    play = (
+        (PLAYS.get(f"{agent.id}_move") if moving else None)
+        or PLAYS.get(f"{agent.id}_{kind}")
+        or PLAYS.get(agent.id)
+    )
     return f"{RULES}\nYou are the {agent.name}: {agent.role}" + (f"\n{play}" if play else "")
