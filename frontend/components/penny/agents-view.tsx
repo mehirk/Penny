@@ -763,7 +763,7 @@ function MissionAnswer({
               <SectionTitle color="#9b6cf0">What the agents found</SectionTitle>
               <ul className="mt-3 space-y-2">
                 {findings.map(({ finding, lane }) => (
-                  <FindingCard key={`${lane.agent}-${lane.wave}-${finding.title}`} finding={finding} lane={lane} />
+                  <FindingCard key={`${lane.name}-${lane.wave}-${finding.title}`} finding={finding} lane={lane} />
                 ))}
               </ul>
               {sources.length > 0 && (
@@ -1211,7 +1211,7 @@ function HowItWorked({ run }: { run: MissionRun }) {
       {run.lanes
         .filter((lane) => lane.wave === 1)
         .map((lane) => (
-          <AgentRow key={`${lane.agent}-1`} lane={lane} />
+          <AgentRow key={`${lane.name}-1`} lane={lane} />
         ))}
 
       {run.lanes.some((lane) => lane.wave > 1) && (
@@ -1226,7 +1226,7 @@ function HowItWorked({ run }: { run: MissionRun }) {
           {run.lanes
             .filter((lane) => lane.wave > 1)
             .map((lane) => (
-              <AgentRow key={`${lane.agent}-${lane.wave}`} lane={lane} />
+              <AgentRow key={`${lane.name}-${lane.wave}`} lane={lane} />
             ))}
         </>
       )}
