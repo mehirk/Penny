@@ -29,3 +29,19 @@ supabase/.temp/
 
 # Launch videos made with /brag
 brag-output*/
+
+
+# OS files
+.DS_Store
+
+# Local media: recordings and video work (not part of the app)
+/*.mp4
+/*.mov
+videos for mp/
+inspirational video.mp4
+
+# AI assistant working notes (kept locally, not part of the submission)
+AGENTS.md
+CLAUDE.md
+.claude/
+DECISIONS.md
