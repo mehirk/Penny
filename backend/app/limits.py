@@ -19,7 +19,7 @@ AI_CALLS_PER_MINUTE = 40
 AI_CALLS_PER_DAY = 300
 # What a person can ask Penny AI each day: one chat message or one mission they start is one turn,
 # however many model calls it makes. The demo account (PENNY_DEMO_OWNER_USER_ID) is exempt.
-PENNY_AI_TURNS_PER_DAY = 10
+PENNY_AI_TURNS_PER_DAY = 5
 # People tracked at once per limit; the least recently seen are forgotten first.
 MAX_TRACKED = 20_000
 
@@ -61,6 +61,16 @@ class RateLimiter:
                 self._events.popitem(last=False)
             return None
 
+    def peek(self, key: str) -> tuple[int, int | None]:
+        """Without recording anything: how many events this key has in the window now, and the
+        whole seconds until the oldest of them expires (None when it has none)."""
+        now = self._clock()
+        with self._lock:
+            events = [at for at in self._events.get(key, ()) if at > now - self._window]
+        if not events:
+            return 0, None
+        return len(events), max(1, math.ceil(events[0] + self._window - now))
+
     def reset(self) -> None:
         with self._lock:
             self._events.clear()
@@ -99,6 +109,13 @@ def spend_penny_ai_turn(user_id: str, exempt: bool = False) -> int | None:
     if exempt:
         return None
     return penny_ai_turns.retry_after(user_id)
+
+
+def penny_ai_allowance(user_id: str) -> tuple[int, int | None]:
+    """Today's Penny AI turns this person has used, and the seconds until one is free again
+    (None when they have used none). Reads only: nothing is charged."""
+    used, frees_in = penny_ai_turns.peek(user_id)
+    return min(used, PENNY_AI_TURNS_PER_DAY), frees_in
 
 
 def reset_all() -> None:

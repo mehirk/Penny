@@ -37,6 +37,7 @@ import { toneFor } from "@/components/penny/tone";
 import { useKeyboardShortcuts } from "@/components/penny/use-keyboard-shortcuts";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import {
+  agentsApi,
   type AppStep,
   type Bill,
   type Budget,
@@ -514,6 +515,15 @@ function PennyApp() {
                   onEditTransaction={setTransactionTarget}
                   onSetUp={() => setSetupOpen(true)}
                   onCapture={() => capture.current?.start("menu")}
+                  onOpenMission={(runId) =>
+                    void agentsApi
+                      .get(runId)
+                      .then((run) => {
+                        coachChat.addMission(run);
+                        navigate("ai");
+                      })
+                      .catch(() => undefined)
+                  }
                 />
               )}
               {view === "spending" && (

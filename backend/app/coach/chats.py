@@ -23,6 +23,11 @@ class ChatModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AnswerRating(ChatModel):
+    helpful: bool = Field(strict=True)
+    reason: Literal["wrong_numbers", "unclear", "not_what_i_asked", "other"] | None = None
+
+
 class ChatMessage(ChatModel):
     id: str = Field(min_length=1, max_length=64)
     role: Literal["user", "assistant"]
@@ -35,6 +40,9 @@ class ChatMessage(ChatModel):
     def _small(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         if value is not None and len(json.dumps(value)) > MAX_REPLY_BYTES:
             raise ValueError("Reply is too large to save")
+        if value is not None and "feedback" in value:
+            # "Was this helpful?" is kept with the reply; only the one-tap shape is accepted.
+            value["feedback"] = AnswerRating.model_validate(value["feedback"]).model_dump()
         return value
 
 

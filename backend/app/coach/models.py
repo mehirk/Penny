@@ -132,3 +132,15 @@ class ApprovalRequest(CoachModel):
 class ApprovalResponse(CoachModel):
     message: str
     dashboard: DashboardResponse
+
+
+class PennyAiAllowance(CoachModel):
+    """Today's Penny AI questions: one chat message or one mission the person starts is one.
+    `unlimited` is the demo account, which presenters use."""
+
+    limit: int
+    used: int
+    left: int
+    # Seconds until a used question is free again; None when none are used.
+    frees_in_seconds: int | None
+    unlimited: bool

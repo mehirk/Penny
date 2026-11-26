@@ -67,6 +67,7 @@ import { formatShortDate } from "@/lib/format";
 import { missionShareText } from "@/lib/mission-share";
 import { haptic, scheduleReminders } from "@/lib/native";
 import { cn } from "@/lib/utils";
+import { AnswerFeedbackRow } from "./answer-feedback";
 import { Mascot } from "./mascot";
 import { PlanCard } from "./plan-card";
 import { describeError, type View } from "./shared";
@@ -634,7 +635,7 @@ function MissionAnswer({
       <div className="space-y-4 border-t border-line p-4 sm:p-5">
         {brief && brief.picture.length > 0 && <FullPicture items={brief.picture} />}
         {run.costs && <CostBreakdown plan={run.costs} />}
-        {run.checklist.length > 0 && <Checklist runId={run.id} items={run.checklist} />}
+        {run.checklist.length > 0 && <Checklist run={run} onChange={onChange} />}
         {run.memory.length > 0 && (
           <ul className="space-y-1.5" aria-label="Penny remembers">
             {run.memory.map((note) => (
@@ -744,6 +745,10 @@ function MissionAnswer({
         )}
 
         <ShareWithFamily run={run} />
+        <AnswerFeedbackRow
+          value={run.feedback}
+          onRate={async (feedback) => onChange(await agentsApi.feedback(run.id, feedback))}
+        />
 
         <Details
           title={[
@@ -1000,7 +1005,7 @@ function ShareWithFamily({ run }: { run: MissionRun }) {
 
   function open() {
     setError("");
-    setText(missionShareText(run, readTicked(`penny-checklist-${run.id}`)));
+    setText(missionShareText(run, run.ticked.length ? run.ticked : readTicked(`penny-checklist-${run.id}`)));
   }
 
   async function share(body: string) {
@@ -1098,11 +1103,13 @@ function readTicked(key: string): string[] {
   }
 }
 
-/** A dated checklist; ticks stay on this device. */
-function Checklist({ runId, items }: { runId: string; items: ChecklistItem[] }) {
-  const key = `penny-checklist-${runId}`;
+/** A dated checklist. Ticks are saved to the account (Home's plan check-in counts them), with
+ * this device's copy as a fallback when offline and for ticks made before they were saved. */
+function Checklist({ run, onChange }: { run: MissionRun; onChange: (run: MissionRun) => void }) {
+  const items = run.checklist;
+  const key = `penny-checklist-${run.id}`;
   // Missions only render in the browser (after they're fetched), so storage is there to read.
-  const [ticked, setTicked] = useState<string[]>(() => readTicked(key));
+  const [ticked, setTicked] = useState<string[]>(() => (run.ticked.length ? run.ticked : readTicked(key)));
   const [all, setAll] = useState(false);
   const shown = all ? items : items.slice(0, CHECKLIST_SHOWN);
 
@@ -1112,8 +1119,12 @@ function Checklist({ runId, items }: { runId: string; items: ChecklistItem[] }) 
     try {
       localStorage.setItem(key, JSON.stringify(next));
     } catch {
-      /* ticks just won't be remembered */
+      /* the account copy below still saves them */
     }
+    agentsApi
+      .saveTicks(run.id, next)
+      .then(onChange)
+      .catch(() => undefined); // kept on this device; saved with the next tick
   }
 
   return (

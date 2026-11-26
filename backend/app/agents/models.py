@@ -211,6 +211,18 @@ class ChecklistItem(DashboardModel):
     stage: Literal["before", "moving", "after"]
 
 
+FeedbackReason = Literal["wrong_numbers", "unclear", "not_what_i_asked", "other"]
+
+
+class MissionFeedback(DashboardModel):
+    """Was the answer helpful? Kept on the mission, to measure Penny and catch bad answers."""
+
+    helpful: bool
+    # Why not, when it wasn't (one tap; no free text, so nothing personal is stored).
+    reason: FeedbackReason | None = None
+    at: datetime | None = None
+
+
 class MissionRun(DashboardModel):
     id: str
     kind: MissionKind
@@ -241,6 +253,9 @@ class MissionRun(DashboardModel):
     # The situation costed in full, and a dated checklist (a move).
     costs: CostPlan | None = None
     checklist: list[ChecklistItem] = Field(default_factory=list)
+    # Checklist items the user ticked off (ids from `checklist`), saved to the account.
+    ticked: list[str] = Field(default_factory=list)
+    feedback: MissionFeedback | None = None
     # Everything the agents drafted that changes money or data, for one approval.
     steps: list[AgentStep] = Field(default_factory=list)
     auto: list[AutoTask] = Field(default_factory=list)
@@ -280,6 +295,15 @@ class MissionApproved(DashboardModel):
     declined: list[str] = Field(default_factory=list, max_length=20)
 
 
+class ChecklistTicks(DashboardModel):
+    ticked: list[str] = Field(max_length=50)
+
+
+class FeedbackWrite(DashboardModel):
+    helpful: bool
+    reason: FeedbackReason | None = None
+
+
 class MissionDeclined(DashboardModel):
     step_ids: list[str] = Field(min_length=1, max_length=20)
 
@@ -312,3 +336,6 @@ class AgentStats(DashboardModel):
     findings: int
     drafted: int
     approved: int
+    # Answers from missions it worked on that the user rated.
+    helpful: int = 0
+    not_helpful: int = 0
