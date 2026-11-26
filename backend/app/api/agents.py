@@ -10,10 +10,14 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, status
 
 from app.agents import asking
+from app.agents.checkin import PlanCheckIn, check_ins
 from app.agents.models import (
     AgentStats,
+    ChecklistTicks,
+    FeedbackWrite,
     MissionApproved,
     MissionDeclined,
+    MissionFeedback,
     MissionKind,
     MissionRun,
     MissionStart,
@@ -236,6 +240,53 @@ def answer_question(
     return run
 
 
+def _own_run(user: CurrentUser, run_id: str) -> tuple[str, MissionRun]:
+    owner = stores.data_owner(user.id)
+    run = run_store.get(owner, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mission not found")
+    return owner, run
+
+
+@router.put("/agents/runs/{run_id}/checklist", response_model=MissionRun)
+def save_ticks(run_id: str, request: ChecklistTicks, current_user: AuthenticatedUser) -> MissionRun:
+    """The checklist items the user has ticked off, so they follow them across devices."""
+    owner, run = _own_run(current_user, run_id)
+    known = {item.id for item in run.checklist}
+    if not set(request.ticked) <= known:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown checklist item")
+    run.ticked = [item.id for item in run.checklist if item.id in set(request.ticked)]
+    run_store.save(owner, run)
+    return run
+
+
+@router.put("/agents/runs/{run_id}/feedback", response_model=MissionRun)
+def save_feedback(
+    run_id: str, request: FeedbackWrite, current_user: AuthenticatedUser
+) -> MissionRun:
+    """Was the answer helpful? One rating per mission; rating again replaces it."""
+    owner, run = _own_run(current_user, run_id)
+    if run.status != "done":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Rate the answer once the mission finishes")
+    run.feedback = MissionFeedback(
+        helpful=request.helpful,
+        reason=None if request.helpful else request.reason,
+        at=datetime.now(UTC),
+    )
+    run_store.save(owner, run)
+    return run
+
+
+@router.get("/agents/plans", response_model=list[PlanCheckIn])
+def plan_check_ins(current_user: AuthenticatedUser) -> list[PlanCheckIn]:
+    """Plans the user approved, for Home: checklist progress, what's next, and the savings goal
+    the mission set up. No model call."""
+    store = user_store(current_user)
+    dashboard = store.dashboard_for_user(current_user.id)
+    runs = run_store.list(stores.data_owner(current_user.id))
+    return check_ins(runs, dashboard.savings_goals, store.today())
+
+
 @router.get("/agents/stats", response_model=list[AgentStats])
 def agent_stats(current_user: AuthenticatedUser) -> list[AgentStats]:
     """Each agent's record across the user's missions."""
@@ -254,6 +305,10 @@ def agent_stats(current_user: AuthenticatedUser) -> list[AgentStats]:
                 drafted=sum(len(lane.drafted) for _, lane in lanes),
                 approved=sum(
                     1 for run, lane in lanes for step in lane.drafted if step in run.approved
+                ),
+                helpful=len({run.id for run, _ in lanes if run.feedback and run.feedback.helpful}),
+                not_helpful=len(
+                    {run.id for run, _ in lanes if run.feedback and not run.feedback.helpful}
                 ),
             )
         )

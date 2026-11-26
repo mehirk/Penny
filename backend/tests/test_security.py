@@ -230,13 +230,13 @@ def test_percents_are_easy_to_read(basis_points: int, shown: str) -> None:
     assert book.unverified_figures(f"That's {shown.lstrip('-')}.") == []
 
 
-def test_penny_ai_allows_ten_turns_a_day() -> None:
-    assert limits.PENNY_AI_TURNS_PER_DAY == 10
-    for _ in range(10):
+def test_penny_ai_allows_five_turns_a_day() -> None:
+    assert limits.PENNY_AI_TURNS_PER_DAY == 5
+    for _ in range(5):
         assert limits.spend_penny_ai_turn("user-1") is None
     wait = limits.spend_penny_ai_turn("user-1")
     assert wait is not None and 0 < wait <= 86_400
-    assert limits.spend_penny_ai_turn("user-2") is None  # each person has their own ten
+    assert limits.spend_penny_ai_turn("user-2") is None  # each person has their own five
 
 
 def test_exempt_person_is_never_counted() -> None:
@@ -281,3 +281,66 @@ def test_demo_account_is_exempt(client: TestClient, monkeypatch: pytest.MonkeyPa
     ask = {"messages": [{"role": "user", "content": "How am I doing this month?"}]}
     for _ in range(3):
         assert client.post("/api/v1/coach/chat", json=ask).status_code == 200
+
+
+def test_allowance_counts_down_without_using_a_question(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fresh = client.get("/api/v1/coach/allowance").json()
+    assert fresh == {"limit": 5, "used": 0, "left": 5, "frees_in_seconds": None, "unlimited": False}
+    assert client.get("/api/v1/coach/allowance").json()["left"] == 5  # reading uses none
+    ask = {"messages": [{"role": "user", "content": "How am I doing this month?"}]}
+    assert client.post("/api/v1/coach/chat", json=ask).status_code == 200
+    after = client.get("/api/v1/coach/allowance").json()
+    assert after["used"] == 1 and after["left"] == 4
+    assert 0 < after["frees_in_seconds"] <= 86_400
+
+
+def test_allowance_hits_zero_and_the_demo_account_is_unlimited(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.config import get_settings
+
+    for _ in range(limits.PENNY_AI_TURNS_PER_DAY + 2):
+        limits.spend_penny_ai_turn("user-sec")
+    spent = client.get("/api/v1/coach/allowance").json()
+    assert spent["used"] == 5 and spent["left"] == 0
+    monkeypatch.setattr(get_settings(), "demo_owner_user_id", "user-sec")
+    assert client.get("/api/v1/coach/allowance").json()["unlimited"] is True
+
+
+def test_limiter_peek_records_nothing() -> None:
+    now = [0.0]
+    limiter = limits.RateLimiter(2, 100, clock=lambda: now[0])
+    assert limiter.peek("a") == (0, None)
+    assert limiter.retry_after("a") is None
+    now[0] = 40.0
+    assert limiter.peek("a") == (1, 60)
+    assert limiter.peek("a") == (1, 60)
+    now[0] = 101.0
+    assert limiter.peek("a") == (0, None)
+
+
+def test_chat_answer_ratings_are_kept_and_checked(client: TestClient) -> None:
+    def save(feedback: object) -> int:
+        body = {
+            "title": "Rent",
+            "messages": [
+                {"id": "m1", "role": "user", "content": "Can I afford rent?"},
+                {
+                    "id": "m2",
+                    "role": "assistant",
+                    "content": "Yes.",
+                    "reply": {"reply": "Yes.", "feedback": feedback},
+                },
+            ],
+        }
+        return client.put("/api/v1/coach/conversations/chat-rated", json=body).status_code
+
+    assert save({"helpful": False, "reason": "unclear"}) == 200
+    [saved] = [
+        c for c in client.get("/api/v1/coach/conversations").json() if c["id"] == "chat-rated"
+    ]
+    assert saved["messages"][1]["reply"]["feedback"] == {"helpful": False, "reason": "unclear"}
+    assert save({"helpful": "yes"}) == 422
+    assert save({"helpful": True, "note": "my SIN is 123 456 789"}) == 422  # no free text

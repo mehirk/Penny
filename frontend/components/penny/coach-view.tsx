@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   type AgentApplied,
+  type AnswerFeedback,
   agentApi,
   type AgentPlan,
   ApiError,
@@ -41,10 +42,12 @@ import {
   type MissionKind,
   type MissionRun,
   agentsApi,
+  type PennyAiAllowance,
   type SavedConversation,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { type CaptureStart } from "./agent-capture";
+import { AnswerFeedbackRow } from "./answer-feedback";
 import { AGENT_PRESETS, MissionMessage } from "./agents-view";
 import { PlanCard } from "./plan-card";
 import { confetti, play } from "./game-fx";
@@ -72,6 +75,8 @@ type CoachMessage = {
   reply?: CoachReply;
   agent?: AgentMessage;
   mission?: MissionRef;
+  /** Was this answer helpful? Saved with the chat (in the reply slot). */
+  feedback?: AnswerFeedback;
 };
 type AppRunner = { current: ((step: AppStep) => void) | null };
 type ChatError = { title: string; detail: string };
@@ -159,7 +164,9 @@ function fromSaved(saved: SavedConversation): Conversation {
       const slot = reply as { agent?: AgentMessage; mission?: MissionRef } | null | undefined;
       if (slot?.agent) return { ...message, agent: slot.agent };
       if (slot?.mission) return { ...message, mission: slot.mission };
-      return reply ? { ...message, reply } : message;
+      if (!reply) return message;
+      const { feedback, ...rest } = reply as CoachReply & { feedback?: AnswerFeedback };
+      return feedback ? { ...message, reply: rest, feedback } : { ...message, reply: rest };
     }),
   };
 }
@@ -173,8 +180,12 @@ function upload(conversation: Conversation): Promise<unknown> {
     ...conversation,
     messages: conversation.messages
       .slice(-MAX_SAVED_MESSAGES)
-      .map(({ agent, mission, ...message }) =>
-        agent || mission ? { ...message, reply: (agent ? { agent } : { mission }) as unknown as CoachReply } : message,
+      .map(({ agent, mission, feedback, ...message }) =>
+        agent || mission
+          ? { ...message, reply: (agent ? { agent } : { mission }) as unknown as CoachReply }
+          : feedback && message.reply
+            ? { ...message, reply: { ...message.reply, feedback } as CoachReply }
+            : message,
       ),
     proposals,
   });
@@ -192,6 +203,7 @@ export function useCoachChat(appRunner?: AppRunner) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
+  const [allowance, setAllowance] = useState<PennyAiAllowance | null>(null);
   const latest = useRef({ conversations, activeId });
   // Chats changed here since the last save, and every chat touched this session.
   const unsaved = useRef(new Set<string>());
@@ -242,6 +254,17 @@ export function useCoachChat(appRunner?: AppRunner) {
     }
     unsaved.current.clear();
   }, [conversations]);
+
+  /** Today's Penny AI questions left, read again after each one is asked. */
+  const refreshAllowance = useCallback(() => {
+    coachApi
+      .allowance()
+      .then(setAllowance)
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    refreshAllowance();
+  }, [refreshAllowance]);
 
   const active = conversations.find((item) => item.id === activeId) ?? null;
   const messages = active?.messages ?? [];
@@ -383,9 +406,10 @@ export function useCoachChat(appRunner?: AppRunner) {
         setError(describeError(reason, "Penny couldn’t answer"));
       } finally {
         setPending(false);
+        refreshAllowance();
       }
     },
-    [pending, update, appRunner],
+    [pending, update, appRunner, refreshAllowance],
   );
 
   /** Opens a new chat with a mission in it: one started elsewhere (a preset, the voice orb), or
@@ -431,9 +455,10 @@ export function useCoachChat(appRunner?: AppRunner) {
         setError(describeError(reason, "The agents couldn’t start"));
       } finally {
         setPending(false);
+        refreshAllowance();
       }
     },
-    [addMission],
+    [addMission, refreshAllowance],
   );
 
   /** A finished mission's answer becomes the message's text, so follow-ups have the context. */
@@ -460,6 +485,21 @@ export function useCoachChat(appRunner?: AppRunner) {
         ...conversation,
         messages: conversation.messages.map((message) =>
           message.id === messageId && message.agent ? { ...message, agent: { ...message.agent, ...change } } : message,
+        ),
+      }));
+    },
+    [update],
+  );
+
+  /** Records whether a chat answer helped, saved with the chat. */
+  const rate = useCallback(
+    (messageId: string, feedback: AnswerFeedback) => {
+      const id = latest.current.conversations.find((item) => item.messages.some((m) => m.id === messageId))?.id;
+      if (!id) return;
+      update(id, (conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((message) =>
+          message.id === messageId ? { ...message, feedback } : message,
         ),
       }));
     },
@@ -515,6 +555,8 @@ export function useCoachChat(appRunner?: AppRunner) {
     proposals: active?.proposals ?? {},
     pending,
     error,
+    allowance,
+    rate,
     send,
     retry,
     newChat,
@@ -713,6 +755,8 @@ export function CoachView({
                     onAsk={(text) => void chat.send(text)}
                     onApprove={(proposal) => void approve(proposal)}
                     onDismiss={(proposal) => chat.setProposal(proposal.id, "dismissed")}
+                    feedback={message.feedback}
+                    onRate={(feedback) => chat.rate(message.id, feedback)}
                   />
                 ),
               )}
@@ -749,6 +793,7 @@ export function CoachView({
             onCamera={() => onCapture("camera")}
             onVoice={() => onCapture("voice", (text) => void chat.send(text))}
           />
+          {chat.allowance && <AllowanceMeter allowance={chat.allowance} />}
           <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-ink-subtle">
             <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             Educational guidance using fictional data. Every amount Penny quotes is checked against your records, and
@@ -779,6 +824,51 @@ export function CoachView({
           {historyList}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Today's Penny AI questions: a dot each, and when more come back once they're used up. */
+function AllowanceMeter({ allowance }: { allowance: PennyAiAllowance }) {
+  if (allowance.unlimited)
+    return (
+      <p role="status" className="flex items-center gap-2 px-1 text-xs text-ink-subtle">
+        <Sparkles className="size-3.5 shrink-0" aria-hidden="true" />
+        Demo account: no daily limit on Penny AI questions.
+      </p>
+    );
+  const { limit, left } = allowance;
+  const hours = allowance.frees_in_seconds === null ? null : Math.max(1, Math.round(allowance.frees_in_seconds / 3600));
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-2 text-sm",
+        left === 0 ? "bg-gold-soft text-ink" : "text-ink-muted",
+      )}
+    >
+      <span className="flex gap-1" aria-hidden="true">
+        {Array.from({ length: limit }, (_, index) => (
+          <span
+            key={index}
+            className={cn("size-2.5 rounded-full", index < left ? "bg-accent-strong" : "bg-line-strong")}
+          />
+        ))}
+      </span>
+      {left > 0 ? (
+        <span>
+          <span className="font-semibold tabular-nums text-ink">
+            {left} of {limit}
+          </span>{" "}
+          Penny AI questions left today
+        </span>
+      ) : (
+        <span>
+          <span className="font-semibold text-ink">You’ve used today’s {limit} Penny AI questions.</span>
+          {hours !== null && ` More in about ${hours} hour${hours === 1 ? "" : "s"}.`} Lessons, budgets and everything
+          else still work.
+        </span>
+      )}
     </div>
   );
 }
@@ -1221,6 +1311,8 @@ function AssistantMessage({
   onApprove,
   onDismiss,
   onAddPlan,
+  feedback,
+  onRate,
 }: {
   reply: CoachReply;
   proposalState: ProposalState | undefined;
@@ -1231,6 +1323,8 @@ function AssistantMessage({
   onApprove: (proposal: CoachProposal) => void;
   onDismiss: (proposal: CoachProposal) => void;
   onAddPlan: (month: string, picked: BudgetSuggestion[]) => Promise<string | null>;
+  feedback: AnswerFeedback | undefined;
+  onRate: (feedback: AnswerFeedback) => void;
 }) {
   return (
     <article className="flex gap-3" aria-label="Penny AI reply">
@@ -1248,6 +1342,9 @@ function AssistantMessage({
           )}
           {reply.facts.length > 0 && <Facts reply={reply} />}
           <SourceLine reply={reply} />
+          <div className="mt-3 border-t border-line pt-3">
+            <AnswerFeedbackRow value={feedback} onRate={async (next) => onRate(next)} />
+          </div>
         </div>
         {reply.proposal && proposalState !== "dismissed" && (
           <ProposalCard proposal={reply.proposal} state={proposalState} onApprove={onApprove} onDismiss={onDismiss} />

@@ -773,3 +773,68 @@ def test_one_person_can_only_run_a_few_missions_at_once(
     monkeypatch.setattr(agents_api.run_store, "running", lambda _owner: agents_api.MAX_RUNNING)
     busy = client.post("/api/v1/agents/runs", json={"kind": "checkup"})
     assert busy.status_code == 429 and busy.headers["Retry-After"]
+
+
+def test_api_keeps_ticks_feedback_and_the_plan_on_home(client: TestClient) -> None:
+    run = _wait(
+        client,
+        client.post(
+            "/api/v1/agents/runs",
+            json={"kind": "life_event", "goal": "I'm moving to Toronto in September for a co-op"},
+        ).json()["id"],
+    )
+    assert run["checklist"] and run["ticked"] == [] and run["feedback"] is None
+    # Nothing approved yet: not a plan to keep track of.
+    assert client.get("/api/v1/agents/plans").json() == []
+
+    goal = next(step for step in run["steps"] if step["action"]["kind"] == "goal_new")
+    applied = client.post("/api/v1/agent/apply", json={"actions": [goal["action"]]}).json()
+    client.post(
+        f"/api/v1/agents/runs/{run['id']}/approved",
+        json={"step_ids": [goal["id"]], "undo_id": applied["undo_id"]},
+    )
+    first = run["checklist"][0]["id"]
+    ticked = client.put(f"/api/v1/agents/runs/{run['id']}/checklist", json={"ticked": [first]})
+    assert ticked.status_code == 200 and ticked.json()["ticked"] == [first]
+    unknown = client.put(f"/api/v1/agents/runs/{run['id']}/checklist", json={"ticked": ["nope"]})
+    assert unknown.status_code == 422
+
+    [plan] = client.get("/api/v1/agents/plans").json()
+    assert plan["run_id"] == run["id"] and plan["done"] == 1
+    assert plan["total"] == len(run["checklist"])
+    assert plan["goal"]["name"] == goal["action"]["name"]
+    assert plan["goal"]["target_cents"] == goal["action"]["target_cents"]
+
+    rated = client.put(
+        f"/api/v1/agents/runs/{run['id']}/feedback",
+        json={"helpful": False, "reason": "unclear"},
+    ).json()
+    assert rated["feedback"]["helpful"] is False and rated["feedback"]["reason"] == "unclear"
+    # Rating again replaces it; a helpful answer keeps no reason.
+    rated = client.put(
+        f"/api/v1/agents/runs/{run['id']}/feedback", json={"helpful": True, "reason": "unclear"}
+    ).json()
+    assert rated["feedback"]["helpful"] is True and rated["feedback"]["reason"] is None
+    bad = client.put(f"/api/v1/agents/runs/{run['id']}/feedback", json={"helpful": "maybe"})
+    assert bad.status_code == 422
+    assert (
+        client.put("/api/v1/agents/runs/run-none/feedback", json={"helpful": True}).status_code
+        == 404
+    )
+    stats = {s["agent"]: s for s in client.get("/api/v1/agents/stats").json()}
+    assert stats["planner"]["helpful"] == 1 and stats["planner"]["not_helpful"] == 0
+    assert stats["people"]["helpful"] == 0
+
+
+def test_feedback_waits_for_the_mission_to_finish(client: TestClient) -> None:
+    from app.api import agents as agents_api
+    from app.main import app
+    from app.store import stores
+
+    user = app.dependency_overrides[get_current_user]().id
+    running = MissionRun(
+        id="run-running", kind="checkup", goal="", title="Check-up", started_at=datetime.now(UTC)
+    )
+    agents_api.run_store.save(stores.data_owner(user), running)
+    early = client.put("/api/v1/agents/runs/run-running/feedback", json={"helpful": True})
+    assert early.status_code == 409

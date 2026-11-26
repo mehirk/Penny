@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, status
 
+from app import limits
 from app.api.deps import AuthenticatedUser, spend_penny_ai_turn, user_store
 from app.auth import CurrentUser
 from app.coach.chats import Conversation, ConversationWrite, chat_store
@@ -14,6 +15,7 @@ from app.coach.models import (
     BriefResponse,
     ChatRequest,
     ChatResponse,
+    PennyAiAllowance,
 )
 from app.config import get_settings
 from app.store import stores
@@ -29,6 +31,20 @@ def _coach(user: CurrentUser) -> Coach:
 def coach_brief(current_user: AuthenticatedUser) -> BriefResponse:
     """Deterministic check-in signals for the current month; no model call."""
     return _coach(current_user).brief(current_user.id)
+
+
+@router.get("/allowance", response_model=PennyAiAllowance)
+def penny_ai_allowance(current_user: AuthenticatedUser) -> PennyAiAllowance:
+    """How many of today's Penny AI questions are left. Reading it uses none."""
+    limit = limits.PENNY_AI_TURNS_PER_DAY
+    if current_user.id == get_settings().demo_owner_user_id:
+        return PennyAiAllowance(
+            limit=limit, used=0, left=limit, frees_in_seconds=None, unlimited=True
+        )
+    used, frees_in = limits.penny_ai_allowance(current_user.id)
+    return PennyAiAllowance(
+        limit=limit, used=used, left=limit - used, frees_in_seconds=frees_in, unlimited=False
+    )
 
 
 @router.post("/chat", response_model=ChatResponse)

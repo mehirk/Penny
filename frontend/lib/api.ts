@@ -1212,6 +1212,7 @@ export const coachApi = {
   deleteConversation: (id: string) =>
     authorizedRequest<void>(`/api/v1/coach/conversations/${encodeURIComponent(id)}`, { method: "DELETE" }),
   brief: () => authorizedRequest<CoachBrief>("/api/v1/coach/brief"),
+  allowance: () => authorizedRequest<PennyAiAllowance>("/api/v1/coach/allowance"),
   chat: (messages: { role: CoachRole; content: string }[]) =>
     authorizedRequest<CoachReply>("/api/v1/coach/chat", { method: "POST", body: JSON.stringify({ messages }) }),
   approve: (proposal: CoachProposal) =>
@@ -1444,6 +1445,35 @@ export type Verification = {
   notes: string[];
   steps: TraceStep[];
 };
+export type FeedbackReason = "wrong_numbers" | "unclear" | "not_what_i_asked" | "other";
+/** Was an answer helpful? `reason` only when it wasn't. */
+export type AnswerFeedback = { helpful: boolean; reason: FeedbackReason | null };
+/** An approved mission Home keeps track of (app/agents/checkin.py). */
+export type PlanCheckIn = {
+  run_id: string;
+  title: string;
+  done: number;
+  total: number;
+  overdue: number;
+  next: { item_id: string; title: string; due_on: string; overdue: boolean } | null;
+  goal: {
+    goal_id: string;
+    name: string;
+    current_cents: number;
+    target_cents: number;
+    progress_basis_points: number;
+    target_date: string | null;
+  } | null;
+};
+/** Today's Penny AI questions (one chat message or one mission started is one). */
+export type PennyAiAllowance = {
+  limit: number;
+  used: number;
+  left: number;
+  frees_in_seconds: number | null;
+  /** The demo account presenters use. */
+  unlimited: boolean;
+};
 export type MissionRun = {
   id: string;
   kind: MissionKind;
@@ -1471,6 +1501,9 @@ export type MissionRun = {
   /** The situation costed in full, and a dated checklist (a move). */
   costs: CostPlan | null;
   checklist: ChecklistItem[];
+  /** Checklist items ticked off, saved to the account. */
+  ticked: string[];
+  feedback: (AnswerFeedback & { at: string | null }) | null;
   steps: AgentStep[];
   auto: AutoTask[];
   approved: string[];
@@ -1526,4 +1559,15 @@ export const agentsApi = {
       method: "POST",
       body: JSON.stringify({ question_id, answer }),
     }),
+  saveTicks: (id: string, ticked: string[]) =>
+    authorizedRequest<MissionRun>(`/api/v1/agents/runs/${encodeURIComponent(id)}/checklist`, {
+      method: "PUT",
+      body: JSON.stringify({ ticked }),
+    }),
+  feedback: (id: string, feedback: AnswerFeedback) =>
+    authorizedRequest<MissionRun>(`/api/v1/agents/runs/${encodeURIComponent(id)}/feedback`, {
+      method: "PUT",
+      body: JSON.stringify(feedback),
+    }),
+  plans: () => authorizedRequest<PlanCheckIn[]>("/api/v1/agents/plans"),
 };

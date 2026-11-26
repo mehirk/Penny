@@ -1,10 +1,17 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, X, ChevronRight, CreditCard } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import type { AccountType, Dashboard, SpendingRunway, Transaction } from "@/lib/api";
+import {
+  type AccountType,
+  agentsApi,
+  type Dashboard,
+  type PlanCheckIn,
+  type SpendingRunway,
+  type Transaction,
+} from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { categoryIcon, categoryTint, tintStyle } from "./category-icons";
@@ -38,9 +45,19 @@ type Props = {
   onSetUp?: () => void;
   /** Opens Penny's agent (snap or say it). */
   onCapture?: () => void;
+  /** Opens an approved plan's mission in Penny AI. */
+  onOpenMission?: (runId: string) => void;
 };
 
-export function TodayView({ dashboard, splits, onNavigate, onEditTransaction, onSetUp, onCapture }: Props) {
+export function TodayView({
+  dashboard,
+  splits,
+  onNavigate,
+  onEditTransaction,
+  onSetUp,
+  onCapture,
+  onOpenMission,
+}: Props) {
   // An account ("#today/<account id>") or the month's spending ("#today/spent") opens as its own page.
   const [pageId, openPage, back] = useSubpage("today");
   const account = dashboard.accounts_overview.accounts.find((item) => item.id === pageId);
@@ -57,6 +74,7 @@ export function TodayView({ dashboard, splits, onNavigate, onEditTransaction, on
       onEditTransaction={onEditTransaction}
       onSetUp={onSetUp}
       onCapture={onCapture}
+      onOpenMission={onOpenMission}
       onOpenPage={openPage}
     />
   );
@@ -97,6 +115,7 @@ function HomeOverview({
   onEditTransaction,
   onSetUp,
   onCapture,
+  onOpenMission,
   onOpenPage,
 }: Omit<Props, "splits"> & { save: SaveChange; onOpenPage: (id: string) => void }) {
   const { home, totals, period, accounts_overview: overview, splits } = dashboard;
@@ -135,6 +154,7 @@ function HomeOverview({
       {onCapture && <PennySays dashboard={dashboard} onCapture={onCapture} />}
       <PaydayPrompt dashboard={dashboard} save={save} />
       {dashboard.cash_warnings.length > 0 && <CashHeadsUp dashboard={dashboard} onOpenAccount={onOpenPage} />}
+      {onOpenMission && <YourPlans dashboard={dashboard} onOpen={onOpenMission} />}
       <div className="grid gap-6 lg:grid-cols-2 lg:gap-8 [&>*]:min-w-0">
         <div className="space-y-6">
           {/* Accounts live on Home, like a bank app; each opens its own page. Net worth is one tap away. */}
@@ -484,6 +504,91 @@ function PennySays({ dashboard, onCapture }: { dashboard: Dashboard; onCapture: 
       </span>
       <ChevronRight className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
     </button>
+  );
+}
+
+/**
+ * Plans the user approved from a mission (a move, a trip): how much of the checklist is done,
+ * what's next, and the savings goal it set up. Worked out by the API (app/agents/checkin.py);
+ * read again when the numbers change. Hidden until there is one, and if it can't load.
+ */
+function YourPlans({ dashboard, onOpen }: { dashboard: Dashboard; onOpen: (runId: string) => void }) {
+  const [plans, setPlans] = useState<PlanCheckIn[]>([]);
+  useEffect(() => {
+    let active = true;
+    agentsApi
+      .plans()
+      .then((next) => {
+        if (active) setPlans(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [dashboard]);
+  return <PlanCards plans={plans} onOpen={onOpen} />;
+}
+
+function PlanCards({ plans, onOpen }: { plans: PlanCheckIn[]; onOpen: (runId: string) => void }) {
+  if (!plans.length) return null;
+  return (
+    <PhoneSection title="Your plans">
+      <ul className={STACK}>
+        {plans.map((plan) => (
+          <li key={plan.run_id} className={CARD}>
+            <button
+              type="button"
+              onClick={() => onOpen(plan.run_id)}
+              className="block w-full space-y-3 px-4 py-4 text-left hover:bg-sage-soft"
+            >
+              <span className="flex items-center gap-3">
+                <span
+                  className="grid size-10 shrink-0 place-items-center rounded-full bg-sage text-lg"
+                  aria-hidden="true"
+                >
+                  🧭
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-ink">{plan.title}</span>
+                  <span className="block text-xs text-ink-subtle">
+                    {plan.done === plan.total
+                      ? `All ${plan.total} steps done`
+                      : `${plan.done} of ${plan.total} steps done`}
+                    {plan.overdue > 0 && <span className="font-semibold text-danger"> · {plan.overdue} overdue</span>}
+                  </span>
+                </span>
+                <ChevronRight className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
+              </span>
+              <Progress
+                value={plan.total ? (plan.done / plan.total) * 100 : 0}
+                aria-label={`${plan.done} of ${plan.total} steps done`}
+              />
+              {plan.next && (
+                <span className={cn("block text-sm", plan.next.overdue ? "text-danger" : "text-ink-muted")}>
+                  <span className="font-semibold">{plan.next.overdue ? "Overdue:" : "Next:"}</span> {plan.next.title},
+                  by {formatShortDate(plan.next.due_on)}
+                </span>
+              )}
+              {plan.goal && (
+                <span className="block space-y-1.5 rounded-xl bg-sage-soft/70 px-3 py-2.5">
+                  <span className="flex items-baseline justify-between gap-2 text-sm">
+                    <span className="truncate font-medium text-ink">{plan.goal.name}</span>
+                    <span className="tabular shrink-0 text-ink-muted">
+                      <span className="font-semibold text-ink">{cad(plan.goal.current_cents)}</span> of{" "}
+                      {cad(plan.goal.target_cents)}
+                    </span>
+                  </span>
+                  <Progress
+                    value={plan.goal.progress_basis_points / 100}
+                    aria-label={`${plan.goal.name}: ${cad(plan.goal.current_cents)} of ${cad(plan.goal.target_cents)} saved`}
+                  />
+                </span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </PhoneSection>
   );
 }
 
