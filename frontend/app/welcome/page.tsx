@@ -198,11 +198,11 @@ export default function WelcomePage() {
             Your money, finally <em>on your side.</em>
           </h2>
           <p className={styles.finaleNote}>
-            Penny is invite-only while we’re in beta. Already invited? Sign in with the email we set up for you.
+            Free for students while we’re in beta. Make an account with your email, or sign in if you have one.
           </p>
           <div className={styles.ctaRow}>
-            <Link href="/login" className={`${styles.btnInk} ${styles.btnBig}`}>
-              Sign in to Penny
+            <Link href="/login?new=1" className={`${styles.btnInk} ${styles.btnBig}`}>
+              Create your account
               <ArrowRight size={20} aria-hidden="true" />
             </Link>
           </div>

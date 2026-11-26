@@ -10,6 +10,7 @@ import {
   Check,
   ChevronDown,
   Compass,
+  Copy,
   CornerDownRight,
   CreditCard,
   ExternalLink,
@@ -27,6 +28,7 @@ import {
   Route,
   ScanSearch,
   Shield,
+  Share2,
   ShieldCheck,
   Sparkles,
   Stethoscope,
@@ -39,6 +41,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import {
   type AgentApplied,
@@ -61,6 +64,7 @@ import {
   ApiError,
 } from "@/lib/api";
 import { formatShortDate } from "@/lib/format";
+import { missionShareText } from "@/lib/mission-share";
 import { haptic, scheduleReminders } from "@/lib/native";
 import { cn } from "@/lib/utils";
 import { Mascot } from "./mascot";
@@ -739,6 +743,8 @@ function MissionAnswer({
           </p>
         )}
 
+        <ShareWithFamily run={run} />
+
         <Details
           title={[
             run.auto.length && `${run.auto.length} done for you`,
@@ -974,6 +980,105 @@ function CostBreakdown({ plan }: { plan: CostPlan }) {
         </div>
       )}
     </section>
+  );
+}
+
+// ------------------------------------------------------------------ share with family
+
+/**
+ * Most young adults take money advice from friends or family, so a finished mission can be
+ * shared with someone the user trusts. The text comes from lib/mission-share (only figures the
+ * money engine produced and the verifier checked) and is shown in full before anything is sent.
+ * Nothing is uploaded: it goes to the phone's share sheet or the clipboard.
+ */
+function ShareWithFamily({ run }: { run: MissionRun }) {
+  const toast = useToast();
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  if (missionShareText(run) === null) return null;
+
+  function open() {
+    setError("");
+    setText(missionShareText(run, readTicked(`penny-checklist-${run.id}`)));
+  }
+
+  async function share(body: string) {
+    setError("");
+    try {
+      await navigator.share({ title: "My Penny plan", text: body });
+      haptic("success");
+      setText(null);
+    } catch (reason) {
+      // Closing the share sheet isn't an error.
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      setError("That didn’t open. Copy the text instead.");
+    }
+  }
+
+  async function copy(body: string) {
+    setError("");
+    try {
+      await navigator.clipboard.writeText(body);
+      haptic("success");
+      toast({ title: "Copied", description: "Paste it into a message to family or a friend." });
+      setText(null);
+    } catch {
+      setError("Couldn’t copy. Select the text above and copy it yourself.");
+    }
+  }
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line px-3 py-2">
+        <Handshake className="size-5 shrink-0 text-[#ef6f6c]" aria-hidden="true" />
+        <p className="min-w-0 flex-1 basis-52 text-sm text-ink-muted">
+          <span className="font-semibold text-ink">Talk it over.</span> Send the checked plan to family or a friend.
+        </p>
+        <Button variant="outline" size="sm" className="min-h-11 gap-1.5 max-sm:w-full" onClick={open}>
+          <Share2 className="size-4" aria-hidden="true" />
+          Share with family
+        </Button>
+      </div>
+      <Dialog open={text !== null} onOpenChange={(next) => !next && setText(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Share with family</DialogTitle>
+            <DialogDescription>
+              This is exactly what they’ll see. Nothing is sent until you pick where it goes, and Penny keeps no copy.
+            </DialogDescription>
+          </DialogHeader>
+          {text && (
+            <>
+              <pre
+                tabIndex={0}
+                aria-label="The plan you’ll share"
+                className="mt-4 max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-2xl border border-line bg-sage-soft/50 p-3 font-sans text-sm leading-relaxed text-ink focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                {text}
+              </pre>
+              {error && (
+                <p role="alert" className="mt-3 text-sm font-medium text-danger">
+                  {error}
+                </p>
+              )}
+              <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" className="min-h-11 gap-1.5" onClick={() => void copy(text)}>
+                  <Copy className="size-4" aria-hidden="true" />
+                  Copy text
+                </Button>
+                {canShare && (
+                  <Button className="min-h-11 gap-1.5" onClick={() => void share(text)}>
+                    <Share2 className="size-4" aria-hidden="true" />
+                    Share…
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

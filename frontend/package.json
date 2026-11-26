@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"lib/**/*.test.ts\"",
     "ios:build": "PENNY_NATIVE_BUILD=1 next build --webpack && cap sync ios",
     "ios:build:sim": "PENNY_NATIVE_BUILD=1 PENNY_IOS_SIMULATOR=1 next build --webpack && cap sync ios",
     "ios:open": "cap open ios"

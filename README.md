@@ -49,7 +49,7 @@ If the model is unavailable, slow, or over a person's daily limit, Penny still a
 
 - **Sign-in:** Supabase Auth. The API verifies each token's signature (JWKS, pinned algorithms), issuer, audience, role and expiry.
 - **Data isolation:** every table has row-level security with no public access; only the API reads and writes, and every row belongs to one user and is deleted with them.
-- **Abuse limits:** 120 requests a minute, 300 AI calls a day and 3 running missions per person; oversized requests are refused.
+- **Abuse limits:** 120 requests a minute, 10 Penny AI turns a day (each chat message or mission you start; the demo account is exempt), 300 model calls a day and 3 running missions per person; oversized requests are refused.
 - **AI guardrails:** card numbers, SINs, emails and phone numbers are removed before anything is stored or sent to the model. Prompt-injection attempts are refused, web pages that try to give instructions are discarded, and answers that pick stocks, funds or crypto are replaced.
 - **Headers:** no framing, no caching of financial data, a strict content security policy, HSTS in production.
 - **Secrets** stay server-side. **Delete account** in Settings removes the account and everything in it.

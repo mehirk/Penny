@@ -45,3 +45,8 @@ AGENTS.md
 CLAUDE.md
 .claude/
 DECISIONS.md
+
+# Slide decks and voice recordings (kept locally, not part of the app)
+*.ppt
+*.pptx
+*.m4a

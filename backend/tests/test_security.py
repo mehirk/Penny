@@ -228,3 +228,56 @@ def test_percents_are_easy_to_read(basis_points: int, shown: str) -> None:
     book = FactBook()
     book.percent("Change", basis_points, "test")
     assert book.unverified_figures(f"That's {shown.lstrip('-')}.") == []
+
+
+def test_penny_ai_allows_ten_turns_a_day() -> None:
+    assert limits.PENNY_AI_TURNS_PER_DAY == 10
+    for _ in range(10):
+        assert limits.spend_penny_ai_turn("user-1") is None
+    wait = limits.spend_penny_ai_turn("user-1")
+    assert wait is not None and 0 < wait <= 86_400
+    assert limits.spend_penny_ai_turn("user-2") is None  # each person has their own ten
+
+
+def test_exempt_person_is_never_counted() -> None:
+    for _ in range(limits.PENNY_AI_TURNS_PER_DAY + 5):
+        assert limits.spend_penny_ai_turn("demo", exempt=True) is None
+    assert limits.spend_penny_ai_turn("demo") is None  # nothing was used up while exempt
+
+
+def test_chat_messages_use_penny_ai_turns(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(limits, "penny_ai_turns", limits.RateLimiter(2, 86_400))
+    ask = {"messages": [{"role": "user", "content": "How am I doing this month?"}]}
+    assert client.post("/api/v1/coach/chat", json=ask).status_code == 200
+    assert client.post("/api/v1/coach/chat", json=ask).status_code == 200
+    refused = client.post("/api/v1/coach/chat", json=ask)
+    assert refused.status_code == 429
+    assert "Penny AI questions" in refused.json()["detail"]
+    assert int(refused.headers["retry-after"]) > 0
+    assert client.get("/api/v1/me").status_code == 200  # the rest of the app still works
+
+
+def test_starting_a_mission_uses_a_turn_but_autopilot_does_not(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(limits, "penny_ai_turns", limits.RateLimiter(1, 86_400))
+    ask = {"messages": [{"role": "user", "content": "How am I doing this month?"}]}
+    assert client.post("/api/v1/coach/chat", json=ask).status_code == 200
+    assert client.post("/api/v1/agents/autopilot").status_code == 200  # Penny's own daily check
+    refused = client.post(
+        "/api/v1/agents/runs", json={"kind": "custom", "goal": "Plan my spring break"}
+    )
+    assert refused.status_code == 429
+    assert "Penny AI questions" in refused.json()["detail"]
+
+
+def test_demo_account_is_exempt(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setattr(limits, "penny_ai_turns", limits.RateLimiter(1, 86_400))
+    monkeypatch.setattr(get_settings(), "demo_owner_user_id", "user-sec")
+    ask = {"messages": [{"role": "user", "content": "How am I doing this month?"}]}
+    for _ in range(3):
+        assert client.post("/api/v1/coach/chat", json=ask).status_code == 200

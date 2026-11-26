@@ -24,7 +24,7 @@ from app.agents.orchestrator import run_mission, title_for
 from app.agents.runs import run_store
 from app.agents.team import TEAM
 from app.agents.workspace import load_workspace
-from app.api.deps import AuthenticatedUser, user_store
+from app.api.deps import AuthenticatedUser, spend_penny_ai_turn, user_store
 from app.auth import CurrentUser
 from app.coach.guard import validate_user_question
 from app.config import get_settings
@@ -55,7 +55,9 @@ def _earlier(run: MissionRun) -> str:
     return "\n".join(lines)
 
 
-def _start(user: CurrentUser, kind: MissionKind, goal: str, after: str | None = None) -> MissionRun:
+def _start(
+    user: CurrentUser, kind: MissionKind, goal: str, after: str | None = None, charge: bool = False
+) -> MissionRun:
     store = user_store(user)
     store.require_owner(user.id)
     goal = goal.strip()
@@ -93,6 +95,8 @@ def _start(user: CurrentUser, kind: MissionKind, goal: str, after: str | None = 
             "Penny's agents are still on your last missions. Give them a moment.",
             headers={"Retry-After": "15"},
         )
+    if charge:  # only a new mission the person started costs a Penny AI turn, not a reused one
+        spend_penny_ai_turn(user)
     run = MissionRun(
         id=f"run-{secrets.token_urlsafe(9)}",
         kind=kind,
@@ -131,7 +135,9 @@ async def watch(user: CurrentUser, trigger: str) -> None:
 @router.post("/agents/runs", response_model=MissionRun, status_code=status.HTTP_201_CREATED)
 async def start_mission(request: MissionStart, current_user: AuthenticatedUser) -> MissionRun:
     """Starts a mission in the background; poll GET /agents/runs/{id} to watch it."""
-    return _start(current_user, request.kind, validate_user_question(request.goal), request.after)
+    return _start(
+        current_user, request.kind, validate_user_question(request.goal), request.after, charge=True
+    )
 
 
 @router.post("/agents/autopilot", response_model=MissionRun | None)
