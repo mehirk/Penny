@@ -29,8 +29,17 @@ function friendlyAuthError(message: string): string {
     return "That email and password don’t match. Check them and try again.";
   if (/email not confirmed/i.test(message)) return "Confirm your email first: open the link we sent you, then sign in.";
   if (/fetch|network/i.test(message)) return "Couldn’t reach the sign-in service. Check your connection and try again.";
+  if (/already registered|already exists/i.test(message))
+    return "There’s already an account with that email. Sign in instead.";
+  if (/signups? not allowed|signup is disabled/i.test(message))
+    return "New accounts are paused right now. Try again soon.";
+  if (/password should be|weak password/i.test(message))
+    return `Pick a longer password: at least ${MIN_PASSWORD} characters.`;
   return message;
 }
+
+/** Shortest password the sign-up form accepts (Supabase's own minimum is lower). */
+const MIN_PASSWORD = 8;
 
 export default function LoginPage() {
   const configured = isSupabaseConfigured();
@@ -46,6 +55,8 @@ export default function LoginPage() {
   const [notice, setNotice] = useState("");
   // The website links back to the landing page; the iPhone app has no landing page.
   const [web, setWeb] = useState(false);
+  // "signup" shows the create-an-account form (also opened by /login?new=1).
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
 
   useEffect(() => {
     // Signed out: no app lock on top of this page (it asks for Face ID itself).
@@ -55,8 +66,14 @@ export default function LoginPage() {
     const lockGaveUp = params.get("faceid") === "failed";
     // Sent here after Settings › Delete account.
     const deleted = params.get("deleted");
+    // Sent here to make an account (the website's "Create your account").
+    const signingUp = params.get("new") === "1";
     void faceIdStatus().then((status) => {
       setWeb(!isNativeApp());
+      if (signingUp) {
+        setMode("signup");
+        return;
+      }
       if (deleted === "all") setNotice("Your account and all its data were deleted.");
       if (deleted === "data")
         setNotice("All your data was deleted. Your email can still sign in, to a new, empty account.");
@@ -104,6 +121,51 @@ export default function LoginPage() {
       return;
     }
     router.replace("/");
+  }
+
+  /** Creates an account. Signs straight in when the project needs no email confirmation. */
+  async function signUp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    const form = new FormData(event.currentTarget);
+    const email = String(form.get("email")).trim();
+    const password = String(form.get("password"));
+    if (password.length < MIN_PASSWORD) {
+      setError(`Pick a longer password: at least ${MIN_PASSWORD} characters.`);
+      return;
+    }
+    setBusy(true);
+    try {
+      const { data, error: authError } = await createSupabaseBrowserClient().auth.signUp({
+        email,
+        password,
+        // The confirmation link opens the website's sign-in page (the iPhone app has no web address).
+        options: isNativeApp() ? undefined : { emailRedirectTo: `${window.location.origin}/login` },
+      });
+      if (authError) {
+        setError(friendlyAuthError(authError.message));
+        setBusy(false);
+        return;
+      }
+      if (data.session) {
+        router.replace("/");
+        return;
+      }
+      // Email confirmation is on: Supabase sent a link. (An email already in use also lands here,
+      // with no identities, so nobody can find out which emails have accounts.)
+      setMode("signin");
+      setNotice(`Check ${email} for a link to confirm your account, then sign in here.`);
+    } catch (reason) {
+      setError(friendlyAuthError(reason instanceof Error ? reason.message : "Couldn’t create the account"));
+    }
+    setBusy(false);
+  }
+
+  function switchMode(next: "signin" | "signup") {
+    setMode(next);
+    setError("");
+    setNotice("");
   }
 
   /**
@@ -228,9 +290,15 @@ export default function LoginPage() {
             </>
           ) : (
             <>
-              <h1 className="text-2xl font-semibold tracking-tight text-ink">Sign in</h1>
-              <p className="mt-1.5 text-sm text-ink-subtle">Welcome back. Never use your bank’s password here.</p>
-              {faceId?.available && faceId.saved && (
+              <h1 className="text-2xl font-semibold tracking-tight text-ink">
+                {mode === "signup" ? "Create your account" : "Sign in"}
+              </h1>
+              <p className="mt-1.5 text-sm text-ink-subtle">
+                {mode === "signup"
+                  ? "Free for students. Pick a new password, never your bank’s."
+                  : "Welcome back. Never use your bank’s password here."}
+              </p>
+              {mode === "signin" && faceId?.available && faceId.saved && (
                 <>
                   <Button
                     variant="outline"
@@ -244,7 +312,10 @@ export default function LoginPage() {
                   <p className="mt-5 text-center text-xs text-ink-subtle">or use your password</p>
                 </>
               )}
-              <form onSubmit={signIn} className={faceId?.saved ? "mt-3 space-y-4" : "mt-6 space-y-4"}>
+              <form
+                onSubmit={mode === "signup" ? signUp : signIn}
+                className={mode === "signin" && faceId?.saved ? "mt-3 space-y-4" : "mt-6 space-y-4"}
+              >
                 <Field label="Email">
                   {(props) => (
                     <Input
@@ -262,14 +333,15 @@ export default function LoginPage() {
                     {notice}
                   </p>
                 )}
-                <Field label="Password">
+                <Field label="Password" hint={mode === "signup" ? `At least ${MIN_PASSWORD} characters.` : undefined}>
                   {(props) => (
                     <Input
                       {...props}
                       ref={passwordInput}
                       name="password"
                       type="password"
-                      autoComplete="current-password"
+                      autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                      minLength={mode === "signup" ? MIN_PASSWORD : undefined}
                       required
                       disabled={!configured || busy}
                     />
@@ -287,15 +359,25 @@ export default function LoginPage() {
                   {busy ? (
                     <>
                       <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                      Signing in…
+                      {mode === "signup" ? "Creating your account…" : "Signing in…"}
                     </>
+                  ) : mode === "signup" ? (
+                    "Create account"
                   ) : (
                     "Sign in"
                   )}
                 </Button>
               </form>
-              <p className="mt-5 text-center text-xs text-ink-subtle">
-                New to Penny? It’s invite-only during the beta.
+              <p className="mt-4 text-center text-sm text-ink-subtle">
+                {mode === "signup" ? "Already have an account?" : "New to Penny?"}{" "}
+                <button
+                  type="button"
+                  className="inline-flex min-h-11 items-center font-semibold text-accent-strong hover:underline"
+                  disabled={busy}
+                  onClick={() => switchMode(mode === "signup" ? "signin" : "signup")}
+                >
+                  {mode === "signup" ? "Sign in" : "Create an account"}
+                </button>
               </p>
             </>
           )}

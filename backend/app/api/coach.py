@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, status
 
-from app.api.deps import AuthenticatedUser, user_store
+from app.api.deps import AuthenticatedUser, spend_penny_ai_turn, user_store
 from app.auth import CurrentUser
 from app.coach.chats import Conversation, ConversationWrite, chat_store
 from app.coach.coach import Coach
@@ -34,6 +34,7 @@ def coach_brief(current_user: AuthenticatedUser) -> BriefResponse:
 @router.post("/chat", response_model=ChatResponse)
 async def coach_chat(request: ChatRequest, current_user: AuthenticatedUser) -> ChatResponse:
     """Answer the latest question using the user's verified data and deterministic tools."""
+    spend_penny_ai_turn(current_user)
     return await _coach(current_user).chat(request, current_user.id)
 
 

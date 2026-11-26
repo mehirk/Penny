@@ -1,6 +1,6 @@
-"""Abuse limits per signed-in person: API requests a minute, and Penny AI calls a minute and a
-day (each call costs money). Kept in memory, which fits the single server process; a restart
-resets them.
+"""Abuse limits per signed-in person: API requests a minute, Penny AI turns a day (each chat
+message or mission the person starts), and model calls a minute and a day (each call costs
+money). Kept in memory, which fits the single server process; a restart resets them.
 
 The person behind a request is noted when they sign in (`note_request`), so a model call deep in
 the code can be charged to them (`spend_ai_call`) without passing their id everywhere.
@@ -17,6 +17,9 @@ REQUESTS_PER_MINUTE = 120
 # A mission's agents work in parallel, so one mission can make a few dozen calls in a minute.
 AI_CALLS_PER_MINUTE = 40
 AI_CALLS_PER_DAY = 300
+# What a person can ask Penny AI each day: one chat message or one mission they start is one turn,
+# however many model calls it makes. The demo account (PENNY_DEMO_OWNER_USER_ID) is exempt.
+PENNY_AI_TURNS_PER_DAY = 10
 # People tracked at once per limit; the least recently seen are forgotten first.
 MAX_TRACKED = 20_000
 
@@ -66,6 +69,7 @@ class RateLimiter:
 requests = RateLimiter(REQUESTS_PER_MINUTE, 60)
 ai_per_minute = RateLimiter(AI_CALLS_PER_MINUTE, 60)
 ai_per_day = RateLimiter(AI_CALLS_PER_DAY, _DAY)
+penny_ai_turns = RateLimiter(PENNY_AI_TURNS_PER_DAY, _DAY)
 
 _current_user: ContextVar[str | None] = ContextVar("penny_limits_user", default=None)
 
@@ -89,6 +93,14 @@ def spend_ai_call() -> bool:
     return ai_per_day.retry_after(user_id) is None
 
 
+def spend_penny_ai_turn(user_id: str, exempt: bool = False) -> int | None:
+    """Counts one Penny AI turn (a chat message or a mission the person starts). Returns the
+    seconds until a turn is free again when they've used today's, else None."""
+    if exempt:
+        return None
+    return penny_ai_turns.retry_after(user_id)
+
+
 def reset_all() -> None:
-    for limiter in (requests, ai_per_minute, ai_per_day):
+    for limiter in (requests, ai_per_minute, ai_per_day, penny_ai_turns):
         limiter.reset()
