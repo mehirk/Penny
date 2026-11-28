@@ -541,7 +541,7 @@ def test_web_figures_feed_estimates_but_never_move_money(store: DashboardStore) 
 
 def test_a_purchase_question_gets_an_answer_numbers_and_options(store: DashboardStore) -> None:
     run = _mission(store, "purchase", "Can I afford a $1,999 laptop?")
-    # Maya lives in Halifax: Nova Scotia's 14% HST is on top of the price.
+    # Sam lives in Halifax: Nova Scotia's 14% HST is on top of the price.
     assert run.brief and run.summary == "The Laptop doesn't fit yet."
     assert run.brief.answer.startswith("The Laptop doesn't fit yet. At $2,278.86 with HST 14%")
     numbers = {n.label: n.value for n in run.brief.numbers}

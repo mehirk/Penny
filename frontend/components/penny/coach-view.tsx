@@ -690,7 +690,7 @@ export function CoachView({
         </div>
 
         <div ref={scrollerRef} className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl space-y-4 lg:px-8 lg:py-6">
+          <div className="mx-auto w-full max-w-3xl space-y-4 lg:px-8 lg:py-6 xl:max-w-[60rem]">
             {messages.length === 0 && (
               <Welcome
                 name={dashboard.profile.display_name.split(" ")[0]}
@@ -786,7 +786,7 @@ export function CoachView({
         </div>
 
         {/* No box on phones, so the composer can stick above the tab bar while the page scrolls. */}
-        <div className="contents lg:mx-auto lg:block lg:w-full lg:max-w-3xl lg:space-y-3 lg:px-8 lg:pb-4 lg:pt-2">
+        <div className="contents lg:mx-auto lg:block lg:w-full lg:max-w-3xl lg:space-y-3 lg:px-8 lg:pb-4 lg:pt-2 xl:max-w-[60rem]">
           <Composer
             disabled={pending}
             onSend={(text) => void chat.send(text)}

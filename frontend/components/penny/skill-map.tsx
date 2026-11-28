@@ -12,6 +12,7 @@ import {
   type SkillCheckResult,
   type SkillCheckView,
 } from "@/lib/api";
+import { recall, remember } from "@/lib/session-cache";
 import { cn } from "@/lib/utils";
 import { confetti, CountUp, play } from "./game-fx";
 import { Mascot, type Outfit } from "./mascot";
@@ -23,6 +24,7 @@ import { describeError } from "./shared";
  * lessons, guides, and games for the weakest areas, with a note from Penny AI (or built-in text).
  */
 
+const SKILL_MAP_KEY = "skill-map";
 const AREA_ORDER = ["banking", "registered", "credit", "tax", "grow", "protect"] as const;
 const AREA_LOOK: Record<string, { emoji: string; short: string; color: string }> = {
   banking: { emoji: "🏦", short: "Banking", color: "#4a8fe7" },
@@ -55,7 +57,8 @@ export function SkillMap({
   onGame: (gameId: string) => void;
   onProgress: () => void;
 }) {
-  const [plan, setPlan] = useState<CoachPlan | null>(null);
+  // The last result shows at once (no loading flash when coming back to Learn); a fresh copy replaces it.
+  const [plan, setPlan] = useState<CoachPlan | null>(() => recall<CoachPlan>(SKILL_MAP_KEY) ?? null);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -65,6 +68,7 @@ export function SkillMap({
     learnApi
       .coachPlan()
       .then((data) => {
+        remember(SKILL_MAP_KEY, data);
         if (live) setPlan(data);
       })
       .catch((reason: unknown) => {

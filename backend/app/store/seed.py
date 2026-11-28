@@ -225,13 +225,13 @@ def _demo_learner() -> Learner:
 
 
 def demo_snapshot() -> StoreSnapshot:
-    """Maya Singh, a fictional student at Dalhousie University in Halifax."""
+    """Sam, a fictional student at Dalhousie University in Halifax."""
     categories = starter_categories()
     bills = _demo_bills()
     return StoreSnapshot(
         profile=DemoUser(
             id=DEMO_USER_ID,
-            display_name="Maya Singh",
+            display_name="Sam",
             age=20,
             school="Dalhousie University",
             city="Halifax",

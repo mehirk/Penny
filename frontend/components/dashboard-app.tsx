@@ -14,6 +14,7 @@ import { ConfirmDialog, type ConfirmRequest, deleteConfirmation } from "@/compon
 import { EditDialogs } from "@/components/penny/edit-dialogs";
 import { GoalsView } from "@/components/penny/goals-view";
 import { LearnView } from "@/components/penny/learn-view";
+import { ListenPlayer, useListen } from "@/components/penny/listen-mode";
 import { DashboardSkeleton, LoadError, PageSkeleton } from "@/components/penny/load-states";
 import { Onboarding } from "@/components/penny/onboarding";
 import { setSoundOn } from "@/components/penny/game-fx";
@@ -88,6 +89,7 @@ function PennyApp() {
     mutate,
   } = useDashboard();
   const [view, setView] = useState<View>("today");
+  const listening = useListen().status !== "off";
   const [spendingTab, setSpendingTab] = useState<SpendingTab>("transactions");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // First-run setup for new real accounts. Each step can be skipped, but not the whole setup;
@@ -489,6 +491,8 @@ function PennyApp() {
             className={cn(
               "mx-auto px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-5 focus:outline-none sm:px-6",
               view === "ai" ? "w-full lg:min-h-0 lg:flex-1 lg:p-0" : "max-w-7xl lg:px-10 lg:pb-12 lg:pt-8",
+              // Room for the Listen mode player, so it never covers the end of the page.
+              listening && "pb-[calc(17rem+env(safe-area-inset-bottom))] lg:pb-48",
             )}
           >
             {/* A period that isn't cached yet shows a skeleton until its data arrives, never stale numbers. */}
@@ -617,6 +621,7 @@ function PennyApp() {
         </div>
         <MobileNavigation active={view} onNavigate={navigate} action={<CaptureOrb handle={capture} />} />
         <PullToRefresh onRefresh={refresh} />
+        <ListenPlayer />
         {/* Desktop only: on phones the orb is in the tab bar, and a floating button covered content. */}
         {view !== "ai" && (
           <div className="fixed bottom-6 right-6 z-20 hidden items-center gap-3 lg:flex">
