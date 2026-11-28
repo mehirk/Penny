@@ -18,6 +18,7 @@ Penny does both halves: it **teaches** you, then **helps you apply it** to your 
 - **A team of agents.** Ask _"I'm moving to Toronto in September. Get me ready."_ Penny thinks the situation through (including what you didn't ask), asks what only you know, then sends six built-in agents (Planner, Cash-flow guard, Benefits finder, Analyst, People, Tutor) plus up to three specialists it creates for the job. They research in parallel, a verifier checks every figure, and you get the full picture with every cost and a dated checklist. Nothing changes until you approve.
 - **Snap or say it.** Snap a receipt or say _"Pizza $36 with Sam and Priya, split 3 ways"_: Penny drafts the expenses, split and budget updates as one plan, saved only when you tap **Do it**, and **Undo** reverses all of it.
 - **Safe to spend.** One number: what you can actually spend before payday, after every bill and budget.
+- **Listen mode (accessibility).** Tap **Turn on Listen mode** on Home and Penny reads your summary aloud: safe to spend, spending, bills, budgets and goals. Control it with your AirPods: press once to pause, twice to skip, three times to go back. Built for low vision, screen-reader users and full hands.
 
 ## What it does
 

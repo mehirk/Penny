@@ -3,10 +3,12 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Accessibility,
   Banknote,
   CalendarPlus,
   Check,
   ChevronRight,
+  Headphones,
   Lock,
   type LucideIcon,
   Palette,
@@ -47,6 +49,8 @@ import { cad, Field } from "./shared";
 import { BackBar } from "./back-bar";
 import { CalendarSection } from "./calendar-section";
 import { PaySection } from "./pay-section";
+import { ListenSettings, useListen } from "./listen-mode";
+import { ScreenReaderSection } from "./screen-reader-section";
 import { useSubpage } from "./subpage";
 
 /** Saves a change through the app's mutation runner; resolves to an error message or null. */
@@ -491,6 +495,7 @@ export function SettingsView({
   const themeName = THEME_OPTIONS.find((option) => option.value === theme)?.label ?? "";
   const custom = dashboard.categories.filter((category) => category.custom).length;
   const [faceId, setFaceId] = useState<FaceIdStatus | null>(null);
+  const listening = useListen().status !== "off";
   useEffect(() => {
     void faceIdStatus().then(setFaceId);
   }, []);
@@ -550,6 +555,24 @@ export function SettingsView({
       title: "Appearance",
       summary: `${styleName} · ${themeName}`,
       body: <AppearanceSection />,
+    },
+    {
+      id: "screen-reader",
+      labelId: "screen-reader-title",
+      group: "Accessibility",
+      icon: Accessibility,
+      title: "Screen reader",
+      summary: "Works with VoiceOver and TalkBack",
+      body: <ScreenReaderSection onOpenListen={() => openPage("listen")} />,
+    },
+    {
+      id: "listen",
+      labelId: "listen-title",
+      group: "Accessibility",
+      icon: Headphones,
+      title: "Listen mode",
+      summary: listening ? "On · reading your summary" : "Hear your summary with AirPods",
+      body: <ListenSettings dashboard={dashboard} />,
     },
     {
       id: "security",

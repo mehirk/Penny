@@ -30,6 +30,7 @@ import { AmountsToggle, BigAmount, cad, type View } from "./shared";
 import { useSubpage } from "./subpage";
 import { useTransfers } from "./transfer-dialog";
 import { PracticeCard } from "./practice-game";
+import { ListenCard } from "./listen-mode";
 
 // Accounts read like the sum: what you have, then what you owe.
 const ACCOUNT_ORDER: AccountType[] = ["chequing", "cash", "savings", "investment", "other", "credit"];
@@ -151,6 +152,8 @@ function HomeOverview({
         onOpen={() => onOpenPage("safe")}
         onSetBudgets={() => onNavigate("budgets")}
       />
+      {/* Accessibility: hear this summary read aloud and control it with AirPods. */}
+      <ListenCard dashboard={dashboard} />
       {onCapture && <PennySays dashboard={dashboard} onCapture={onCapture} />}
       <PaydayPrompt dashboard={dashboard} save={save} />
       {dashboard.cash_warnings.length > 0 && <CashHeadsUp dashboard={dashboard} onOpenAccount={onOpenPage} />}
