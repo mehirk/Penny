@@ -57,7 +57,7 @@ The tested edge cases include no activity, overspending, invalid values, exact s
 
 ## Demo data
 
-Maya Singh is a clearly fictional 20-year-old Dalhousie University student in Halifax. Her accounts, transactions, budgets, goals, and missions originate in the backend fixture, and are saved to the database the first time the `PENNY_DEMO_OWNER_USER_ID` user signs in. The frontend receives them through the dashboard contract and does not provide fallback balances or totals.
+Sam is a clearly fictional 20-year-old Dalhousie University student in Halifax. His accounts, transactions, budgets, goals, and missions originate in the backend fixture, and are saved to the database the first time the `PENNY_DEMO_OWNER_USER_ID` user signs in. The frontend receives them through the dashboard contract and does not provide fallback balances or totals.
 
 ## Health and failure behaviour
 
