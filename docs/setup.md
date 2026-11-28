@@ -23,7 +23,7 @@ Or paste `supabase/migrations/202610290001_initial_schema.sql` into the project'
 
 - Put the project URL and publishable key in `frontend/.env.local` (`cp frontend/.env.example frontend/.env.local`).
 - Under **Connect → Session pooler**, copy the connection string (with the database password) into `PENNY_DATABASE_URL` in `backend/.env`. It's a secret: keep it server-side.
-- Create fictional users under **Authentication → Users**. Each gets their own empty Penny on first sign-in; put one user's UUID in `PENNY_DEMO_OWNER_USER_ID` to give them the fictional Maya data set.
+- Create fictional users under **Authentication → Users**. Each gets their own empty Penny on first sign-in; put one user's UUID in `PENNY_DEMO_OWNER_USER_ID` to give them the fictional Sam data set.
 
 A local Supabase stack (`supabase start`, which needs Docker) also works: use its URLs and `postgresql://postgres:postgres@127.0.0.1:54322/postgres`.
 
@@ -56,7 +56,7 @@ Restart FastAPI after changing the environment file. Without a key, or if the mo
 Every financial route (dashboard, transactions, budgets, savings goals, Penny AI, and approval) requires `Authorization: Bearer <token>`. Missing or invalid tokens return 401; an authenticated user who does not own the data receives 403. Only `/health`, the stateless `POST /api/v1/calculations/credit-utilization`, and the 10-minute calendar file links (`GET /api/v1/calendar/files/{token}.ics`, unguessable) work without signing in. Each signed-in person is limited to 120 requests a minute, 5 Penny AI turns a day (one per chat message or mission they start; Autopilot, Watch missions and answers to an agent's question are free; the `PENNY_DEMO_OWNER_USER_ID` account is exempt), and 300 model calls a day across every AI feature (`backend/app/limits.py`). Over the 5, Penny AI returns 429 with a message saying when more are available.
 
 - **Supabase (default):** the browser signs in with the publishable key and sends the session access token. FastAPI verifies it against `PENNY_SUPABASE_URL/auth/v1/.well-known/jwks.json` (ES256 or RS256, cached for ten minutes), and checks the issuer, `aud=authenticated`, `role=authenticated`, expiry, and subject. `PENNY_SUPABASE_JWT_SECRET` is only for legacy HS256 projects.
-- **Whose data:** the Supabase user whose UUID is in `PENNY_DEMO_OWNER_USER_ID` gets the fictional Maya data set. Every other signed-in user gets their own account, empty apart from a $0 chequing account and starter categories.
+- **Whose data:** the Supabase user whose UUID is in `PENNY_DEMO_OWNER_USER_ID` gets the fictional Sam data set. Every other signed-in user gets their own account, empty apart from a $0 chequing account and starter categories.
 - **Offline demo (development only):** set `PENNY_DEMO_AUTH_TOKEN` in the backend plus `NEXT_PUBLIC_DEMO_MODE=true` and the same `NEXT_PUBLIC_DEMO_AUTH_TOKEN` in the frontend. The backend refuses to start if a demo token is configured outside `PENNY_ENVIRONMENT=development`, and the frontend never invents a token.
 
 The backend reads `.env` and then `.env.local`. Its secrets (`PENNY_DATABASE_URL`, `PENNY_OPENAI_API_KEY`) stay server-side; no Supabase service-role key is used anywhere.
@@ -134,7 +134,7 @@ Each request loads the user's data in one query, runs the same integer-cent doma
 | `PENNY_DATABASE_URL` | Supabase **Session pooler** connection string (IPv4; the direct connection is IPv6-only) |
 | `PENNY_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `PENNY_FRONTEND_ORIGIN` | the hosted website's URL; more in `PENNY_EXTRA_ORIGINS`, comma-separated |
-| `PENNY_DEMO_OWNER_USER_ID` | optional: the user who gets the Maya data |
+| `PENNY_DEMO_OWNER_USER_ID` | optional: the user who gets the Sam data |
 | `PENNY_OPENAI_API_KEY` | optional: model answers, voice, and agents |
 
 Never set `PENNY_DEMO_AUTH_TOKEN` in production (the API refuses to start). Choose a region near the Supabase project: each request makes one or two database round trips.

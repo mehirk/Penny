@@ -2,7 +2,7 @@
 
 **Your wallet. Your coach.** Penny is a financial literacy app for Canadian students and young adults. It finds what you don't know about money, teaches it through lessons, story games and guides written from official Canadian sources, then helps you use it on real decisions with a team of AI agents.
 
-Built for the **Cognizant BrAInstorm AI Innovation Challenge 2026** (theme: Education). It runs on the web and as an iPhone app. Landing page: [penny-khaki-two.vercel.app/welcome](https://penny-khaki-two.vercel.app/welcome) (sign-in is invite-only during the beta).
+Built for the **Cognizant BrAInstorm AI Innovation Challenge 2026** (theme: Education). It runs on the web and as an iPhone app. Landing page: [penny-khaki-two.vercel.app/welcome](https://penny-khaki-two.vercel.app/welcome) (sign-up is open and free).
 
 > All people, accounts and amounts in this repository and the demo are fictional. Penny never connects to a bank, and it is educational, not financial advice.
 
@@ -81,7 +81,7 @@ backend/app/
   learning/             lessons, Money IQ and game rules
   db/                   Postgres persistence: load once per request, save only what changed
   limits.py             per-person request and AI limits
-backend/tests/          456 tests: financial rules, security, and every feature's edge cases
+backend/tests/          473 tests: financial rules, security, and every feature's edge cases
 supabase/migrations/    the database schema
 ```
 
