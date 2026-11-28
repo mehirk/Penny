@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { createBrowserClient } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { setAppSignedIn } from "./face-id";
+import { forgetAll } from "./session-cache";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -38,5 +39,6 @@ export async function getSupabaseUserEmail(): Promise<string | null> {
  * no longer knows it). */
 export async function signOutOfSupabase(scope: "global" | "local" = "global"): Promise<void> {
   setAppSignedIn(false);
+  forgetAll();
   if (isSupabaseConfigured()) await createSupabaseBrowserClient().auth.signOut({ scope });
 }

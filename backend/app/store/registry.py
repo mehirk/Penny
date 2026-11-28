@@ -1,4 +1,4 @@
-"""Who sees which data: the demo identity (and the configured owner) get the fictional Maya data
+"""Who sees which data: the demo identity (and the configured owner) get the fictional Sam data
 set; every other signed-in user gets their own empty account, made on first use.
 
 With PENNY_DATABASE_URL set, stores are loaded from and saved to Postgres for each request

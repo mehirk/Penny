@@ -1,7 +1,7 @@
 # ruff: noqa: E501 - the history table is intentionally one row per month.
 """Fictional, deterministic history for the demo user (September 2025 - September 2026).
 
-Every amount is invented integer cents for Maya Singh, a fictional student. The table is
+Every amount is invented integer cents for Sam, a fictional student. The table is
 fixed so totals, tests, and charts are reproducible. October 2026 (the demo's current
 month) lives in `seed.py` and is not repeated here.
 """
